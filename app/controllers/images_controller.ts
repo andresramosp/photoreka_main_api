@@ -10,31 +10,48 @@ const COST_PER_TOKEN_EUR = (COST_PER_1M_TOKENS_USD / 1_000_000) * USD_TO_EUR
 export default class ImagesController {
   public async processImage({ request, response }: HttpContext) {
     try {
-      // Obtener las imágenes del body dinámicamente (image1, image2, ..., image10)
-      const images = Array.from({ length: 10 }, (_, i) => `image${i + 1}`)
-      const imageFiles = await Promise.all(
-        images.map((key) => request.file(key, { extnames: ['jpg', 'jpeg'] }))
-      )
+      // Obtener todos los archivos del formulario
+      const allFiles = request.allFiles()
 
-      // Filtrar imágenes válidas (omitimos las no enviadas)
-      const validImageFiles = imageFiles.filter((file) => file && file.tmpPath)
+      // Filtrar archivos que comiencen con "image-"
+      const imageEntries = Object.entries(allFiles).filter(([key]) => key.startsWith('image-'))
 
       // Validar que al menos haya una imagen válida
-      if (validImageFiles.length === 0) {
+      if (imageEntries.length === 0) {
         return response.badRequest({ message: 'At least one valid image file is required' })
       }
 
-      // Procesar y codificar todas las imágenes válidas en Base64
-      const base64Images = await Promise.all(
-        validImageFiles.map(async (imageFile) => {
-          const resizedBuffer = await sharp(imageFile?.tmpPath!)
+      // Procesar las imágenes válidas
+      const validImages = []
+      for (const [key, file] of imageEntries) {
+        if (Array.isArray(file)) {
+          // Si es un array, procesa cada archivo
+          for (const singleFile of file) {
+            if (singleFile.tmpPath) {
+              const resizedBuffer = await sharp(singleFile.tmpPath)
+                .resize({ width: 512, fit: 'inside' })
+                .toBuffer()
+
+              validImages.push({
+                id: key.replace('image-', ''), // Extraer el ID de la clave
+                base64: resizedBuffer.toString('base64'),
+              })
+            }
+          }
+        } else if (file?.tmpPath) {
+          // Si es un solo archivo, procesa directamente
+          const resizedBuffer = await sharp(file.tmpPath)
             .resize({ width: 512, fit: 'inside' })
             .toBuffer()
-          return resizedBuffer.toString('base64')
-        })
-      )
 
-      // Crear el payload con múltiples imágenes
+          validImages.push({
+            id: key.replace('image-', ''), // Extraer el ID de la clave
+            base64: resizedBuffer.toString('base64'),
+          })
+        }
+      }
+
+      // Crear el payload con las imágenes procesadas
       const payload = {
         model: 'gpt-4o',
         messages: [
@@ -44,40 +61,35 @@ export default class ImagesController {
               {
                 type: 'text',
                 text: `
-                                Return a JSON array, where each element contains information about one image. For each image, include:
-                                 'description' (max 70 words): describe the general scene, the environment, what is doing each person and their interactions, and pay special attention to curious or strange details, funny contrasts or optical illusions, that can make this a good street photography.
-                                - 'place' (max 2 words): is it a shop? a gym? a street?
-                                - 'imageName': name of the image
-                                - 'culture' (max 2 words): guessed country and/or culture
-                                - 'title' (max 5 words): create a suggestive title for this image
-                                - 'people' (array of subjects, like 'woman in red' or 'man with suitcase')
-                            `,
+                  Return a JSON array, where each element contains information about one image. For each image, include:
+                  - 'id': id of the image, using this comma separated, ordered list: ${validImages.map((img) => img.id).join(',')}
+                  'description' (max 70 words): describe the general scene, the environment, what is doing each person and their interactions, and pay special attention to curious or strange details, funny contrasts or optical illusions, that can make this a good street photography.
+                  - 'place' (max 2 words): is it a shop? a gym? a street?
+                  - 'culture' (max 2 words): guessed country and/or culture
+                  - 'title' (max 5 words): create a suggestive title for this image
+                  - 'people' (array of subjects, like 'woman in red' or 'man with suitcase')
+                `,
               },
-              ...base64Images.map((base64Image, index) => ({
+              ...validImages.map(({ base64 }) => ({
                 type: 'image_url',
                 image_url: {
-                  url: `data:image/jpeg;base64,${base64Image}`,
+                  url: `data:image/jpeg;base64,${base64}`,
                   detail: 'low',
-                  name: `image${index + 1}`,
                 },
               })),
             ],
           },
         ],
-        max_tokens: 2000, // Ajustar según la cantidad esperada de tokens
+        max_tokens: 2000,
       }
 
       // Enviar solicitud a OpenAI
-      const { data } = await axios.post(
-        env.get('OPENAI_BASEURL') + '/v1/chat/completions',
-        payload,
-        {
-          headers: {
-            'Authorization': `Bearer ${env.get('OPENAI_KEY')}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      )
+      const { data } = await axios.post(env.get('OPENAI_BASEURL') + '/chat/completions', payload, {
+        headers: {
+          'Authorization': `Bearer ${env.get('OPENAI_KEY')}`,
+          'Content-Type': 'application/json',
+        },
+      })
 
       // Procesar la respuesta para extraer los resultados
       const rawResult = data.choices[0].message.content
