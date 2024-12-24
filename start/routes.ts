@@ -8,7 +8,8 @@
 */
 
 import router from '@adonisjs/core/services/router'
-const ImagesController = () => import('#controllers/images_controller')
+const AnalyzerController = () => import('#controllers/analyzer_controller')
+const CatalogController = () => import('#controllers/catalog_controller')
 
 router.get('/', async () => {
   return {
@@ -16,5 +17,6 @@ router.get('/', async () => {
   }
 })
 
-router.post('/api/image', [ImagesController, 'processImage'])
-router.get('/api/image/:filename', [ImagesController, 'getImageInfo'])
+router.post('/api/analyzer/', [AnalyzerController, 'analyze'])
+router.post('/api/catalog/upload', [CatalogController, 'upload'])
+router.get('/api/catalog/', [CatalogController, 'fetch'])
