@@ -3,6 +3,7 @@ import sharp from 'sharp'
 import { promises as fs } from 'fs'
 import path from 'path'
 import crypto from 'crypto'
+import Photo from '#models/photo'
 
 export default class CatalogController {
   /**
@@ -10,46 +11,38 @@ export default class CatalogController {
    */
   public async upload({ request, response }: HttpContext) {
     try {
-      // Ruta donde se guardarán las imágenes
       const uploadPath = path.join(process.cwd(), 'public/uploads/photos')
-
-      // Asegúrate de que la carpeta exista
       await fs.mkdir(uploadPath, { recursive: true })
+      const reqPhotos = request.files('photos')
 
-      // Obtener los archivos del request
-      const photos = request.files('photos')
-
-      if (!photos || photos.length === 0) {
+      if (!reqPhotos || reqPhotos.length === 0) {
         return response.badRequest({ message: 'No se recibieron imágenes' })
       }
 
       const savedPhotos = []
 
-      // Procesar y guardar cada archivo
-      for (const photo of photos) {
-        if (!photo.tmpPath) {
+      for (const _photo of reqPhotos) {
+        if (!_photo.tmpPath) {
           continue
         }
 
-        // Procesar la imagen con sharp y guardarla
-        const fileName = `${Date.now()}-${photo.clientName}`
+        const fileName = `${Date.now()}-${_photo.clientName}`
         const outputPath = path.join(uploadPath, fileName)
 
-        await sharp(photo.tmpPath)
-          .resize(800) // Redimensionar si es necesario
-          .toFormat('jpeg') // Convertir a JPEG si es necesario
-          .toFile(outputPath)
+        await sharp(_photo.tmpPath).resize(800).toFormat('jpeg').toFile(outputPath)
 
-        savedPhotos.push({
-          originalName: photo.clientName,
-          id: crypto.randomUUID(),
-          path: `/uploads/photos/${fileName}`,
-        })
+        const photo = new Photo()
+        photo.id = crypto.randomUUID()
+        photo.name = fileName
+
+        savedPhotos.push(photo)
       }
+
+      await Photo.createMany(savedPhotos)
 
       return response.ok({
         message: 'Fotos subidas exitosamente',
-        photos: savedPhotos,
+        savedPhotos,
       })
     } catch (error) {
       console.error('Error subiendo fotos:', error)
@@ -59,17 +52,7 @@ export default class CatalogController {
 
   public async fetch({ response }: HttpContext) {
     try {
-      const uploadPath = path.join(process.cwd(), 'public/uploads/photos')
-
-      // Verificar si la carpeta existe
-      const files = await fs.readdir(uploadPath)
-
-      // Crear URLs públicas para las fotos
-      const photos = files.map((file) => ({
-        originalName: file,
-        id: crypto.randomUUID(),
-        path: `/uploads/photos/${file}`,
-      }))
+      const photos = await Photo.all()
 
       return response.ok({ photos })
     } catch (error) {

@@ -2,6 +2,7 @@
 node_modules
 build
 tmp
+public/uploads
 
 # Secrets
 .env
