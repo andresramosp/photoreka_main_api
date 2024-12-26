@@ -142,7 +142,7 @@ export default class PhotosService {
       return {
         results: [],
         cost: {
-          totalTokens: 0,
+          totalTokensy: 0,
           costInEur: '0.000000',
         },
       }
