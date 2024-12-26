@@ -20,3 +20,4 @@ router.get('/', async () => {
 router.post('/api/analyzer/', [AnalyzerController, 'analyze'])
 router.post('/api/catalog/upload', [CatalogController, 'upload'])
 router.get('/api/catalog/', [CatalogController, 'fetch'])
+router.post('/api/catalog/search', [CatalogController, 'search'])

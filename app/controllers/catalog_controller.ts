@@ -4,6 +4,7 @@ import { promises as fs } from 'fs'
 import path from 'path'
 import crypto from 'crypto'
 import Photo from '#models/photo'
+import PhotosService from '#services/photos_service'
 
 export default class CatalogController {
   /**
@@ -55,6 +56,25 @@ export default class CatalogController {
       const photos = await Photo.all()
 
       return response.ok({ photos })
+    } catch (error) {
+      console.error('Error fetching photos:', error)
+      return response.internalServerError({ message: 'Error fetching photos' })
+    }
+  }
+
+  public async search({ response, request }: HttpContext) {
+    try {
+      const photosService = new PhotosService()
+
+      let result: Photo[] = []
+      const query = request.body()
+
+      const { results, cost } = await photosService.search_v1_gpt(query)
+
+      return response.ok({
+        results,
+        cost,
+      })
     } catch (error) {
       console.error('Error fetching photos:', error)
       return response.internalServerError({ message: 'Error fetching photos' })

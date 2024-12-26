@@ -46,6 +46,8 @@ export default class AnalyzerService {
       throw new Exception('No valid images found for the provided IDs')
     }
 
+    //  - 'description' (max 70 words): describe the general scene, the environment, what is doing each person and their interactions, and pay special attention to curious or strange details, funny contrasts or optical illusions, that can make this a good street photography.
+
     // Crear el payload para OpenAI
     const payload = {
       model: 'gpt-4o',
@@ -58,11 +60,7 @@ export default class AnalyzerService {
               text: `
               Return a JSON array, where each element contains information about one image. For each image, include:
               - 'id': id of the image, using this comma separated, ordered list: ${validImages.map((img) => img.id).join(',')}
-              'description' (max 70 words): describe the general scene, the environment, what is doing each person and their interactions, and pay special attention to curious or strange details, funny contrasts or optical illusions, that can make this a good street photography.
-              - 'place' (max 2 words): is it a shop? a gym? a street?
-              - 'culture' (max 2 words): guessed country and/or culture
-              - 'title' (max 5 words): create a suggestive title for this image
-              - 'people' (array of subjects, like 'woman in red' or 'man with suitcase')
+              - 'description: describe the image in detail, aseptically, including type of place, the time of day, the objects and the people and their actions. This description should work for a further search, like "people looking at their phones at subway", therefore include has many relevant words as you can
             `,
             },
             ...validImages.map(({ base64 }) => ({
@@ -75,7 +73,7 @@ export default class AnalyzerService {
           ],
         },
       ],
-      max_tokens: 2000,
+      max_tokens: 10000,
     }
 
     // Enviar solicitud a OpenAI
