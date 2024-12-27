@@ -53,7 +53,7 @@ export default class CatalogController {
 
   public async fetch({ response }: HttpContext) {
     try {
-      const photos = await Photo.all()
+      const photos = await Photo.query().preload('tags')
 
       return response.ok({ photos })
     } catch (error) {
@@ -69,9 +69,13 @@ export default class CatalogController {
       let result: Photo[] = []
       const query = request.body()
 
-      const { results, cost } = await photosService.search_v1_gpt(query)
+      const { results, cost, tagsExcluded, tagsMandatory, tagsRecommended } =
+        await photosService.search_v1_gpt_tags(query)
 
       return response.ok({
+        tagsExcluded,
+        tagsMandatory,
+        tagsRecommended,
         results,
         cost,
       })
