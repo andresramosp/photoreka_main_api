@@ -31,7 +31,9 @@ export default class AnalyzerService {
         await fs.access(filePath)
 
         // Procesar la imagen con sharp
-        const resizedBuffer = await sharp(filePath).resize({ width: 512, fit: 'inside' }).toBuffer()
+        const resizedBuffer = await sharp(filePath)
+          .resize({ width: 1024, fit: 'inside' })
+          .toBuffer()
 
         validImages.push({
           id: photo.id, // Usar el ID proporcionado
@@ -64,8 +66,16 @@ export default class AnalyzerService {
                 text: `
                   Return a JSON array, where each element contains information about one image. For each image, include:
                   - 'id': id of the image, using this comma-separated, ordered list: ${batch.map((img) => img.id).join(',')}
-                  - 'description' (around 500 words): describe the image in detail, aseptically, including type of place, the time of day, the country or culture, the objects and the people and their actions. This description should work for a further search, like "people looking at their phones at subway", therefore include as many relevant words as you can
-                  - 'tags': an array of relevant tags, considering objects, people, environment, culture/country, atmosphere, and photography style
+                  - 'description' (around 500 words): describe the image in detail as if you had to explain it to a blind person, going through each element / area of the image, explaining the interactions, the details, both on a concrete and more general level. Give as much detail as you can. 
+                  - 'objects_tags' (up to 10 words): all the things, buildings or material objects in general you can see in the photo (Example: ['table', 'knife', 'taxi', 'window' 'building'])
+                  - 'location_tags' (up to 5 words): tags which describes the concrete location, and wether it's inside or outside, public or private, etc. (Example: ['teather', 'beach', 'indoor', 'outdoor' 'public place'])
+                  - 'persons_tags' (up to 10 words): all the persons you can see in the photo. Example: ['man in suits', 'kid', 'waiter']
+                  - 'details_tags' (up to 5 words): specifics and/or strange details you appreciate on someone, which can distinct this photo from others. Example: ['long hair', 'tattoo', 'surprise']
+                  - 'action_tags' (up to 10 words): all the actions you can see in the photo: Example: ['playing chess', 'sports', 'jumping', 'waiting bus', 'sleeping']
+                  - 'style_tags' (up to 3 words): the photographic styles you recognize. Example: ['portrait', 'urban photography', 'landscape', 'looking at camera', 'reflections']
+                  - 'mood_tags' (up to 3 words): the general mood or feeling you recognize. Example: ['joyful', 'dramatic']
+                  - 'culture_tags' (up to 3 words): the culture or country you think the photo has been taken. Example: ['China', 'Asia', 'Traditional'])
+                  - 'misc_tags' (up to 5 words): all the tags that you think are important for this photo in particular and are not covered in the previous categories. Can be typical tags like "crowd" or "light", but you can also be more creative.
                 `,
               },
               ...batch.map(({ base64 }) => ({

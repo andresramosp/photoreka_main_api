@@ -30,7 +30,10 @@ export default class CatalogController {
         const fileName = `${Date.now()}-${_photo.clientName}`
         const outputPath = path.join(uploadPath, fileName)
 
-        await sharp(_photo.tmpPath).resize(800).toFormat('jpeg').toFile(outputPath)
+        await sharp(_photo.tmpPath)
+          .resize({ width: 1024, fit: 'inside' })
+          .toFormat('jpeg')
+          .toFile(outputPath)
 
         const photo = new Photo()
         photo.id = crypto.randomUUID()
@@ -53,7 +56,7 @@ export default class CatalogController {
 
   public async fetch({ response }: HttpContext) {
     try {
-      const photos = await Photo.query().preload('tags')
+      const photos = await Photo.query().preload('tags').orderBy('id')
 
       return response.ok({ photos })
     } catch (error) {
@@ -69,8 +72,8 @@ export default class CatalogController {
       let result: Photo[] = []
       const query = request.body()
 
-      const { results, cost, tagsExcluded, tagsMandatory, tagsRecommended } =
-        await photosService.search_v1_gpt_tags(query)
+      const { results, cost, tagsExcluded, tagsMandatory, tagsRecommended, converted_query } =
+        await photosService.search_v1_gpt(query)
 
       return response.ok({
         tagsExcluded,
@@ -78,6 +81,7 @@ export default class CatalogController {
         tagsRecommended,
         results,
         cost,
+        converted_query,
       })
     } catch (error) {
       console.error('Error fetching photos:', error)
