@@ -238,25 +238,28 @@ export default class PhotosService {
       (tag) => semanticProximities[tag] >= 15
     )
 
-    const { result: formalizedQuery } = await modelsService.getGPTResponse(
+    const { result: formalizedQuery, cost: cost1 } = await modelsService.getGPTResponse(
       SYSTEM_MESSAGE_QUERY_TO_LOGIC,
-      {
+      JSON.stringify({
         query: query.description,
-      }
+      })
+    )
+
+    const { result, cost: cost2 } = await modelsService.getGPTResponse(
+      SYSTEM_MESSAGE_SEARCH_GPT_TO_TAGS,
+      JSON.stringify({
+        query: formalizedQuery,
+        tagCollection: filteredTags,
+      })
     )
 
     const {
       tags_and: tagsAnd,
+      reasoning,
       tags_misc: tagsMisc,
       tags_not: tagsNot,
       tags_or: tagsOr,
-      reasoning,
-      costInEur,
-      totalTokens,
-    } = await modelsService.getGPTResponse(SYSTEM_MESSAGE_SEARCH_GPT_TO_TAGS, {
-      query: formalizedQuery,
-      tagCollection: filteredTags,
-    })
+    } = result
 
     // Step 2: Expand tags
     const expandedAndTags = await this.expandTags(tagsAnd, tagCollection)
@@ -292,10 +295,7 @@ export default class PhotosService {
       reasoning,
       tagsMisc: expandedMiscTags,
       tagsOr: expandedOrTags,
-      cost: {
-        costInEur: costInEur.toFixed(6),
-        totalTokens,
-      },
+      cost: cost2,
     }
   }
 
@@ -311,18 +311,12 @@ export default class PhotosService {
     const filteredIds = await this.getSemanticProximePhotos(photos, query)
 
     if (filteredIds.length === 0) {
-      // Si no hay resultados, devolver vacío con mensaje
       return {
         results: [],
-        cost: {
-          totalTokens: 0,
-          costInEur: '0.000000',
-        },
-        message: 'No results found',
       }
     }
 
-    let collection: any = filteredIds.map((id) => {
+    let collection: any = filteredIds.map((id: any) => {
       let photo: any = photos.find((photo) => photo.id == id)
       return {
         id,
@@ -331,77 +325,30 @@ export default class PhotosService {
     })
 
     if (query.iteration == 1) {
-      const { result: formalizedQuery } = await modelsService.getGPTResponse(
+      const { result: formalizedQuery, cost: cost1 } = await modelsService.getGPTResponse(
         SYSTEM_MESSAGE_QUERY_TO_LOGIC,
-        {
+        JSON.stringify({
           query: query.description,
-        }
+        })
       )
       query.description = formalizedQuery
     }
 
-    const payload = {
-      model: 'gpt-4o',
-      messages: [
-        {
-          role: 'system',
-          content: SYSTEM_MESSAGE_SEARCH_GPT,
-        },
-        {
-          role: 'user',
-          content: JSON.stringify({
-            query: query.description,
-            flexible: false,
-            collection,
-          }),
-        },
-      ],
-      max_tokens: 10000,
-    }
-
-    let rawResult
-    let jsonMatch
-    let cleanedResults: any[]
-
-    try {
-      const { data } = await axios.post(`${env.get('OPENAI_BASEURL')}/chat/completions`, payload, {
-        headers: {
-          'Authorization': `Bearer ${env.get('OPENAI_KEY')}`,
-          'Content-Type': 'application/json',
-        },
+    const { result, cost: cost2 } = await modelsService.getGPTResponse(
+      SYSTEM_MESSAGE_SEARCH_GPT,
+      JSON.stringify({
+        query: query.description,
+        flexible: false,
+        collection,
       })
+    )
 
-      rawResult = data.choices[0].message.content
-      jsonMatch = rawResult.match(/\[.*?\]/s)
-      cleanedResults = jsonMatch ? JSON.parse(jsonMatch[0]) : []
+    const photosResult = result.map((res: any) => photos.find((photo: any) => photo.id == res.id))
 
-      const photosResult = cleanedResults.map((res) =>
-        photos.find((photo: any) => photo.id == res.id)
-      )
-
-      console.log(cleanedResults)
-
-      const { prompt_tokens: promptTokens, completion_tokens: completionTokens } = data.usage
-      const totalTokens = promptTokens + completionTokens
-      const costInEur = totalTokens * COST_PER_TOKEN_EUR
-
-      // Retornar la respuesta
-      return {
-        results: photosResult[0]?.id ? photosResult : [],
-        cost: {
-          totalTokens,
-          costInEur: costInEur.toFixed(6),
-        },
-      }
-    } catch (error) {
-      // Manejar errores de parseo o solicitud
-      return {
-        results: [],
-        cost: {
-          totalTokens: 0,
-          costInEur: '0.000000',
-        },
-      }
+    // Retornar la respuesta
+    return {
+      results: photosResult[0]?.id ? photosResult : [],
+      cost: cost2,
     }
   }
 
@@ -435,6 +382,8 @@ export default class PhotosService {
   }
 
   public async search_gpt_img(query: any): Promise<any> {
+    const modelsService = new ModelsService()
+
     let photos: Photo[] = await Photo.query().preload('tags')
 
     const filteredIds = await this.getSemanticProximePhotos(photos, query)
@@ -447,11 +396,6 @@ export default class PhotosService {
       // Si no hay resultados, devolver vacío con mensaje
       return {
         results: [],
-        cost: {
-          totalTokens: 0,
-          costInEur: '0.000000',
-        },
-        message: 'No results found',
       }
     }
 
@@ -491,78 +435,34 @@ export default class PhotosService {
       }
     }
 
-    const payload = {
-      model: 'gpt-4o',
-      messages: [
+    const { result, cost: cost2 } = await modelsService.getGPTResponse(
+      SYSTEM_MESSAGE_SEARCH_GPT_IMG,
+      [
         {
-          role: 'system',
-          content: [
-            {
-              type: 'text',
-              text: SYSTEM_MESSAGE_SEARCH_GPT_IMG,
-            },
-          ],
+          type: 'text',
+          text: JSON.stringify({
+            query: query.description,
+            flexible: query.iteration > 1,
+          }),
         },
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify({
-                query: query.description,
-                flexible: query.iteration > 1,
-              }),
-            },
-            ...validImages.map(({ base64 }) => ({
-              type: 'image_url',
-              image_url: {
-                url: `data:image/jpeg;base64,${base64}`,
-                detail: 'low',
-              },
-            })),
-          ],
-        },
-      ],
-      max_tokens: 10000,
-    }
+        ...validImages.map(({ base64 }) => ({
+          type: 'image_url',
+          image_url: {
+            url: `data:image/jpeg;base64,${base64}`,
+            detail: 'low',
+          },
+        })),
+      ]
+    )
 
-    let rawResult
-    let cleanedResults: any[] = []
+    const photosResult = result.map((photoRes, idx) =>
+      photos.find((photo) => photo.id == validImages[photoRes.id].id)
+    )
 
-    try {
-      const { data } = await axios.post(`${env.get('OPENAI_BASEURL')}/chat/completions`, payload, {
-        headers: {
-          'Authorization': `Bearer ${env.get('OPENAI_KEY')}`,
-          'Content-Type': 'application/json',
-        },
-      })
-
-      rawResult = data.choices[0].message.content
-      const jsonMatch = rawResult.match(/\[.*?\]/s)
-      cleanedResults = jsonMatch ? JSON.parse(jsonMatch[0]) : []
-
-      const { prompt_tokens: promptTokens, completion_tokens: completionTokens } = data.usage
-      const totalTokens = promptTokens + completionTokens
-      const costInEur = totalTokens * COST_PER_TOKEN_EUR
-
-      return {
-        results: cleanedResults.map((_, idx) =>
-          photos.find((photo) => photo.id == validImages[idx].id)
-        ),
-        cost: {
-          totalTokens,
-          costInEur: costInEur.toFixed(6),
-        },
-      }
-    } catch (error) {
-      console.error('Error procesando las imágenes:', error)
-      return {
-        results: [],
-        cost: {
-          totalTokens: 0,
-          costInEur: '0.000000',
-        },
-      }
+    // Retornar la respuesta
+    return {
+      results: photosResult[0]?.id ? photosResult : [],
+      cost: cost2,
     }
   }
 }

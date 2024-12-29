@@ -82,7 +82,7 @@ export default class CatalogController {
         tagsMisc,
         tagsOr,
         message,
-      } = await photosService.search_gpt(query)
+      } = await photosService.search_gpt_to_tags(query)
 
       return response.ok({
         tagsExcluded,

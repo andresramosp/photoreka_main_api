@@ -1,9 +1,18 @@
 import env from '#start/env'
 import axios from 'axios'
 
-const COST_PER_1M_TOKENS_USD = 2.5
+const PRICES = {
+  'gpt-4o': {
+    input: 2.5 / 1_000_000, // USD per input token
+    output: 10.0 / 1_000_000, // USD per output token
+  },
+  'gpt-4o-mini': {
+    input: 0.15 / 1_000_000, // USD per input token
+    output: 0.6 / 1_000_000, // USD per output token
+  },
+}
+
 const USD_TO_EUR = 0.92
-const COST_PER_TOKEN_EUR = (COST_PER_1M_TOKENS_USD / 1_000_000) * USD_TO_EUR
 
 export default class ModelsService {
   public async semanticProximity(text: string, texts: any): Promise<{ [key: string]: number }> {
@@ -52,35 +61,74 @@ export default class ModelsService {
     }
   }
 
-  public async getGPTResponse(systemContent: string, userContent: any) {
-    const payload = {
-      model: 'gpt-4o',
-      messages: [
-        {
-          role: 'system',
-          content: systemContent,
+  public async getGPTResponse(
+    systemContent: string,
+    userContent: any,
+    model: 'gpt-4o' | 'gpt-4o-mini' = 'gpt-4o-mini'
+  ) {
+    try {
+      const payload = {
+        model,
+        messages: [
+          {
+            role: 'system',
+            content: systemContent,
+          },
+          {
+            role: 'user',
+            content: userContent,
+          },
+        ],
+        max_tokens: 10000,
+      }
+
+      console.log(JSON.stringify(payload).length)
+
+      const { data } = await axios.post(`${env.get('OPENAI_BASEURL')}/chat/completions`, payload, {
+        headers: {
+          'Authorization': `Bearer ${env.get('OPENAI_KEY')}`,
+          'Content-Type': 'application/json',
         },
-        {
-          role: 'user',
-          content: JSON.stringify(userContent),
+      })
+
+      const { prompt_tokens: promptTokens, completion_tokens: completionTokens } = data.usage
+      const totalTokens = promptTokens + completionTokens
+
+      const inputCost = promptTokens * PRICES[model].input * USD_TO_EUR
+      const outputCost = completionTokens * PRICES[model].output * USD_TO_EUR
+      const totalCostInEur = inputCost + outputCost
+
+      const rawResult = data.choices[0].message.content
+      let parsedResult
+
+      try {
+        parsedResult = JSON.parse(rawResult)
+      } catch {
+        const jsonArrayMatch = rawResult.match(/\[.*?\]/s)
+        const jsonObjectMatch = rawResult.match(/\{.*?\}/s)
+        if (jsonArrayMatch) {
+          parsedResult = JSON.parse(jsonArrayMatch[0])
+        } else if (jsonObjectMatch) {
+          parsedResult = JSON.parse(jsonObjectMatch[0])
+        } else {
+          parsedResult = {}
+        }
+      }
+
+      return {
+        result: parsedResult,
+        cost: {
+          totalCostInEur,
+          inputCost,
+          outputCost,
+          totalTokens,
+          promptTokens,
+          completionTokens,
         },
-      ],
-      max_tokens: 10000,
+      }
+    } catch (error) {
+      console.error('Error fetching GPT response:', error)
+      return {}
     }
-
-    const { data } = await axios.post(`${env.get('OPENAI_BASEURL')}/chat/completions`, payload, {
-      headers: {
-        'Authorization': `Bearer ${env.get('OPENAI_KEY')}`,
-        'Content-Type': 'application/json',
-      },
-    })
-
-    const { prompt_tokens: promptTokens, completion_tokens: completionTokens } = data.usage
-    const totalTokens = promptTokens + completionTokens
-    const costInEur = totalTokens * COST_PER_TOKEN_EUR
-
-    const rawResult = data.choices[0].message.content
-    const jsonMatch = rawResult.match(/\{.*?\}/s)
-    return jsonMatch ? { ...JSON.parse(jsonMatch[0]), costInEur, totalTokens } : {}
   }
 }

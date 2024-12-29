@@ -69,7 +69,7 @@ export const SYSTEM_MESSAGE_SEARCH_GPT = `
           - id: The ID of the photo.
           - reason: A short justification of why you chose it.
 
-        If no descriptions match, return a JSON array with only one item like this {id:null, reason: 'explanation of why no photos matched'}: .
+        If no descriptions match, return an empty JSON array.
       `
 export const SYSTEM_MESSAGE_SEARCH_GPT_IMG = `
       You are a JSON returner, and only JSON, in charge of performing complex photo searches.
@@ -82,7 +82,8 @@ export const SYSTEM_MESSAGE_SEARCH_GPT_IMG = `
     
       Return a JSON with an array containing objects like this:
       {id: '1234', reason: '...'}, where:
-        - id: The ID of the photo.
+        - id: The index of the photo.
         - reason: A short justification of why you chose it.
-      If no descriptions match, return a JSON array with only one item like this {id:null, reason: 'explanation of why no photos matched'}: .
+
+       If no descriptions match, return an empty JSON array.
     `
