@@ -2,6 +2,17 @@ import Photo from '#models/photo'
 import Tag from '#models/tag'
 import env from '#start/env'
 import axios from 'axios'
+import fs from 'fs/promises'
+
+import {
+  SYSTEM_MESSAGE_QUERY_TO_LOGIC,
+  SYSTEM_MESSAGE_SEARCH_GPT,
+  SYSTEM_MESSAGE_SEARCH_GPT_IMG,
+  SYSTEM_MESSAGE_SEARCH_GPT_TO_TAGS,
+} from '../utils/GPTMessages.js'
+import ModelsService from './models_service.js'
+import path from 'path'
+import sharp from 'sharp'
 
 const COST_PER_1M_TOKENS_USD = 2.5
 const USD_TO_EUR = 0.92
@@ -17,6 +28,8 @@ export default class PhotosService {
   }
 
   public async addMetadata(metadata: { id: string; [key: string]: any }[]) {
+    const modelsService = new ModelsService()
+
     for (const data of metadata) {
       const { id, description, ...rest } = data
 
@@ -30,7 +43,7 @@ export default class PhotosService {
         const existingTagNames = existingTags.map((tag) => tag.name)
 
         // Generate tags from description using new endpoint
-        const miscTags = description ? await this.fetchTagsByDescription(description) : []
+        const miscTags = description ? await modelsService.textToTags(description) : []
 
         for (const key of Object.keys(rest)) {
           if (key.endsWith('_tags')) {
@@ -44,7 +57,7 @@ export default class PhotosService {
 
                 // Check semantic proximity
                 if (!tag) {
-                  const semanticProximities = await this.fetchSemanticProximity(
+                  const semanticProximities = await modelsService.semanticProximity(
                     tagName,
                     existingTagNames
                   )
@@ -79,7 +92,7 @@ export default class PhotosService {
 
           // Check semantic proximity for misc tags
           if (!tag) {
-            const semanticProximities = await this.fetchSemanticProximity(
+            const semanticProximities = await modelsService.semanticProximity(
               miscTagName,
               existingTagNames
             )
@@ -127,50 +140,13 @@ export default class PhotosService {
     }
   }
 
-  private async fetchTagsByDescription(description: string): Promise<string[]> {
-    try {
-      const payload = { description }
-      const { data } = await axios.post('http://127.0.0.1:5000/generate_tags', payload, {
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      })
-
-      return data.generated_tags || []
-    } catch (error) {
-      console.error('Error fetching tags by description:', error)
-      return []
-    }
-  }
-  private async fetchSemanticProximity(
-    query: string,
-    tagCollection: string[]
-  ): Promise<{ [key: string]: number }> {
-    try {
-      const payload = {
-        tag: query,
-        tag_list: tagCollection,
-      }
-
-      const { data } = await axios.post('http://127.0.0.1:5000/semantic_proximity', payload, {
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      })
-
-      return data.similarities || {}
-    } catch (error) {
-      console.error('Error fetching semantic proximity:', error)
-      return {}
-    }
-  }
-
   private async expandTag(tag: string, tagCollection: string[]): Promise<string[]> {
-    const semanticProximities = await this.fetchSemanticProximity(tag, tagCollection)
+    const modelsService = new ModelsService()
+    const semanticProximities = await modelsService.semanticProximity(tag, tagCollection)
     const uniqueTags = new Set([
       tag,
       ...Object.keys(semanticProximities).filter(
-        (candidateTag) => semanticProximities[candidateTag] >= 55
+        (candidateTag) => semanticProximities[candidateTag] >= 65
       ),
     ])
     return Array.from(uniqueTags)
@@ -184,124 +160,11 @@ export default class PhotosService {
     return Promise.all(expandedTagsPromises)
   }
 
-  public async search_v1_gpt_tags(query: any): Promise<any> {
-    const tags = await Tag.all()
-    const tagCollection = tags.map((tag) => tag.name)
-
-    // Step 1: Filter tags based on semantic proximity
-    const semanticProximities = await this.fetchSemanticProximity(query.description, tagCollection)
-    const filteredTags = Object.keys(semanticProximities).filter(
-      (tag) => semanticProximities[tag] >= 15
-    )
-
-    const {
-      tags_and: tagsMandatory,
-      tags_misc: tagsRecommended,
-      tags_not: tagsExcluded,
-      converted_query,
-      usage,
-    } = await this.getGPTResponse(query.description, filteredTags)
-
-    // Step 2: Expand tags
-    const expandedMandatoryTags = await this.expandTags(tagsMandatory, tagCollection)
-    const expandedExcludedTags = await this.expandTags(tagsExcluded, tagCollection)
-
-    const allPhotos = await Photo.query().preload('tags')
-
-    // Step 3: Filter photos based on expanded tags (Step 1)
-    const step1Results = this.filterByTags(allPhotos, expandedMandatoryTags, expandedExcludedTags)
-
-    let step2Results: Photo[] = []
-    // if (step1Results.length === 0) {
-    //   const combinedTags = Array.from(new Set([...tagsMandatory, ...tagsRecommended]))
-    //   step2Results = this.filterByRecommended(allPhotos, combinedTags, tagsExcluded)
-    // }
-
-    let step3Results: Photo[] = []
-    // if (step1Results.length === 0 && step2Results.length === 0) {
-    //   const combinedTags = Array.from(new Set([...tagsMandatory, ...tagsRecommended]))
-    //   step3Results = this.filterByDescription(allPhotos, combinedTags)
-    // }
-
-    // Combine results
-    const filteredPhotos = [...new Set([...step1Results, ...step2Results, ...step3Results])]
-
-    const { prompt_tokens: promptTokens, completion_tokens: completionTokens } = usage
-    const totalTokens = promptTokens + completionTokens
-    const costInEur = totalTokens * COST_PER_TOKEN_EUR
-
-    return {
-      results: filteredPhotos,
-      tagsExcluded: expandedExcludedTags,
-      tagsMandatory: expandedMandatoryTags,
-      converted_query,
-      tagsRecommended,
-      cost: {
-        costInEur: costInEur.toFixed(6),
-        totalTokens,
-      },
-    }
-  }
-
-  private async getGPTResponse(query: string, tagCollection: string[]) {
-    const payload = {
-      model: 'gpt-4o',
-      messages: [
-        {
-          role: 'system',
-          content: `
-                You are a JSON returner, and only JSON, in charge of identifying relevant tags for a photo search. This tags can be found in 'tagCollection' and you must return only tags which are present there.
-                The user has given you in the text 'query' their search criteria in natural language, and you must return three arrays, which later will be use to compose a BD query.
-                
-                But first you have to carefully convert the query to separated logical segments, attending to all the query requierements, which are not always obvious like AND AND AND... 
-                Example1: For the query "photos with vegetation in cities with no people around", you can convert it to: "Photos that have vegetation AND are in cities with NOT people around".
-                Example2: For the query "photos inside restaurants with pets", you can convert it to: "Photos in a restaurant AND inside AND with pets".
-                
-                Then return these lists:
-
-                - tags_and (max. 1 tags per logical segment): each of these tags corresponds to a logical AND segment of the query. 
-                - tags_not (max. 1 tag per logical segment): each of these tags corresponds to a logical NOT segment of the query. 
-                - tags_misc (max 5 tags): other relevant tags related to the query, useful to refine the search
-                - converted_query: the query converted to logical segments, to debug it
-                
-                Example: For the query "photos of children on an Asian beach with no pets around. 
-                First, convert the query to understand the logical segments: "photos with children AND placed in Asia AND in the beach with NOT pet around"
-                Second, create the three arrays according to the exact segments:
-                { 
-                    "tags_and": ["children", "asia", "beach"], 
-                    "tags_not": ["pets"],
-                    "tags_misc": ["summer", "vacation", "waves", "joyful"], 
-                    "converted_query": "photos with children AND placed in Asia AND in the beach with NOT pet around"
-                    
-                }.
-                `,
-        },
-        {
-          role: 'user',
-          content: JSON.stringify({ query, tagCollection }),
-        },
-      ],
-      max_tokens: 10000,
-    }
-
-    const { data } = await axios.post(`${env.get('OPENAI_BASEURL')}/chat/completions`, payload, {
-      headers: {
-        'Authorization': `Bearer ${env.get('OPENAI_KEY')}`,
-        'Content-Type': 'application/json',
-      },
-    })
-
-    const rawResult = data.choices[0].message.content
-    const jsonMatch = rawResult.match(/\{.*?\}/s)
-    return jsonMatch
-      ? { ...JSON.parse(jsonMatch[0]), usage: data.usage }
-      : { tags_and: [], tags_some: [], tags_not: [], usage: data.usage }
-  }
-
   private filterByTags(
     allPhotos: Photo[],
     expandedMandatoryTags: string[][],
-    expandedExcludedTags: string[][]
+    expandedExcludedTags: string[][],
+    expandedOrTags: string[][]
   ) {
     let filteredPhotos = allPhotos
 
@@ -323,19 +186,24 @@ export default class PhotosService {
       )
     }
 
+    // Filter by recommended tags
+    if (expandedOrTags.length > 0) {
+      filteredPhotos = filteredPhotos.filter((photo) =>
+        expandedOrTags.some((tagGroup) =>
+          tagGroup.some((tag) => photo.tags.some((t) => t.name === tag))
+        )
+      )
+    }
+
     return filteredPhotos
   }
 
-  private filterByRecommended(allPhotos: Photo[], combinedTags: string[], tagsExcluded: string[]) {
+  private filterByRecommended(allPhotos: Photo[], combinedTags: string[]) {
     return allPhotos.filter((photo) => {
       const matchingTags = photo.tags.filter((t) => combinedTags.includes(t.name))
       const ratio = matchingTags.length / combinedTags.length
 
-      const hasExcludedTags = tagsExcluded.some((tag: string) =>
-        photo.tags.some((t) => t.name === tag)
-      )
-
-      return ratio >= 0.5 && !hasExcludedTags
+      return ratio >= 0.1
     })
   }
 
@@ -355,37 +223,135 @@ export default class PhotosService {
     })
   }
 
-  public async search_v1_gpt(query: any): Promise<any> {
-    const photos: Photo[] = await Photo.all()
+  public async search_gpt_to_tags(query: any): Promise<any> {
+    const modelsService = new ModelsService()
 
-    // Crear el collection para el payload
-    const collection = photos.map((photo, index) => ({
-      id: index,
-      description: photo.description,
-    }))
+    const tags = await Tag.all()
+    const tagCollection = tags.map((tag) => tag.name)
 
-    // Crear el payload para OpenAI
-    // Crear el payload para OpenAI
+    // Step 1: Filter tags based on semantic proximity
+    const semanticProximities = await modelsService.semanticProximity(
+      query.description,
+      tagCollection
+    )
+    const filteredTags = Object.keys(semanticProximities).filter(
+      (tag) => semanticProximities[tag] >= 15
+    )
+
+    const { result: formalizedQuery } = await modelsService.getGPTResponse(
+      SYSTEM_MESSAGE_QUERY_TO_LOGIC,
+      {
+        query: query.description,
+      }
+    )
+
+    const {
+      tags_and: tagsAnd,
+      tags_misc: tagsMisc,
+      tags_not: tagsNot,
+      tags_or: tagsOr,
+      reasoning,
+      costInEur,
+      totalTokens,
+    } = await modelsService.getGPTResponse(SYSTEM_MESSAGE_SEARCH_GPT_TO_TAGS, {
+      query: formalizedQuery,
+      tagCollection: filteredTags,
+    })
+
+    // Step 2: Expand tags
+    const expandedAndTags = await this.expandTags(tagsAnd, tagCollection)
+    const expandedNotTags = await this.expandTags(tagsNot, tagCollection)
+    const expandedOrTags = await this.expandTags(tagsOr, tagCollection)
+    const expandedMiscTags = await this.expandTags(tagsMisc, tagCollection)
+
+    let allPhotos = await Photo.query().preload('tags')
+
+    if (query.iteration > 1) {
+      allPhotos = allPhotos.filter((photo) => !query.currentPhotos.includes(photo.id))
+    }
+
+    const step1Results = this.filterByTags(
+      allPhotos,
+      expandedAndTags,
+      expandedNotTags,
+      expandedOrTags
+    )
+
+    let step2Results: Photo[] = []
+    if (step1Results.length === 0 && query.iteration > 1) {
+      const combinedTags = Array.from(new Set([...tagsAnd, ...expandedMiscTags]))
+      step2Results = this.filterByRecommended(allPhotos, combinedTags)
+    }
+
+    const filteredPhotos = [...new Set([...step1Results, ...step2Results])]
+
+    return {
+      results: filteredPhotos,
+      tagsExcluded: expandedNotTags,
+      tagsMandatory: expandedAndTags,
+      reasoning,
+      tagsMisc: expandedMiscTags,
+      tagsOr: expandedOrTags,
+      cost: {
+        costInEur: costInEur.toFixed(6),
+        totalTokens,
+      },
+    }
+  }
+
+  // TODO: Cambiar a getGPTResponse de modelService, adaptando el regex de parseo
+  public async search_gpt(query: any): Promise<any> {
+    let modelsService = new ModelsService()
+    let photos: Photo[] = await Photo.query().preload('tags')
+
+    if (query.iteration > 1) {
+      photos = photos.filter((photo) => !query.currentPhotos.includes(photo.id))
+    }
+
+    const filteredIds = await this.getSemanticProximePhotos(photos, query)
+
+    if (filteredIds.length === 0) {
+      // Si no hay resultados, devolver vacío con mensaje
+      return {
+        results: [],
+        cost: {
+          totalTokens: 0,
+          costInEur: '0.000000',
+        },
+        message: 'No results found',
+      }
+    }
+
+    let collection: any = filteredIds.map((id) => {
+      let photo: any = photos.find((photo) => photo.id == id)
+      return {
+        id,
+        description: photo?.description + photo?.tags.map((tag: any) => tag.name).join(','),
+      }
+    })
+
+    if (query.iteration == 1) {
+      const { result: formalizedQuery } = await modelsService.getGPTResponse(
+        SYSTEM_MESSAGE_QUERY_TO_LOGIC,
+        {
+          query: query.description,
+        }
+      )
+      query.description = formalizedQuery
+    }
+
     const payload = {
       model: 'gpt-4o',
       messages: [
         {
           role: 'system',
-          content: `
-        You are a JSON returner, and only JSON, in charge of performing complex photo searches.
-        The user has given you in the text 'query' what they want, in natural language, and you must search the photos provided in 'collection', through their descriptions, those that are relevant to the user's query. 
-      
-        Return a JSON with an array containing objects like this:
-        {id: '1234', reason: 'because there are two dogs'}, where:
-          - id: The ID of the photo.
-          - reason: A short justification of why you chose it.
-        If no descriptions match, return a JSON array with an item like this {id:null, reason: 'explanation of why no photos matched'}: .
-      `,
+          content: SYSTEM_MESSAGE_SEARCH_GPT,
         },
         {
           role: 'user',
           content: JSON.stringify({
             query: query.description,
+            flexible: false,
             collection,
           }),
         },
@@ -398,7 +364,6 @@ export default class PhotosService {
     let cleanedResults: any[]
 
     try {
-      // Enviar solicitud a OpenAI
       const { data } = await axios.post(`${env.get('OPENAI_BASEURL')}/chat/completions`, payload, {
         headers: {
           'Authorization': `Bearer ${env.get('OPENAI_KEY')}`,
@@ -406,18 +371,15 @@ export default class PhotosService {
         },
       })
 
-      // Procesar la respuesta de OpenAI
       rawResult = data.choices[0].message.content
-
-      // Extraer JSON de la respuesta incluso si hay texto adicional
       jsonMatch = rawResult.match(/\[.*?\]/s)
       cleanedResults = jsonMatch ? JSON.parse(jsonMatch[0]) : []
 
-      const photosResult = cleanedResults.map((res) => photos[res.id])
+      const photosResult = cleanedResults.map((res) =>
+        photos.find((photo: any) => photo.id == res.id)
+      )
 
       console.log(cleanedResults)
-
-      // Calcular el costo
 
       const { prompt_tokens: promptTokens, completion_tokens: completionTokens } = data.usage
       const totalTokens = promptTokens + completionTokens
@@ -425,7 +387,7 @@ export default class PhotosService {
 
       // Retornar la respuesta
       return {
-        results: photosResult,
+        results: photosResult[0]?.id ? photosResult : [],
         cost: {
           totalTokens,
           costInEur: costInEur.toFixed(6),
@@ -436,7 +398,168 @@ export default class PhotosService {
       return {
         results: [],
         cost: {
-          totalTokensy: 0,
+          totalTokens: 0,
+          costInEur: '0.000000',
+        },
+      }
+    }
+  }
+
+  public async getSemanticProximePhotos(photos: any, query: any) {
+    // Obtener las proximidades semánticas
+    const modelsService = new ModelsService()
+    const semanticProximities = await modelsService.semanticProximity(
+      query.description,
+      photos.map((photo: any) => {
+        return {
+          id: photo.id,
+          text: photo.tags.map((tag: any) => tag.name).join(','),
+        }
+      })
+    )
+
+    // Obtener el X% superior de similitudes
+    const resultSetLength = 10
+    const similarityThreshold = 50 // Umbral mínimo de similitud
+
+    const sortedProximities = Object.entries(semanticProximities).sort(([, a], [, b]) => b - a)
+    const topCount = Math.ceil(resultSetLength)
+
+    const topIds = sortedProximities.slice(0, topCount).map(([id]) => id)
+    const thresholdIds = Object.entries(semanticProximities)
+      .filter(([, similarity]) => similarity >= similarityThreshold)
+      .map(([id]) => id)
+
+    const filteredIds = Array.from(new Set([...topIds, ...thresholdIds]))
+    return filteredIds
+  }
+
+  public async search_gpt_img(query: any): Promise<any> {
+    let photos: Photo[] = await Photo.query().preload('tags')
+
+    const filteredIds = await this.getSemanticProximePhotos(photos, query)
+
+    if (query.iteration > 1) {
+      photos = photos.filter((photo) => !query.currentPhotos.includes(photo.id))
+    }
+
+    if (filteredIds.length === 0) {
+      // Si no hay resultados, devolver vacío con mensaje
+      return {
+        results: [],
+        cost: {
+          totalTokens: 0,
+          costInEur: '0.000000',
+        },
+        message: 'No results found',
+      }
+    }
+
+    const uploadPath = path.join(process.cwd(), 'public/uploads/photos')
+
+    const validImages: any[] = []
+    for (const id of filteredIds) {
+      const photo = photos.find((photo) => photo.id == id)
+      if (!photo) continue
+
+      const filePath = path.join(uploadPath, `${photo.name}`)
+
+      try {
+        await fs.access(filePath)
+
+        const resizedBuffer = await sharp(filePath)
+          .resize({ width: 1024, fit: 'inside' })
+          .toBuffer()
+
+        validImages.push({
+          id: photo.id,
+          base64: resizedBuffer.toString('base64'),
+        })
+      } catch (error) {
+        console.warn(`No se pudo procesar la imagen con ID: ${photo.id}`, error)
+      }
+    }
+
+    if (validImages.length === 0) {
+      return {
+        results: [],
+        cost: {
+          totalTokens: 0,
+          costInEur: '0.000000',
+        },
+        message: 'No valid images found',
+      }
+    }
+
+    const payload = {
+      model: 'gpt-4o',
+      messages: [
+        {
+          role: 'system',
+          content: [
+            {
+              type: 'text',
+              text: SYSTEM_MESSAGE_SEARCH_GPT_IMG,
+            },
+          ],
+        },
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                query: query.description,
+                flexible: query.iteration > 1,
+              }),
+            },
+            ...validImages.map(({ base64 }) => ({
+              type: 'image_url',
+              image_url: {
+                url: `data:image/jpeg;base64,${base64}`,
+                detail: 'low',
+              },
+            })),
+          ],
+        },
+      ],
+      max_tokens: 10000,
+    }
+
+    let rawResult
+    let cleanedResults: any[] = []
+
+    try {
+      const { data } = await axios.post(`${env.get('OPENAI_BASEURL')}/chat/completions`, payload, {
+        headers: {
+          'Authorization': `Bearer ${env.get('OPENAI_KEY')}`,
+          'Content-Type': 'application/json',
+        },
+      })
+
+      rawResult = data.choices[0].message.content
+      const jsonMatch = rawResult.match(/\[.*?\]/s)
+      cleanedResults = jsonMatch ? JSON.parse(jsonMatch[0]) : []
+
+      const { prompt_tokens: promptTokens, completion_tokens: completionTokens } = data.usage
+      const totalTokens = promptTokens + completionTokens
+      const costInEur = totalTokens * COST_PER_TOKEN_EUR
+
+      return {
+        results: cleanedResults.map((_, idx) =>
+          photos.find((photo) => photo.id == validImages[idx].id)
+        ),
+        cost: {
+          totalTokens,
+          costInEur: costInEur.toFixed(6),
+        },
+      }
+    } catch (error) {
+      console.error('Error procesando las imágenes:', error)
+      return {
+        results: [],
+        cost: {
+          totalTokens: 0,
           costInEur: '0.000000',
         },
       }

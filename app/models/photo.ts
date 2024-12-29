@@ -8,7 +8,7 @@ export default class Photo extends BaseModel {
   declare id: string
 
   @column()
-  declare description: string | null
+  declare description: string
 
   @column()
   declare title: string | null

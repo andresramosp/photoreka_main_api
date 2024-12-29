@@ -72,16 +72,28 @@ export default class CatalogController {
       let result: Photo[] = []
       const query = request.body()
 
-      const { results, cost, tagsExcluded, tagsMandatory, tagsRecommended, converted_query } =
-        await photosService.search_v1_gpt(query)
+      const {
+        results,
+        cost,
+        tagsExcluded,
+        tagsMandatory,
+        tagsRecommended,
+        reasoning,
+        tagsMisc,
+        tagsOr,
+        message,
+      } = await photosService.search_gpt(query)
 
       return response.ok({
         tagsExcluded,
         tagsMandatory,
         tagsRecommended,
+        tagsMisc,
+        tagsOr,
         results,
         cost,
-        converted_query,
+        message,
+        reasoning,
       })
     } catch (error) {
       console.error('Error fetching photos:', error)
