@@ -15,7 +15,11 @@ const PRICES = {
 const USD_TO_EUR = 0.92
 
 export default class ModelsService {
-  public async semanticProximity(text: string, texts: any): Promise<{ [key: string]: number }> {
+  public async semanticProximity(
+    text: string,
+    texts: any,
+    threshold: number = 0
+  ): Promise<{ [key: string]: number }> {
     try {
       const isStringArray = Array.isArray(texts) && texts.every((item) => typeof item === 'string')
       const endpoint = isStringArray
@@ -26,6 +30,7 @@ export default class ModelsService {
         ? {
             tag: text,
             tag_list: texts,
+            threshold,
           }
         : {
             tag: text,
@@ -37,6 +42,25 @@ export default class ModelsService {
           'Content-Type': 'application/json',
         },
       })
+
+      return data.similarities || {}
+    } catch (error) {
+      console.error('Error fetching semantic proximity:', error)
+      return {}
+    }
+  }
+
+  public async bulkSemanticProximity(tags1: any, tags2: any): Promise<any> {
+    try {
+      const { data } = await axios.post(
+        'http://127.0.0.1:5000/semantic_proximity_bulk',
+        { tags1, tags2 },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        }
+      )
 
       return data.similarities || {}
     } catch (error) {
@@ -69,16 +93,23 @@ export default class ModelsService {
     try {
       const payload = {
         model,
-        messages: [
-          {
-            role: 'system',
-            content: systemContent,
-          },
-          {
-            role: 'user',
-            content: userContent,
-          },
-        ],
+        messages: systemContent
+          ? [
+              {
+                role: 'system',
+                content: systemContent,
+              },
+              {
+                role: 'user',
+                content: userContent,
+              },
+            ]
+          : [
+              {
+                role: 'user',
+                content: userContent,
+              },
+            ],
         max_tokens: 10000,
       }
 
@@ -102,7 +133,7 @@ export default class ModelsService {
       let parsedResult
 
       try {
-        parsedResult = JSON.parse(rawResult)
+        parsedResult = JSON.parse(rawResult.replace(/```(?:json)?\s*/g, '').trim())
       } catch {
         const jsonArrayMatch = rawResult.match(/\[.*?\]/s)
         const jsonObjectMatch = rawResult.match(/\{.*?\}/s)

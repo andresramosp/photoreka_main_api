@@ -7,8 +7,10 @@ import fs from 'fs/promises'
 import {
   SYSTEM_MESSAGE_QUERY_TO_LOGIC,
   SYSTEM_MESSAGE_SEARCH_GPT,
+  SYSTEM_MESSAGE_SEARCH_GPT_FORMALIZED,
   SYSTEM_MESSAGE_SEARCH_GPT_IMG,
   SYSTEM_MESSAGE_SEARCH_GPT_TO_TAGS,
+  SYSTEM_MESSAGE_SEARCH_GPT_TO_TAGS_V2,
 } from '../utils/GPTMessages.js'
 import ModelsService from './models_service.js'
 import path from 'path'
@@ -27,144 +29,35 @@ export default class PhotosService {
     return photos
   }
 
-  public async addMetadata(metadata: { id: string; [key: string]: any }[]) {
+  private async expandTag(
+    tag: string,
+    tagCollection: string[],
+    threshold: number
+  ): Promise<string[]> {
     const modelsService = new ModelsService()
-
-    for (const data of metadata) {
-      const { id, description, ...rest } = data
-
-      const photo = await Photo.query().where('id', id).first()
-
-      if (photo) {
-        const fields = Array.from(Photo.$columnsDefinitions.keys()) as (keyof Photo)[]
-        const updateData: Partial<Photo> = {}
-        const tagInstances = []
-        const existingTags = await Tag.all()
-        const existingTagNames = existingTags.map((tag) => tag.name)
-
-        // Generate tags from description using new endpoint
-        const miscTags = description ? await modelsService.textToTags(description) : []
-
-        for (const key of Object.keys(rest)) {
-          if (key.endsWith('_tags')) {
-            const group = key.replace('_tags', '')
-            const tags = rest[key]
-            delete rest[key]
-
-            if (tags && Array.isArray(tags)) {
-              for (const tagName of tags) {
-                let tag = await Tag.findBy('name', tagName)
-
-                // Check semantic proximity
-                if (!tag) {
-                  const semanticProximities = await modelsService.semanticProximity(
-                    tagName,
-                    existingTagNames
-                  )
-                  const similarTagName = Object.keys(semanticProximities).find(
-                    (candidate) => semanticProximities[candidate] >= 80
-                  )
-
-                  if (similarTagName) {
-                    tag = existingTags.find((t) => t.name === similarTagName) || null
-                    console.log(
-                      `Tag '${tagName}' replaced with existing tag '${similarTagName}' based on semantic similarity.`
-                    )
-                  }
-
-                  if (!tag) {
-                    tag = await Tag.create({ name: tagName, group })
-                  }
-                } else {
-                  tag.group = group
-                  await tag.save()
-                }
-
-                tagInstances.push(tag)
-              }
-            }
-          }
-        }
-
-        // Process misc tags
-        for (const miscTagName of miscTags) {
-          let tag = await Tag.findBy('name', miscTagName)
-
-          // Check semantic proximity for misc tags
-          if (!tag) {
-            const semanticProximities = await modelsService.semanticProximity(
-              miscTagName,
-              existingTagNames
-            )
-            const similarTagName = Object.keys(semanticProximities).find(
-              (candidate) => semanticProximities[candidate] >= 80
-            )
-
-            if (similarTagName) {
-              tag = existingTags.find((t) => t.name === similarTagName) || null
-              console.log(
-                `Misc tag '${miscTagName}' replaced with existing tag '${similarTagName}' based on semantic similarity.`
-              )
-            }
-
-            if (!tag) {
-              tag = await Tag.create({ name: miscTagName, group: 'misc' })
-            }
-          } else {
-            tag.group = 'misc'
-            await tag.save()
-          }
-
-          tagInstances.push(tag)
-        }
-
-        for (const key of fields) {
-          if (rest[key]) {
-            updateData[key] = rest[key] as any
-            delete rest[key]
-          }
-        }
-
-        // Update photo data
-        photo.merge({ ...updateData, description, metadata: { ...photo.metadata, ...rest } })
-        await photo.save()
-
-        // Associate tags with the photo
-        if (tagInstances.length > 0) {
-          await photo.related('tags').sync(
-            tagInstances.map((tag) => tag.id),
-            false
-          )
-        }
-      }
-    }
-  }
-
-  private async expandTag(tag: string, tagCollection: string[]): Promise<string[]> {
-    const modelsService = new ModelsService()
-    const semanticProximities = await modelsService.semanticProximity(tag, tagCollection)
-    const uniqueTags = new Set([
-      tag,
-      ...Object.keys(semanticProximities).filter(
-        (candidateTag) => semanticProximities[candidateTag] >= 65
-      ),
-    ])
+    const semanticProximities = await modelsService.semanticProximity(tag, tagCollection, threshold)
+    const uniqueTags = new Set([tag, ...Object.keys(semanticProximities)])
     return Array.from(uniqueTags)
   }
+  async expandTags(tagArrays, allTags, threshold) {
+    const expandedTags = await Promise.all(
+      tagArrays.map(async (subArray) => {
+        if (subArray.length === 0) return []
 
-  private async expandTags(tags: string[], tagCollection: string[]): Promise<string[][]> {
-    const expandedTagsPromises = tags.map(async (tag) => {
-      const expansions = await this.expandTag(tag, tagCollection)
-      return expansions
-    })
-    return Promise.all(expandedTagsPromises)
+        const baseTag = subArray[0] // Only expand based on the first tag
+        const newTags = await this.expandTag(baseTag, allTags, threshold)
+
+        return [...subArray, ...Object.values(newTags)] // Append new tags to the original subarray
+      })
+    )
+
+    return expandedTags // Return the array of arrays
   }
 
   private filterByTags(
     allPhotos: Photo[],
     expandedMandatoryTags: string[][],
-    expandedExcludedTags: string[][],
-    expandedOrTags: string[][]
+    expandedExcludedTags: string[]
   ) {
     let filteredPhotos = allPhotos
 
@@ -176,23 +69,15 @@ export default class PhotosService {
         )
       )
     }
-
-    // Filter by excluded tags
+    const exclusionThreshold = 0 // estricto
     if (expandedExcludedTags.length > 0) {
-      filteredPhotos = filteredPhotos.filter((photo) =>
-        expandedExcludedTags.every((tagGroup) =>
-          tagGroup.every((tag) => !photo.tags.some((t) => t.name === tag))
-        )
-      )
-    }
-
-    // Filter by recommended tags
-    if (expandedOrTags.length > 0) {
-      filteredPhotos = filteredPhotos.filter((photo) =>
-        expandedOrTags.some((tagGroup) =>
-          tagGroup.some((tag) => photo.tags.some((t) => t.name === tag))
-        )
-      )
+      filteredPhotos = filteredPhotos.filter((photo) => {
+        const excludedTagCount = photo.tags.filter((t) =>
+          expandedExcludedTags.includes(t.name)
+        ).length
+        const exclusionPercentage = (excludedTagCount / expandedExcludedTags.length) * 100
+        return exclusionPercentage <= exclusionThreshold
+      })
     }
 
     return filteredPhotos
@@ -227,16 +112,15 @@ export default class PhotosService {
     const modelsService = new ModelsService()
 
     const tags = await Tag.all()
-    const tagCollection = tags.map((tag) => tag.name)
+    const allTags = tags.map((tag) => tag.name)
 
     // Step 1: Filter tags based on semantic proximity
     const semanticProximities = await modelsService.semanticProximity(
       query.description,
-      tagCollection
+      allTags,
+      40 - 3 * query.iteration
     )
-    const filteredTags = Object.keys(semanticProximities).filter(
-      (tag) => semanticProximities[tag] >= 15
-    )
+    const filteredTags = Object.keys(semanticProximities)
 
     const { result: formalizedQuery, cost: cost1 } = await modelsService.getGPTResponse(
       SYSTEM_MESSAGE_QUERY_TO_LOGIC,
@@ -246,55 +130,47 @@ export default class PhotosService {
     )
 
     const { result, cost: cost2 } = await modelsService.getGPTResponse(
-      SYSTEM_MESSAGE_SEARCH_GPT_TO_TAGS,
+      SYSTEM_MESSAGE_SEARCH_GPT_TO_TAGS_V2,
       JSON.stringify({
         query: formalizedQuery,
         tagCollection: filteredTags,
       })
     )
 
-    const {
-      tags_and: tagsAnd,
-      reasoning,
-      tags_misc: tagsMisc,
-      tags_not: tagsNot,
-      tags_or: tagsOr,
-    } = result
+    const { tags_and: tagsAnd, reasoning, tags_misc: tagsMisc, tags_not: tagsNot } = result
 
     // Step 2: Expand tags
-    const expandedAndTags = await this.expandTags(tagsAnd, tagCollection)
-    const expandedNotTags = await this.expandTags(tagsNot, tagCollection)
-    const expandedOrTags = await this.expandTags(tagsOr, tagCollection)
-    const expandedMiscTags = await this.expandTags(tagsMisc, tagCollection)
+    const threshold = 85 - query.iteration * 8
+    const expandedAndTags =
+      query.iteration > 1 ? await this.expandTags(tagsAnd, allTags, threshold) : tagsAnd
+    // const expandedNotTags = await this.expandTags(tagsNot, tagCollection)
+    // const expandedMiscTags = await this.expandTags(tagsMisc, tagCollection)
 
-    let allPhotos = await Photo.query().preload('tags')
+    let allPhotos = await Photo.query()
+      .preload('tags')
+      .if(query.iteration > 1, (queryBuilder) => {
+        queryBuilder.whereNotIn('id', query.currentPhotos)
+      })
 
-    if (query.iteration > 1) {
-      allPhotos = allPhotos.filter((photo) => !query.currentPhotos.includes(photo.id))
-    }
-
-    const step1Results = this.filterByTags(
-      allPhotos,
-      expandedAndTags,
-      expandedNotTags,
-      expandedOrTags
-    )
+    const step1Results = this.filterByTags(allPhotos, expandedAndTags, tagsNot)
 
     let step2Results: Photo[] = []
-    if (step1Results.length === 0 && query.iteration > 1) {
-      const combinedTags = Array.from(new Set([...tagsAnd, ...expandedMiscTags]))
-      step2Results = this.filterByRecommended(allPhotos, combinedTags)
-    }
+    // if (step1Results.length === 0 && query.iteration > 1) {
+    //   const combinedTags = Array.from(new Set([...tagsAnd, ...expandedMiscTags]))
+    //   step2Results = this.filterByRecommended(allPhotos, combinedTags)
+    // }
 
     const filteredPhotos = [...new Set([...step1Results, ...step2Results])]
 
+    console.log(formalizedQuery)
+    console.log(result)
+
     return {
       results: filteredPhotos,
-      tagsExcluded: expandedNotTags,
+      tagsExcluded: tagsNot,
       tagsMandatory: expandedAndTags,
       reasoning,
-      tagsMisc: expandedMiscTags,
-      tagsOr: expandedOrTags,
+      tagsMisc: tagsMisc,
       cost: cost2,
     }
   }
@@ -304,7 +180,15 @@ export default class PhotosService {
     let modelsService = new ModelsService()
     let photos: Photo[] = await Photo.query().preload('tags')
 
-    if (query.iteration > 1) {
+    if (query.iteration == 1) {
+      const { result: formalizedQuery, cost: cost1 } = await modelsService.getGPTResponse(
+        SYSTEM_MESSAGE_QUERY_TO_LOGIC,
+        JSON.stringify({
+          query: query.description,
+        })
+      )
+      query.description = formalizedQuery.result
+    } else {
       photos = photos.filter((photo) => !query.currentPhotos.includes(photo.id))
     }
 
@@ -320,30 +204,24 @@ export default class PhotosService {
       let photo: any = photos.find((photo) => photo.id == id)
       return {
         id,
-        description: photo?.description + photo?.tags.map((tag: any) => tag.name).join(','),
+        // description: photo?.description,
+        description: photo?.tags.map((tag: any) => tag.name).join(','),
       }
     })
 
-    if (query.iteration == 1) {
-      const { result: formalizedQuery, cost: cost1 } = await modelsService.getGPTResponse(
-        SYSTEM_MESSAGE_QUERY_TO_LOGIC,
-        JSON.stringify({
-          query: query.description,
-        })
-      )
-      query.description = formalizedQuery
-    }
-
     const { result, cost: cost2 } = await modelsService.getGPTResponse(
-      SYSTEM_MESSAGE_SEARCH_GPT,
+      SYSTEM_MESSAGE_SEARCH_GPT_FORMALIZED,
       JSON.stringify({
         query: query.description,
-        flexible: false,
         collection,
-      })
+      }),
+      'gpt-4o-mini'
     )
 
     const photosResult = result.map((res: any) => photos.find((photo: any) => photo.id == res.id))
+
+    console.log(query.description)
+    console.log(result)
 
     // Retornar la respuesta
     return {
@@ -366,7 +244,7 @@ export default class PhotosService {
     )
 
     // Obtener el X% superior de similitudes
-    const resultSetLength = 10
+    const resultSetLength = 20
     const similarityThreshold = 50 // Umbral mínimo de similitud
 
     const sortedProximities = Object.entries(semanticProximities).sort(([, a], [, b]) => b - a)
