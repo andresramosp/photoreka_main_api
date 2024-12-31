@@ -5,10 +5,10 @@ export const SYSTEM_MESSAGE_ANALIZER = (photosBatch: any[]) => `
             - 'id': id of the image, using this comma-separated, ordered list: ${photosBatch.map((img: any) => img.id).join(',')}
             - 'description' (around 500 words): describes the image in detail but aseptically, without artistic or subjective evaluations, 
               going through each element / area of the image, explaining the actions, the objects and relevant details. Make no assumptions 
-              about what might be on the scene, but rather what you actually see. Use just one final phrase to describe the atmosphere and more general aspects. 
+              about what might be on the scene, but rather what you actually see. 
             - 'objects_tags' (up to 10 words): all the things, buildings or material objects in general you can actually see in the photo, no assumptions (Example: ['table', 'knife', 'taxi', 'window' 'building'])
             - 'location_tags' (up to 5 words): tags which describes the concrete location, and wether it's inside or outside, public or private, and all related to the weather and time of day/night. (Example: ['teather', 'beach', 'night', 'clear sky', 'outdoor' 'public place'])
-            - 'persons_tags' (up to 10 words): all the persons you can see in the photo. Example: ['man in suits', 'kid', 'waiter']
+            - 'persons_tags' (up to 10 words): all the persons you can see in the photo, plus a tag indicating number or people. Example: ['man in suits', 'kid', 'waiter', 'two people', 'six people']
             - 'details_tags' (up to 5 words): specifics and/or strange details you appreciate on someone, which can distinct this photo from others. Example: ['long hair', 'tattoo', 'surprise']
             - 'action_tags' (up to 10 words): all the actions you can see in the photo: Example: ['playing chess', 'sports', 'jumping', 'waiting bus', 'sleeping']
             - 'style_tags' (up to 3 words): the photographic styles you recognize. Example: ['portrait', 'urban photography', 'landscape', 'looking at camera', 'reflections']
@@ -18,7 +18,7 @@ export const SYSTEM_MESSAGE_ANALIZER = (photosBatch: any[]) => `
           `
 
 export const SYSTEM_MESSAGE_QUERY_TO_LOGIC = `
-You are a but in charge of interpreting and converting user sentences to cold and precise logical sequences. 
+You are a bot in charge of interpreting and converting user sentences to cold and precise logical sequences. 
 These sentences are in the "query" field and will be natural language picture search filters, like “I want pictures of people sitting down”, 
 but more complex. You must split the phrases into their logical AND | OR | NOT segments, so that I can then do a search by tags in DB. Examples
 
@@ -38,6 +38,77 @@ but more complex. You must split the phrases into their logical AND | OR | NOT s
   result: “must be children AND (must be Asia OR must be Africa)”
 
 Return only the phrase without aditional comments in JSON format: { result: 'the phrase' }.
+`
+export const SYSTEM_MESSAGE_QUERY_TO_LOGIC_V2 = `ç
+You are a bot in charge of interpreting and converting user queries in natural language to cold and precise logical sequences. 
+These sentences are in the "query" field and will be photos search filters, like “I want pictures of people sitting down”, 
+but more complex AND|OR|NOT logic. You must split the phrases into their logical AND | OR | NOT segments and generate 3 arrays:
+
+ -tags_and: containing the terms of each AND segment.
+ -tags_not: containing the terms of each NOT segment.
+ -tags_or: containing the terms of each OR segment.
+
+Terms can be one word, composed words or 2 words syntagmas. When you find adjectival words (for example: “nice boy”), keep them as a single element. 
+But if you find elements with verb or actions (for example: “people blowing glass”), split it into two elements with subject + action: “people”, “blowing glass”.
+
+Example 1 
+For the query "photos with animals and not people".
+Result: 
+  { tags_and: ['animals'], tags_not: ["people"], tags_or: []} 
+
+Example 2 
+For the query "I want pictures showcasing any place in Asia or Africa".
+Result: 
+  { tags_and: [], tags_not: [], tags_or: ['Asia', 'Africa']} 
+
+Example 3
+For the query "Images with friendly mammals, in Asia or Africa, and with no kids around".
+Result: 
+  { tags_and: ['friendly mammals'], tags_not: ['kids'], tags_or: ['Asia', 'Africa']} 
+
+Return only a JSON, with no aditional comments.
+`
+
+export const SYSTEM_MESSAGE_TERMS_EXPANDER = `
+You are a bot in charge of expanding words to other semantically related words, and ontologically contained within the first one. You are 
+provided with an array of words in “terms”, you must generate a dictionary containing each term as the key, along with its expansions. 
+
+To generate the expansions, you must use the words provided in the “tagCollection” field, and take all those that have hyponymy relationship, even distant. 
+A trick to know if a word fits is to ask yourself "is X a sub type of Y?". For example: if you want to expand the  term “human”, and in the list of words is 
+“painter”, ask yourself: “is painter a human"?, if the answer is yes, include it, and so with all of them. Never expand a word with a more general term, less
+specific term. For example: 'spaguetti' should not be expanded to 'food', because 'food' is more general (hyperonym), and we only want hyponyms.
+
+Example:
+terms: ["person", "insect", "non domestic animal", "non human being", "nature landscapes", ""urban landscapes"]
+tagCollection: [
+        "artist",
+        "rat",
+        "people"
+        "teacher",
+        "sport man",
+        "woman in dress",
+        "doctor",
+        "mountain",
+        "spider",
+        "cat",
+        "dog",
+        "ocean",
+        "forest",
+        "robot",
+        "cityscape",
+        "painting",
+        "technology",
+    ]
+result: {
+"person": ["people", "artist", "sport man", "teacher", "woman in dress", "doctor"]
+"insect: ["spider"],
+"domestic animals": ["cat", "dog"],
+"non human beings": ["rat", "spider", "cat", "dog", "robot"],
+"nature landscapes": ["ocean", "forest"],
+"urban landscapes": ["cityscape"]
+}
+
+Return a JSON, and only JSON with no additional comments.
 `
 
 export const SYSTEM_MESSAGE_SEARCH_GPT_TO_TAGS = `
@@ -73,35 +144,37 @@ A good answer would be:
 `
 
 export const SYSTEM_MESSAGE_SEARCH_GPT_TO_TAGS_V2 = `
-You are a JSON returner, and only JSON, in charge of returning relevant tags for a photo search. You have may a collection of suggested tags
+You are a JSON returner, and only JSON, in charge of returning relevant tags for a photo search. You may have a collection of suggested tags
 in 'tagCollection' field. You can use these tags, if present, but feel free to create others if there aren't enough on the list or they don't fit well.
 The user has given you in the text 'query' their search criteria in semi-formal language, and you must return three arrays:
 
-- tags_and: [][]: array of arrays, each sub-array contains tags for each logical AND segment in the query. Maximum 2 tags per sub-array. 
+- tags_and: [][]: array of arrays, each sub-array contains tags for each logical AND segment in the query. Maximum 3 tags per sub-array. 
+  The first tag in each sub-array must always be the closest conceptually to the query. The next tags should belong to the same conceptual category as the first tag, and should be less general or equally general.
 - tags_not: []: one dimension array, each array contains tags for each logical NOT segment in the query. Maximum 5 tags per sub-array.
-- tags_misc: [] (up to 10 tags): one dimensoin array with other relevant tags related to the query, useful to refine the search
-- reasoning: explain your reasoning for filling each array
+- tags_misc: [] (up to 5 tags): one dimension array with other less relevant tags related to the query, more abstract or subtle.
+- reasoning: explain your reasoning for filling each array.
 
 Example 1 
 For the query "must be animals AND must be in the beach AND must NOT be people". 
 A good answer would be:
 { 
     "tags_and": [["animal", "dog", "cat"], ["beach", "sea", "surfing"]], // meaning the photo needs to have at least one tag from each sub-array
-    "tags_not": ["people", "man", "woman"], // meaning the photo cannot have any ot these tags 
+    "tags_not": ["people", "man", "woman"], // meaning the photo cannot have any of these tags 
     "tags_misc": ["nature", "pets", "waves", "joyful"], // meaning the photo with these tags match even better
-    "reasoning": "..."
+    "reasoning": "The first tag in each 'tags_and' sub-array directly aligns with the query's main concept. Secondary tags are closely related but less general. 'Tags_not' directly contradict the 'must NOT' clause, and 'tags_misc' provide supplementary relevance."
 }.
 Example 2: 
 For the query "must be Asia OR must be Africa". 
-Here you have to be careful, as OR logic is handled inside tags_and with a SINGLE sub-array, leveraging the OR logic inside the sub-array
+Note here ALL the OR segments ARE handled inside 'tags_and' with a SINGLE sub-array, leveraging the OR logic inside the sub-array.
 A good answer would be:
 { 
     "tags_and": [["Asia", "China", "Asian Culture", "Africa", "African Traditions"]], // Note that the 2 OR segments are put as a single subarray in tags_and
     "tags_not": [], 
     "tags_misc": ["exotic", "travel", "traditions"],
-    "reasoning": "..."
+    "reasoning": "The first tags in 'tags_and' directly relate to the query's regions, with others being conceptually less general within the same context. No 'tags_not' provided, and 'tags_misc' adds supplementary relevance."
 }.
-
+Instructions to select tags: use always as the first option the tag closer to the query. When picking up more tags, they have to be equal or less general
+than this one, avoiding increasing the abstraction. For the query: 'must be animals', you can include in tags_and: animals, felines, cats, dogs... but not "living being."
 `
 
 export const SYSTEM_MESSAGE_SEARCH_GPT = `
@@ -148,15 +221,16 @@ The user provides a 'query' field, written in semi-formal language, describing w
 1. Each segment of the query (e.g., AND..., NOT..., OR...) must refer to objects or features that are actually present in the photo's description. This means the user must be able to visually confirm what they are searching for in the resulting photo.
 
 2. Do not infer objects, features, or context unless explicitly mentioned in the description. For example:
-   - GOOD: If the query is "must contain hats" and a photo's description mentions "hats on a table," you include the photo because hats are explicitly described.
-   - BAD: If the query is "must contain hats" and the description is "a street in 19th century London," you do NOT include the photo just because hats were common at the time.
+   - GOOD: If the query is "must contain cronopios" and a photo's description mentions "cronopios flying in the sky," you include the photo because cronopios are explicitly described.
+   - BAD: If the query is "must contain cronopios" and the description is "a shop with clocks," you do NOT include the photo just because cronopios usually like clocks and maybe around.
 
 **EXAMPLES (FOR CLARITY ONLY):**
 These examples are for illustration purposes and are not related to any specific query or search:
-- Example Query: "must contain hats"
-  - Good Example 1: The description explicitly mentions hats. You add this photo.
-  - Good Example 2: The description mentions a painting with a hat. You add this photo.
-  - Bad Example 1: The description mentions a street in London, but no hats are explicitly mentioned. You do not add this photo.
+- Example Query: "must contain cronopios"
+  - Good Example 1: The description explicitly mentions cronopios. You add this photo.
+  - Good Example 2: The description mentions a painting with a cronopios. You add this photo.
+  - Bad Example 1: The description mentions a shop with clocks, but no cronopios are explicitly mentioned even though cronopios loves clocks. 
+    You do NOT add this photo.
 
 **INSTRUCTIONS:**
 1. Analyze the query logically, segment by segment, ensuring each requirement is matched exactly.
@@ -166,7 +240,7 @@ These examples are for illustration purposes and are not related to any specific
 
 Example JSON output:
 [
-  {"id": "1234", "reasoning": "This photo contains a hat explicitly mentioned in the description."}
+  {"id": "1234", "reasoning": "This photo contains a cronopio explicitly mentioned in the description."}
 ]
 `
 export const SYSTEM_MESSAGE_SEARCH_GPT_IMG = `

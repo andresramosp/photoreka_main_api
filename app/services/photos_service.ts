@@ -6,11 +6,13 @@ import fs from 'fs/promises'
 
 import {
   SYSTEM_MESSAGE_QUERY_TO_LOGIC,
+  SYSTEM_MESSAGE_QUERY_TO_LOGIC_V2,
   SYSTEM_MESSAGE_SEARCH_GPT,
   SYSTEM_MESSAGE_SEARCH_GPT_FORMALIZED,
   SYSTEM_MESSAGE_SEARCH_GPT_IMG,
   SYSTEM_MESSAGE_SEARCH_GPT_TO_TAGS,
   SYSTEM_MESSAGE_SEARCH_GPT_TO_TAGS_V2,
+  SYSTEM_MESSAGE_TERMS_EXPANDER,
 } from '../utils/GPTMessages.js'
 import ModelsService from './models_service.js'
 import path from 'path'
@@ -36,18 +38,18 @@ export default class PhotosService {
   ): Promise<string[]> {
     const modelsService = new ModelsService()
     const semanticProximities = await modelsService.semanticProximity(tag, tagCollection, threshold)
-    const uniqueTags = new Set([tag, ...Object.keys(semanticProximities)])
-    return Array.from(uniqueTags)
+    return Array.from(Object.keys(semanticProximities))
   }
-  async expandTags(tagArrays, allTags, threshold) {
+  async expandTags(tagArrays: any, allTags: any, threshold: number) {
     const expandedTags = await Promise.all(
-      tagArrays.map(async (subArray) => {
+      tagArrays.map(async (subArray: any) => {
         if (subArray.length === 0) return []
 
         const baseTag = subArray[0] // Only expand based on the first tag
         const newTags = await this.expandTag(baseTag, allTags, threshold)
 
-        return [...subArray, ...Object.values(newTags)] // Append new tags to the original subarray
+        let result = new Set([...subArray, ...Object.values(newTags)]) // Append new tags to the original subarray
+        return Array.from(result)
       })
     )
 
@@ -56,26 +58,30 @@ export default class PhotosService {
 
   private filterByTags(
     allPhotos: Photo[],
-    expandedMandatoryTags: string[][],
-    expandedExcludedTags: string[]
+    tagsAnd: string[][],
+    tagsNot: string[],
+    tagsOr: string[]
   ) {
     let filteredPhotos = allPhotos
 
+    // los or se meten todos como segmento más del AND
+    if (tagsOr.length) tagsAnd.push(tagsOr)
+
     // Filter by mandatory tags
-    if (expandedMandatoryTags.length > 0) {
+    if (tagsAnd.length > 0 && tagsAnd[0].length) {
       filteredPhotos = filteredPhotos.filter((photo) =>
-        expandedMandatoryTags.every((tagGroup) =>
-          tagGroup.some((tag) => photo.tags.some((t) => t.name === tag))
-        )
+        tagsAnd.every((tagGroup) => {
+          return tagGroup.some((tag) => {
+            return photo.tags.some((t) => t.name === tag)
+          })
+        })
       )
     }
     const exclusionThreshold = 0 // estricto
-    if (expandedExcludedTags.length > 0) {
+    if (tagsNot.length > 0) {
       filteredPhotos = filteredPhotos.filter((photo) => {
-        const excludedTagCount = photo.tags.filter((t) =>
-          expandedExcludedTags.includes(t.name)
-        ).length
-        const exclusionPercentage = (excludedTagCount / expandedExcludedTags.length) * 100
+        const excludedTagCount = photo.tags.filter((t) => tagsNot.includes(t.name)).length
+        const exclusionPercentage = (excludedTagCount / tagsNot.length) * 100
         return exclusionPercentage <= exclusionThreshold
       })
     }
@@ -108,70 +114,167 @@ export default class PhotosService {
     })
   }
 
-  public async search_gpt_to_tags(query: any): Promise<any> {
+  public async search_gpt_to_tags_v2(query: any): Promise<any> {
     const modelsService = new ModelsService()
 
     const tags = await Tag.all()
     const allTags = tags.map((tag) => tag.name)
+    let allPhotos
+    let cost1
+    let queryLogicResult
 
-    // Step 1: Filter tags based on semantic proximity
+    if (query.iteration == 1) {
+      const { result, cost } = await modelsService.getGPTResponse(
+        SYSTEM_MESSAGE_QUERY_TO_LOGIC_V2,
+        JSON.stringify({
+          query: query.description,
+        })
+      )
+      queryLogicResult = result
+      cost1 = cost
+      allPhotos = await Photo.query().preload('tags')
+    } else {
+      queryLogicResult = query.currentQueryLogicResult
+      allPhotos = await Photo.query()
+        .preload('tags')
+        .if(query.iteration > 1, (queryBuilder) => {
+          queryBuilder.whereNotIn('id', query.currentPhotos)
+        })
+    }
+
+    const terms = [
+      ...queryLogicResult.tags_and,
+      ...queryLogicResult.tags_not,
+      ...queryLogicResult.tags_or,
+    ]
+
     const semanticProximities = await modelsService.semanticProximity(
-      query.description,
+      terms.join(','),
       allTags,
-      40 - 3 * query.iteration
+      20 - 5 * query.iteration
     )
     const filteredTags = Object.keys(semanticProximities)
 
-    const { result: formalizedQuery, cost: cost1 } = await modelsService.getGPTResponse(
-      SYSTEM_MESSAGE_QUERY_TO_LOGIC,
+    const { result: expandedDictionary, cost: cost2 } = await modelsService.getGPTResponse(
+      SYSTEM_MESSAGE_TERMS_EXPANDER,
       JSON.stringify({
-        query: query.description,
-      })
-    )
-
-    const { result, cost: cost2 } = await modelsService.getGPTResponse(
-      SYSTEM_MESSAGE_SEARCH_GPT_TO_TAGS_V2,
-      JSON.stringify({
-        query: formalizedQuery,
+        terms,
         tagCollection: filteredTags,
       })
     )
 
-    const { tags_and: tagsAnd, reasoning, tags_misc: tagsMisc, tags_not: tagsNot } = result
+    const mergedDictionary = { ...expandedDictionary }
 
-    // Step 2: Expand tags
-    const threshold = 85 - query.iteration * 8
-    const expandedAndTags =
-      query.iteration > 1 ? await this.expandTags(tagsAnd, allTags, threshold) : tagsAnd
-    // const expandedNotTags = await this.expandTags(tagsNot, tagCollection)
-    // const expandedMiscTags = await this.expandTags(tagsMisc, tagCollection)
+    for (const key in query.currentExpandedDict) {
+      if (Array.isArray(query.currentExpandedDict[key])) {
+        mergedDictionary[key] = [
+          ...new Set([...(mergedDictionary[key] || []), ...query.currentExpandedDict[key]]),
+        ]
+      } else {
+        mergedDictionary[key] = query.currentExpandedDict[key]
+      }
+    }
 
-    let allPhotos = await Photo.query()
-      .preload('tags')
-      .if(query.iteration > 1, (queryBuilder) => {
-        queryBuilder.whereNotIn('id', query.currentPhotos)
+    let tagsAnd, tagsNot, tagsOr
+
+    tagsAnd = queryLogicResult.tags_and.map((tag: string) => {
+      let expandedTerms = mergedDictionary[tag].length ? [tag, ...mergedDictionary[tag]] : [tag]
+      return expandedTerms
+    })
+    tagsNot = queryLogicResult.tags_not
+      .map((tag: string) => {
+        let expandedTerms = mergedDictionary[tag].length ? [tag, ...mergedDictionary[tag]] : [tag]
+        return expandedTerms
       })
+      .flat()
+    tagsOr = queryLogicResult.tags_or
+      .map((tag: string) => {
+        let expandedTerms = mergedDictionary[tag].length ? [tag, ...mergedDictionary[tag]] : [tag]
+        return expandedTerms
+      })
+      .flat()
 
-    const step1Results = this.filterByTags(allPhotos, expandedAndTags, tagsNot)
-
-    let step2Results: Photo[] = []
-    // if (step1Results.length === 0 && query.iteration > 1) {
-    //   const combinedTags = Array.from(new Set([...tagsAnd, ...expandedMiscTags]))
-    //   step2Results = this.filterByRecommended(allPhotos, combinedTags)
-    // }
-
-    const filteredPhotos = [...new Set([...step1Results, ...step2Results])]
-
-    console.log(formalizedQuery)
-    console.log(result)
+    const results = this.filterByTags(allPhotos, tagsAnd, tagsNot, tagsOr)
+    const filteredPhotos = [...new Set([...results])]
 
     return {
       results: filteredPhotos,
-      tagsExcluded: tagsNot,
-      tagsMandatory: expandedAndTags,
+      cost: { cost1, cost2 },
+      queryLogicResult,
+      expandedDictionary: mergedDictionary,
+    }
+  }
+
+  public async search_gpt_to_tags(query: any): Promise<any> {
+    const modelsService = new ModelsService()
+
+    let allPhotos
+    let reasoning
+    let cost
+    let tagsAnd: any[], tagsNot: any[], tagsMisc: any[]
+
+    const tags = await Tag.all()
+    const allTags = tags.map((tag) => tag.name)
+
+    // Solo expandimos tags ya existentes
+    if (query.iteration > 1) {
+      const threshold = 85 - query.iteration * 10
+      tagsAnd = await this.expandTags(query.currentTags.tagsAnd, allTags, threshold)
+      tagsNot = query.currentTags.tagsNot
+      tagsMisc = query.currentTags.tagsMisc
+
+      allPhotos = await Photo.query()
+        .preload('tags')
+        .if(query.iteration > 1, (queryBuilder) => {
+          queryBuilder.whereNotIn('id', query.currentPhotos)
+        })
+      // Llamamos a GPT para formalizar y sacar listas de tags
+    } else {
+      allPhotos = await Photo.query().preload('tags')
+
+      const semanticProximities = await modelsService.semanticProximity(
+        query.description,
+        allTags,
+        50 - 3 * query.iteration
+      )
+      const filteredTags = Object.keys(semanticProximities)
+
+      const { result: formalizedQuery, cost: cost1 } = await modelsService.getGPTResponse(
+        SYSTEM_MESSAGE_QUERY_TO_LOGIC,
+        JSON.stringify({
+          query: query.description,
+        })
+      )
+
+      console.log(formalizedQuery)
+
+      const { result, cost: cost2 } = await modelsService.getGPTResponse(
+        SYSTEM_MESSAGE_SEARCH_GPT_TO_TAGS_V2,
+        JSON.stringify({
+          query: formalizedQuery,
+          tagCollection: filteredTags,
+        })
+      )
+
+      tagsAnd = result.tags_and
+      tagsNot = result.tags_not
+      tagsMisc = result.tags_misc
+      reasoning = result.reasoning
+      cost = cost2
+    }
+
+    const results = this.filterByTags(allPhotos, tagsAnd, tagsNot)
+    const filteredPhotos = [...new Set([...results])]
+
+    console.log(results)
+
+    return {
+      results: filteredPhotos,
+      tagsNot,
+      tagsAnd,
       reasoning,
-      tagsMisc: tagsMisc,
-      cost: cost2,
+      tagsMisc,
+      cost,
     }
   }
 
@@ -205,7 +308,7 @@ export default class PhotosService {
       return {
         id,
         // description: photo?.description,
-        description: photo?.tags.map((tag: any) => tag.name).join(','),
+        description: photo?.description + ' ' + photo?.tags.map((tag: any) => tag.name).join(','), // TODO solo tags semanticamente proximas! Y apra desc?
       }
     })
 

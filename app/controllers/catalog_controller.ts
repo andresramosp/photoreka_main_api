@@ -65,36 +65,30 @@ export default class CatalogController {
     }
   }
 
-  public async search({ response, request }: HttpContext) {
+  public async searchTags({ response, request }: HttpContext) {
     try {
       const photosService = new PhotosService()
 
-      let result: Photo[] = []
       const query = request.body()
 
-      const {
-        results,
-        cost,
-        tagsExcluded,
-        tagsMandatory,
-        tagsRecommended,
-        reasoning,
-        tagsMisc,
-        tagsOr,
-        message,
-      } = await photosService.search_gpt(query)
+      const result = await photosService.search_gpt_to_tags_v2(query)
 
-      return response.ok({
-        tagsExcluded,
-        tagsMandatory,
-        tagsRecommended,
-        tagsMisc,
-        tagsOr,
-        results,
-        cost,
-        message,
-        reasoning,
-      })
+      return response.ok(result)
+    } catch (error) {
+      console.error('Error fetching photos:', error)
+      return response.internalServerError({ message: 'Error fetching photos' })
+    }
+  }
+
+  public async searchGPT({ response, request }: HttpContext) {
+    try {
+      const photosService = new PhotosService()
+
+      const query = request.body()
+
+      const result = await photosService.search_gpt(query)
+
+      return response.ok(result)
     } catch (error) {
       console.error('Error fetching photos:', error)
       return response.internalServerError({ message: 'Error fetching photos' })
