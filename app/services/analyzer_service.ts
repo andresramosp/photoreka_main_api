@@ -1,18 +1,12 @@
 import sharp from 'sharp'
 import fs from 'fs/promises'
 import path from 'path'
-import env from '#start/env'
-import axios from 'axios'
 import PhotosService from './photos_service.js'
 import Photo from '#models/photo'
 import { Exception } from '@adonisjs/core/exceptions'
 import ModelsService from './models_service.js'
 import Tag from '#models/tag'
 import { SYSTEM_MESSAGE_ANALIZER } from '../utils/GPTMessages.js'
-
-const COST_PER_1M_TOKENS_USD = 2.5
-const USD_TO_EUR = 0.92
-const COST_PER_TOKEN_EUR = (COST_PER_1M_TOKENS_USD / 1_000_000) * USD_TO_EUR
 
 export default class AnalyzerService {
   /**
@@ -88,24 +82,9 @@ export default class AnalyzerService {
   }
 
   public async addMetadata(metadata: { id: string; [key: string]: any }[]) {
-    const modelsService = new ModelsService()
-
     // Fetch all tags once and preprocess them
     const existingTags = await Tag.all()
     const tagMap = new Map(existingTags.map((tag) => [tag.name.toLowerCase(), tag]))
-
-    // Prepare a unified list of all tags to process (rest and misc)
-    const allTagsToProcess = []
-    for (const data of metadata) {
-      const { description, ...rest } = data
-      if (description) {
-        const descriptionTags = await modelsService.textToTags(description)
-        allTagsToProcess.push(...descriptionTags)
-      }
-      Object.keys(rest)
-        .filter((key) => key.endsWith('_tags'))
-        .forEach((key) => allTagsToProcess.push(...(rest[key] || [])))
-    }
 
     for (const data of metadata) {
       const { id, description, ...rest } = data
@@ -123,14 +102,6 @@ export default class AnalyzerService {
             console.log('Adding new tag: ', tagName.toLowerCase())
           }
           tagInstances.push(tag)
-        }
-
-        // Process misc tags
-        if (description) {
-          const miscTags = await modelsService.textToTags(description)
-          for (const tagName of miscTags) {
-            await processTag(tagName, 'misc')
-          }
         }
 
         // Process rest tags

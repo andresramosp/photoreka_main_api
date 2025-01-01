@@ -3,18 +3,21 @@ export const SYSTEM_MESSAGE_ANALIZER = (photosBatch: any[]) => `
             For each image, include:
 
             - 'id': id of the image, using this comma-separated, ordered list: ${photosBatch.map((img: any) => img.id).join(',')}
-            - 'description' (around 500 words): describes the image in detail but aseptically, without artistic or subjective evaluations, 
-              going through each element / area of the image, explaining the actions, the objects and relevant details. Make no assumptions 
+            - 'description' (up to 500 words): describes the image in detail but aseptically, without artistic or subjective evaluations, 
+              going through each element / area of the image, describing the actions, the objects and relevant details. Make no assumptions 
               about what might be on the scene, but rather what you actually see. 
-            - 'objects_tags' (up to 10 words): all the things, buildings or material objects in general you can actually see in the photo, no assumptions (Example: ['table', 'knife', 'taxi', 'window' 'building'])
-            - 'location_tags' (up to 5 words): tags which describes the concrete location, and wether it's inside or outside, public or private, and all related to the weather and time of day/night. (Example: ['teather', 'beach', 'night', 'clear sky', 'outdoor' 'public place'])
-            - 'persons_tags' (up to 10 words): all the persons you can see in the photo, plus a tag indicating number or people. Example: ['man in suits', 'kid', 'waiter', 'two people', 'six people']
-            - 'details_tags' (up to 5 words): specifics and/or strange details you appreciate on someone, which can distinct this photo from others. Example: ['long hair', 'tattoo', 'surprise']
-            - 'action_tags' (up to 10 words): all the actions you can see in the photo: Example: ['playing chess', 'sports', 'jumping', 'waiting bus', 'sleeping']
-            - 'style_tags' (up to 3 words): the photographic styles you recognize. Example: ['portrait', 'urban photography', 'landscape', 'looking at camera', 'reflections']
-            - 'mood_tags' (up to 3 words): the general mood or feeling you recognize. Example: ['joyful', 'dramatic']
-            - 'culture_tags' (up to 3 words): the culture or country you think the photo has been taken. Example: ['China', 'Asia', 'Traditional'])
-            - 'misc_tags' (up to 5 words): all the tags that you think are important for this photo in particular and are not covered in the previous categories. Can be typical tags like "crowd" or "light", but you can also be more creative.
+            - 'objects_tags' (up to 10 words): all the material objects you actually see in the photo (Example: ['table', 'long knife', 'yellow taxi', 'window' 'building'])
+            - 'location_tags' (up to 5 words): tags which describes the concrete location, and wether it's inside or outside. (Example: ['teather', 'beach', 'fashion shop', 'outdoors' 'public square'])
+            - 'weather_time_tags': (up to 3 words): tags related to weather and time of the day (Example: ['night', 'rainy', 'winter'])
+            - 'persons_tags' (up to 10 words): all the persons you can see in the photo, plus a tag indicating number or people. Example: ['man in suits', 'funny kid', 'waiter', 'two people', 'six people']
+            - 'action_tags' (up to 5 words): similiar to 'persons_tags', but enphatizing the actions of each person. Example: ['man playing chess', 'kid jumping', 'woman taking photo', 'old man waiting bus']
+            - 'details_tags' (up to 5 words): specifics and/or strange details you appreciate on someone, which can distinct this photo from others. Example: ['long hair', 'tattoo']
+            - 'style_tags' (up to 2 words): the photographic styles you recognize. Example: ['portrait', 'urban photography', 'landscape', 'looking at camera', 'reflections']
+            - 'mood_tags' (up to 2 words): the general mood or feeling you recognize. Example: ['joyful', 'dramatic']
+            - 'culture_tags' (up to 2 words): the culture or country you guess the photo has been taken. As much concrete as possible. Example: ['Madrid', 'China', 'Asia', 'Traditional'])
+
+            IMPORTANT: Avoid labels that are too generic or abstract, such as: [environment, activity, shapes, scene, lights...] 
+            If you really have to use these words, qualify them. For example: “artificial lights”..
           `
 
 export const SYSTEM_MESSAGE_QUERY_TO_LOGIC = `
@@ -73,12 +76,16 @@ export const SYSTEM_MESSAGE_TERMS_EXPANDER = `
 You are a bot in charge of expanding words to other semantically related words, and ontologically contained within the first one. You are 
 provided with an array of words in “terms”, you must generate a dictionary containing each term as the key, along with its expansions. 
 
-To generate the expansions, you must use the words provided in the “tagCollection” field, and take all those that have hyponymy relationship, even distant. 
-A trick to know if a word fits is to ask yourself "is X a sub type of Y?". For example: if you want to expand the  term “human”, and in the list of words is 
-“painter”, ask yourself: “is painter a human"?, if the answer is yes, include it, and so with all of them. Never expand a word with a more general term, less
-specific term. For example: 'spaguetti' should not be expanded to 'food', because 'food' is more general (hyperonym), and we only want hyponyms.
+To generate the expansions, you must use the words provided in the “tagCollection” field. There are two fundamentals rules:
+1. The chosen words must have a hyponym or direct synonym relationship with the tag to be expanded. Ask always yourself "is X a sub type of Y?". 
+For example: if you want to expand the term “human”, and in the list of words is “painter”, ask yourself: “is painter a human"?, if the answer is yes, 
+include it, and so with all of them.
+2. Never expand a word with a more general term, less specific term. For example: 'spaguetti' should not be expanded to 'food', because 'food' 
+is more general. 
+ -Good example: 'feline' > expanded to > 'cat' (increase in specificity OK)
+- Bad example: 'feline' > expanded to > 'animal' (increase in generality BAD)
 
-Example:
+- Complete Example:
 terms: ["person", "insect", "non domestic animal", "non human being", "nature landscapes", ""urban landscapes"]
 tagCollection: [
         "artist",
