@@ -3,13 +3,13 @@ export const SYSTEM_MESSAGE_ANALIZER = (photosBatch: any[]) => `
             For each image, include:
 
             - 'id': id of the image, using this comma-separated, ordered list: ${photosBatch.map((img: any) => img.id).join(',')}
-            - 'description' (up to 500 words): describes the image in detail but aseptically, without artistic or subjective evaluations, 
-              going through each element / area of the image, describing the actions, the objects and relevant details. Make no assumptions 
+            - 'description' (around 500 words): describes the image in all detail, without artistic or subjective evaluations, 
+              going through each element / area / object of the image, describing the actions, the objects, the people and relevant details. Make no assumptions 
               about what might be on the scene, but rather what you actually see. 
             - 'objects_tags' (up to 10 words): all the material objects you actually see in the photo (Example: ['table', 'long knife', 'yellow taxi', 'window' 'building'])
             - 'location_tags' (up to 5 words): tags which describes the concrete location, and wether it's inside or outside. (Example: ['teather', 'beach', 'fashion shop', 'outdoors' 'public square'])
             - 'weather_time_tags': (up to 3 words): tags related to weather and time of the day (Example: ['night', 'rainy', 'winter'])
-            - 'persons_tags' (up to 10 words): all the persons you can see in the photo, plus a tag indicating number or people. Example: ['man in suits', 'funny kid', 'waiter', 'two people', 'six people']
+            - 'persons_tags' (up to 10 words): all the persons you can see in the photo, plus a tag indicating number or people. Example: ['man in suits', 'funny kid', 'waiter in black', 'two people', 'six people']
             - 'action_tags' (up to 5 words): similiar to 'persons_tags', but enphatizing the actions of each person. Example: ['man playing chess', 'kid jumping', 'woman taking photo', 'old man waiting bus']
             - 'details_tags' (up to 5 words): specifics and/or strange details you appreciate on someone, which can distinct this photo from others. Example: ['long hair', 'tattoo']
             - 'style_tags' (up to 2 words): the photographic styles you recognize. Example: ['portrait', 'urban photography', 'landscape', 'looking at camera', 'reflections']

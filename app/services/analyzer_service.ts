@@ -9,9 +9,11 @@ import Tag from '#models/tag'
 import { SYSTEM_MESSAGE_ANALIZER } from '../utils/GPTMessages.js'
 import { createRequire } from 'module'
 const require = createRequire(import.meta.url)
-const natural = require('natural')
+const pluralize = require('pluralize')
 
-const lemmatizer = natural.LancasterStemmer
+const lemmatizer = {
+  stem: (word: string) => pluralize.singular(word.toLowerCase()),
+}
 
 export default class AnalyzerService {
   /**
@@ -75,8 +77,8 @@ export default class AnalyzerService {
 
     const responses = await Promise.allSettled(batchPromises)
 
-    const results = []
-    const costs = []
+    const results: any[] = []
+    const costs: any[] = []
 
     responses.forEach((response) => {
       if (response.status === 'fulfilled') {
@@ -98,6 +100,8 @@ export default class AnalyzerService {
   }
 
   public async addMetadata(metadata: { id: string; [key: string]: any }[]) {
+    const modelsService = new ModelsService()
+
     // Fetch all tags once and preprocess them
     const existingTags = await Tag.all()
     const tagMap = new Map(
@@ -123,6 +127,14 @@ export default class AnalyzerService {
           }
 
           tagInstances.push(tag)
+        }
+
+        // Extract tags from description
+        if (description) {
+          const descTags = await modelsService.textToTags(description)
+          for (const tagName of descTags) {
+            await processTag(tagName, 'desc')
+          }
         }
 
         // Process rest tags
