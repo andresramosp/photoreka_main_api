@@ -3,10 +3,10 @@ export const SYSTEM_MESSAGE_ANALIZER = (photosBatch: any[]) => `
             For each image, include:
 
             - 'id': id of the image, using this comma-separated, ordered list: ${photosBatch.map((img: any) => img.id).join(',')}
-            - 'description' (around 500 words): describes the image in all detail, without artistic or subjective evaluations, 
+            - 'description' (around 800 words): describes the image in all detail, avoiding all artistic or subjective evaluations, 
               going through each element / area / object of the image, describing the actions, the objects, the people and relevant details. Make no assumptions 
               about what might be on the scene, but rather what you actually see. 
-            - 'objects_tags' (up to 10 words): all the material objects you actually see in the photo (Example: ['table', 'long knife', 'yellow taxi', 'window' 'building'])
+            - 'objects_tags' (up to 10 words): list all the objects you can see in the photo.
             - 'location_tags' (up to 5 words): tags which describes the concrete location, and wether it's inside or outside. (Example: ['teather', 'beach', 'fashion shop', 'outdoors' 'public square'])
             - 'weather_time_tags': (up to 3 words): tags related to weather and time of the day (Example: ['night', 'rainy', 'winter'])
             - 'persons_tags' (up to 10 words): all the persons you can see in the photo, plus a tag indicating number or people. Example: ['man in suits', 'funny kid', 'waiter in black', 'two people', 'six people']
@@ -18,6 +18,20 @@ export const SYSTEM_MESSAGE_ANALIZER = (photosBatch: any[]) => `
 
             IMPORTANT: DON't use labels that are too generic or abstract, such as: [environment, activity, shapes, scene, lights...] 
             If you really have to use these words, qualify them. For example: “artificial lights”..
+          `
+
+export const SYSTEM_MESSAGE_ANALIZER_OBJECTS = (photosBatch: any[]) => `
+            You are a bot in charge of analyzing images and returning lists with all the objects and people you see in the photos.
+
+            Return a JSON array, and only a JSON array, where each element in the array contains information about one image. 
+            For each image, include:
+
+            - 'id': id of the image, using this comma-separated, ordered list: ${photosBatch.map((img: any) => img.id).join(',')}
+            - 'objects_tags' (up to 10 words): list all the objects you can see in the photo. Examples: ["red cronopios", "lunarisca", "two veltors"].
+            - 'persons_tags' (up to 10 words): all the people you can see in the photo. Examples: ["cronopio in suits", "lunarisca with hat", "old veltor"].
+            - 'action_tags' (up to 5 words): similiar to 'persons_tags', but enphatizing the actions of each person. Examples: ["climbing cronopio", "cronopio dancing", "lunarisca making photo"]
+            - 'location_tags' (up to 5 words): tags which describes the concrete location, and wether it's inside or outside. (Example: ['teather', 'beach', 'fashion shop', 'outdoors' 'public square'])
+            - 'weather_time_tags': (up to 3 words): tags related to weather and time of the day (Example: ['night', 'rainy', 'winter'])
           `
 
 export const SYSTEM_MESSAGE_QUERY_TO_LOGIC = `

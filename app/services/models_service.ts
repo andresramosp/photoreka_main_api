@@ -110,7 +110,7 @@ export default class ModelsService {
                 content: userContent,
               },
             ],
-        max_tokens: 10000,
+        max_tokens: 15000,
       }
 
       console.log(JSON.stringify(payload).length)

@@ -1,6 +1,7 @@
 const STOPWORDS = [
   'Environment',
   'Activity',
+  'background',
   'Scene',
   'Atmosphere',
   'Space',
@@ -90,7 +91,7 @@ const STOPWORDS = [
   'Subjectivity',
   'Symbolism',
   'Resonance',
-]
+].map((word) => word.toLocaleLowerCase())
 
 import sharp from 'sharp'
 import fs from 'fs/promises'
@@ -100,7 +101,7 @@ import Photo from '#models/photo'
 import { Exception } from '@adonisjs/core/exceptions'
 import ModelsService from './models_service.js'
 import Tag from '#models/tag'
-import { SYSTEM_MESSAGE_ANALIZER } from '../utils/GPTMessages.js'
+import { SYSTEM_MESSAGE_ANALIZER, SYSTEM_MESSAGE_ANALIZER_OBJECTS } from '../utils/GPTMessages.js'
 import { createRequire } from 'module'
 const require = createRequire(import.meta.url)
 const pluralize = require('pluralize')
@@ -113,7 +114,7 @@ export default class AnalyzerService {
   /**
    * Asociar tags a una foto con soporte por lotes
    */
-  public async analyze(photosIds: string[], maxImagesPerBatch = 10) {
+  public async analyze(photosIds: string[], maxImagesPerBatch = 5) {
     const photosService = new PhotosService()
     const modelsService = new ModelsService()
 
@@ -152,19 +153,23 @@ export default class AnalyzerService {
     for (let i = 0; i < validImages.length; i += maxImagesPerBatch) {
       const batch = validImages.slice(i, i + maxImagesPerBatch)
 
-      const batchPromise = modelsService.getGPTResponse('', [
-        {
-          type: 'text',
-          text: SYSTEM_MESSAGE_ANALIZER(batch),
-        },
-        ...batch.map(({ base64 }) => ({
-          type: 'image_url',
-          image_url: {
-            url: `data:image/jpeg;base64,${base64}`,
-            detail: 'low',
+      const batchPromise = modelsService.getGPTResponse(
+        '',
+        [
+          {
+            type: 'text',
+            text: SYSTEM_MESSAGE_ANALIZER_OBJECTS(batch),
           },
-        })),
-      ])
+          ...batch.map(({ base64 }) => ({
+            type: 'image_url',
+            image_url: {
+              url: `data:image/jpeg;base64,${base64}`,
+              detail: 'low',
+            },
+          })),
+        ],
+        'gpt-4o-mini'
+      )
 
       batchPromises.push(batchPromise)
     }
@@ -176,8 +181,12 @@ export default class AnalyzerService {
 
     responses.forEach((response) => {
       if (response.status === 'fulfilled') {
-        results.push(...response.value.result)
-        costs.push(response.value.cost)
+        try {
+          results.push(...response.value.result)
+          costs.push(response.value.cost)
+        } catch (err) {
+          console.log(err)
+        }
       } else {
         console.warn('Batch processing failed:', response.reason)
       }
@@ -202,6 +211,8 @@ export default class AnalyzerService {
       existingTags.map((tag) => [lemmatizer.stem(tag.name.toLowerCase()), tag])
     )
 
+    const isStopword = (tagName: string) => STOPWORDS.includes(tagName.toLowerCase())
+
     for (const data of metadata) {
       const { id, description, ...rest } = data
       const photo = await Photo.query().where('id', id).first()
@@ -211,23 +222,25 @@ export default class AnalyzerService {
         const tagInstances: any[] = []
 
         const processTag = async (tagName: string, group: string) => {
-          const lemmatizedTagName = lemmatizer.stem(tagName.toLowerCase())
-          let tag = tagMap.get(lemmatizedTagName)
+          if (!isStopword(tagName)) {
+            const lemmatizedTagName = lemmatizer.stem(tagName.toLowerCase())
+            let tag = tagMap.get(lemmatizedTagName)
 
-          if (!tag) {
-            tag = await Tag.create({ name: tagName, group })
-            tagMap.set(lemmatizedTagName, tag)
-            console.log('Adding new tag: ', lemmatizedTagName)
+            if (!tag) {
+              tag = await Tag.create({ name: tagName, group })
+              tagMap.set(lemmatizedTagName, tag)
+              console.log('Adding new tag: ', lemmatizedTagName)
+            }
+
+            tagInstances.push(tag)
+          } else {
+            console.log('Ignoring tag: ', tagName)
           }
-
-          tagInstances.push(tag)
         }
 
         // Extract tags from description
         if (description) {
-          const descTags = (await modelsService.textToTags(description)).filter(
-            (tagName) => !STOPWORDS.includes(tagName.toLowerCase())
-          )
+          const descTags = await modelsService.textToTags(description)
           for (const tagName of descTags) {
             await processTag(tagName, 'desc')
           }

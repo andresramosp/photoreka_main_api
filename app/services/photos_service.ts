@@ -151,7 +151,7 @@ export default class PhotosService {
     const semanticProximities = await modelsService.semanticProximity(
       terms.join(','),
       allTags,
-      20 - 5 * query.iteration
+      55 - 8 * query.iteration
     )
     const filteredTags = Object.keys(semanticProximities)
 
@@ -160,7 +160,8 @@ export default class PhotosService {
       JSON.stringify({
         terms,
         tagCollection: filteredTags,
-      })
+      }),
+      'gpt-4o-mini'
     )
 
     const mergedDictionary = { ...expandedDictionary }
