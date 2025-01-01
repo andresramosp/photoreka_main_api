@@ -58,7 +58,9 @@
     "@adonisjs/static": "^1.1.1",
     "@vinejs/vine": "^3.0.0",
     "axios": "^1.7.9",
+    "lemmatizer": "^0.0.1",
     "luxon": "^3.5.0",
+    "natural": "^8.0.1",
     "pg": "^8.13.1",
     "reflect-metadata": "^0.2.2",
     "sharp": "^0.33.5"

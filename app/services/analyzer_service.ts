@@ -7,6 +7,11 @@ import { Exception } from '@adonisjs/core/exceptions'
 import ModelsService from './models_service.js'
 import Tag from '#models/tag'
 import { SYSTEM_MESSAGE_ANALIZER } from '../utils/GPTMessages.js'
+import { createRequire } from 'module'
+const require = createRequire(import.meta.url)
+const natural = require('natural')
+
+const lemmatizer = natural.LancasterStemmer
 
 export default class AnalyzerService {
   /**
@@ -46,14 +51,12 @@ export default class AnalyzerService {
       throw new Exception('No valid images found for the provided IDs')
     }
 
-    const results = []
-    const costs = []
-
-    // Procesar en lotes
+    // Procesar en lotes con Promise.allSettled para manejar errores individuales
+    const batchPromises = []
     for (let i = 0; i < validImages.length; i += maxImagesPerBatch) {
       const batch = validImages.slice(i, i + maxImagesPerBatch)
 
-      const { result, cost } = await modelsService.getGPTResponse('', [
+      const batchPromise = modelsService.getGPTResponse('', [
         {
           type: 'text',
           text: SYSTEM_MESSAGE_ANALIZER(batch),
@@ -67,9 +70,22 @@ export default class AnalyzerService {
         })),
       ])
 
-      results.push(...result)
-      costs.push(cost)
+      batchPromises.push(batchPromise)
     }
+
+    const responses = await Promise.allSettled(batchPromises)
+
+    const results = []
+    const costs = []
+
+    responses.forEach((response) => {
+      if (response.status === 'fulfilled') {
+        results.push(...response.value.result)
+        costs.push(response.value.cost)
+      } else {
+        console.warn('Batch processing failed:', response.reason)
+      }
+    })
 
     // Agregar metadatos
     await this.addMetadata(results)
@@ -84,7 +100,9 @@ export default class AnalyzerService {
   public async addMetadata(metadata: { id: string; [key: string]: any }[]) {
     // Fetch all tags once and preprocess them
     const existingTags = await Tag.all()
-    const tagMap = new Map(existingTags.map((tag) => [tag.name.toLowerCase(), tag]))
+    const tagMap = new Map(
+      existingTags.map((tag) => [lemmatizer.stem(tag.name.toLowerCase()), tag])
+    )
 
     for (const data of metadata) {
       const { id, description, ...rest } = data
@@ -95,12 +113,15 @@ export default class AnalyzerService {
         const tagInstances: any[] = []
 
         const processTag = async (tagName: string, group: string) => {
-          let tag = tagMap.get(tagName.toLowerCase())
+          const lemmatizedTagName = lemmatizer.stem(tagName.toLowerCase())
+          let tag = tagMap.get(lemmatizedTagName)
+
           if (!tag) {
             tag = await Tag.create({ name: tagName, group })
-            tagMap.set(tagName.toLowerCase(), tag)
-            console.log('Adding new tag: ', tagName.toLowerCase())
+            tagMap.set(lemmatizedTagName, tag)
+            console.log('Adding new tag: ', lemmatizedTagName)
           }
+
           tagInstances.push(tag)
         }
 
@@ -123,6 +144,7 @@ export default class AnalyzerService {
             delete rest[key]
           }
         }
+
         photo.merge({ ...updateData, description, metadata: { ...photo.metadata, ...rest } })
         await photo.save()
 
