@@ -16,7 +16,7 @@ export const SYSTEM_MESSAGE_ANALIZER = (photosBatch: any[]) => `
             - 'mood_tags' (up to 2 words): the general mood or feeling you recognize. Example: ['joyful', 'dramatic']
             - 'culture_tags' (up to 2 words): the culture or country you guess the photo has been taken. As much concrete as possible. Example: ['Madrid', 'China', 'Asia', 'Traditional'])
 
-            IMPORTANT: Avoid labels that are too generic or abstract, such as: [environment, activity, shapes, scene, lights...] 
+            IMPORTANT: DON't use labels that are too generic or abstract, such as: [environment, activity, shapes, scene, lights...] 
             If you really have to use these words, qualify them. For example: “artificial lights”..
           `
 
