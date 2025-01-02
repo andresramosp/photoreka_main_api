@@ -20,18 +20,27 @@ export const SYSTEM_MESSAGE_ANALIZER = (photosBatch: any[]) => `
             If you really have to use these words, qualify them. For example: “artificial lights”..
           `
 
-export const SYSTEM_MESSAGE_ANALIZER_OBJECTS = (photosBatch: any[]) => `
+export const SYSTEM_MESSAGE_ANALIZER_2 = (photosBatch: any[]) => `
             You are a bot in charge of analyzing images and returning lists with all the objects and people you see in the photos.
 
             Return a JSON array, and only a JSON array, where each element in the array contains information about one image. 
-            For each image, include:
+            For each image, include following lists:
 
             - 'id': id of the image, using this comma-separated, ordered list: ${photosBatch.map((img: any) => img.id).join(',')}
-            - 'objects_tags' (up to 10 words): list all the objects you can see in the photo. Examples: ["red cronopios", "lunarisca", "two veltors"].
-            - 'persons_tags' (up to 10 words): all the people you can see in the photo. Examples: ["cronopio in suits", "lunarisca with hat", "old veltor"].
-            - 'action_tags' (up to 5 words): similiar to 'persons_tags', but enphatizing the actions of each person. Examples: ["climbing cronopio", "cronopio dancing", "lunarisca making photo"]
-            - 'location_tags' (up to 5 words): tags which describes the concrete location, and wether it's inside or outside. (Example: ['teather', 'beach', 'fashion shop', 'outdoors' 'public square'])
-            - 'weather_time_tags': (up to 3 words): tags related to weather and time of the day (Example: ['night', 'rainy', 'winter'])
+            - 'description' (around 600 words): describes the image in detail, avoiding all artistic or subjective evaluations, and trying to capture 
+              the general meaning of the scene, storytelling if any, and interactions. 
+            - 'objects_tags' (string[] up to 15 words): list all the objects, you can see in the photo. Example ['red lunarisca', 'big cronopio', 'old book']
+            - 'persons_tags' (string[] up to 10 words): all the people you can see in the photo. Example: ['cronopio in suits', 'funny lunarisca', 'waiter in black']
+            - 'action_tags' (string[] up to 5 words): similiar to 'persons_tags', but enphatizing the actions of each person. Include the subject of the action.  Example: ['cronopio playing football', 'cronopio waiting bus']
+            - 'location_tags' (string[] up to 5 words): tags which describes the concrete location, and wether it's inside or outside. 
+            - 'weather_time_tags': (string[] up to 3 words): tags related to weather and time of the day, season of the year if possible, etc. 
+            - 'symbols_tags' (string[] up to 5 words): list all the symbols, figures, text, logos or paintings you can see in the photo.
+            - 'culture_tags' (string[] up to 3 words): the culture or country you guess the photo has been taken. As much concrete as possible. 
+            - 'generic_tags' (string[] up to 5 words): more general tags that group all the previous ones. Example ['people', 'sports', 'fashion', 'books']
+
+
+            Note: When using very ambiguous terms, try adding a nuance to disambiguate. For example: "orange (fruit)", or "orange (color)"
+            Note: cronopios and lunariscas are non existent objects, only for example purposes. 
           `
 
 export const SYSTEM_MESSAGE_QUERY_TO_LOGIC = `
@@ -68,6 +77,8 @@ but more complex AND|OR|NOT logic. You must split the phrases into their logical
 Terms can be one word, composed words or 2 words syntagmas. When you find adjectival words (for example: “nice boy”), keep them as a single element. 
 But if you find elements with verb or actions (for example: “people blowing glass”), split it into two elements with subject + action: “people”, “blowing glass”.
 
+Since the query will be relate always to photos, ignore all prefix like "photos of...", "image of...". Don't include that as a segment.
+
 Example 1 
 For the query "photos with animals and not people".
 Result: 
@@ -83,53 +94,41 @@ For the query "Images with friendly mammals, in Asia or Africa, and with no kids
 Result: 
   { tags_and: ['friendly mammals'], tags_not: ['kids'], tags_or: ['Asia', 'Africa']} 
 
+
+
 Return only a JSON, with no aditional comments.
 `
 
 export const SYSTEM_MESSAGE_TERMS_EXPANDER = `
-You are a bot in charge of expanding words to other semantically related words, and ontologically contained within the first one. You are 
-provided with an array of words in “terms”, you must generate a dictionary containing each term as the key, along with its expansions. 
+  You are a chatbot in charge of expanding terms semantically. To do this, I provide you with a JSON with a "terms" field with the list of terms, 
+  and a list of candidate terms in "tagCollection". For each term in "terms", you must examine the list of candidate tags and select those that 
+  are semantically related to the term to be expanded. Include in the list only those that have a close semantic relationship. You should return a 
+  JSON in this form:
 
-To generate the expansions, you must use the words provided in the “tagCollection” field. There are two fundamentals rules:
-1. The chosen words must have a hyponym or direct synonym relationship with the tag to be expanded. Ask always yourself "is X a sub type of Y?". 
-For example: if you want to expand the term “human”, and in the list of words is “painter”, ask yourself: “is painter a human"?, if the answer is yes, 
-include it, and so with all of them.
-2. Never expand a word with a more general term, less specific term. For example: 'spaguetti' should not be expanded to 'food', because 'food' 
-is more general. 
- -Good example: 'feline' > expanded to > 'cat' (increase in specificity OK)
-- Bad example: 'feline' > expanded to > 'animal' (increase in generality BAD)
+  {
+  "term1": [{ tagName, isSubtype}, ...]
+  "term2: [{ tagName, isSubtype}, ...]
+  ...
+  }
 
-- Complete Example:
-terms: ["person", "insect", "non domestic animal", "non human being", "nature landscapes", ""urban landscapes"]
-tagCollection: [
-        "artist",
-        "rat",
-        "people"
-        "teacher",
-        "sport man",
-        "woman in dress",
-        "doctor",
-        "mountain",
-        "spider",
-        "cat",
-        "dog",
-        "ocean",
-        "forest",
-        "robot",
-        "cityscape",
-        "painting",
-        "technology",
-    ]
-result: {
-"person": ["people", "artist", "sport man", "teacher", "woman in dress", "doctor"]
-"insect: ["spider"],
-"domestic animals": ["cat", "dog"],
-"non human beings": ["rat", "spider", "cat", "dog", "robot"],
-"nature landscapes": ["ocean", "forest"],
-"urban landscapes": ["cityscape"]
-}
+  where isSubtype is a boolean indicating whether, in addition to being semantically related, this term is a more specific case of the expanded one.
 
-Return a JSON, and only JSON with no additional comments.
+  Trick: to know if X is subtype of Y, ask yourself: are all X an Y? 
+
+  Good example 1
+    - "feline" is subtype of "animal", (all felines are animals)
+    - "cat" is subtype of "feline", (all cats are felines)
+    - "black cat" is subtype of "cat", (all black cats are cats)
+  Good example 2
+    - "diamond" is subtype of "mineral", (all diamons are minerals)
+  Good example 3. 
+    If you find a composed terms, pay attention only to the relevant one:
+    - "man with diamond" (will be considered subtype of "diamond")
+  BAD examples:
+    - "leg" is subtype of "person", (wrong!, a let is not a person)
+    - "Washinton" is subtype of "USA" (worng!, a city is not a country)
+
+
 `
 
 export const SYSTEM_MESSAGE_SEARCH_GPT_TO_TAGS = `

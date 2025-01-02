@@ -151,18 +151,27 @@ export default class PhotosService {
     const semanticProximities = await modelsService.semanticProximity(
       terms.join(','),
       allTags,
-      55 - 8 * query.iteration
+      35 - 5 * query.iteration
     )
     const filteredTags = Object.keys(semanticProximities)
 
-    const { result: expandedDictionary, cost: cost2 } = await modelsService.getGPTResponse(
+    const { result, cost: cost2 } = await modelsService.getGPTResponse(
       SYSTEM_MESSAGE_TERMS_EXPANDER,
       JSON.stringify({
         terms,
         tagCollection: filteredTags,
       }),
-      'gpt-4o-mini'
+      'gpt-4o'
     )
+
+    const expandedDictionary = Object.entries(result).reduce((acc: any, [key, value]: any) => {
+      acc[key] = value
+        .filter(
+          (item: any) => item.isSubtype || item.tagName.includes(key) || key.includes(item.tagName)
+        )
+        .map((item: any) => item.tagName)
+      return acc
+    }, {})
 
     const mergedDictionary = { ...expandedDictionary }
 
@@ -203,79 +212,6 @@ export default class PhotosService {
       cost: { cost1, cost2 },
       queryLogicResult,
       expandedDictionary: mergedDictionary,
-    }
-  }
-
-  public async search_gpt_to_tags(query: any): Promise<any> {
-    const modelsService = new ModelsService()
-
-    let allPhotos
-    let reasoning
-    let cost
-    let tagsAnd: any[], tagsNot: any[], tagsMisc: any[]
-
-    const tags = await Tag.all()
-    const allTags = tags.map((tag) => tag.name)
-
-    // Solo expandimos tags ya existentes
-    if (query.iteration > 1) {
-      const threshold = 85 - query.iteration * 10
-      tagsAnd = await this.expandTags(query.currentTags.tagsAnd, allTags, threshold)
-      tagsNot = query.currentTags.tagsNot
-      tagsMisc = query.currentTags.tagsMisc
-
-      allPhotos = await Photo.query()
-        .preload('tags')
-        .if(query.iteration > 1, (queryBuilder) => {
-          queryBuilder.whereNotIn('id', query.currentPhotos)
-        })
-      // Llamamos a GPT para formalizar y sacar listas de tags
-    } else {
-      allPhotos = await Photo.query().preload('tags')
-
-      const semanticProximities = await modelsService.semanticProximity(
-        query.description,
-        allTags,
-        50 - 3 * query.iteration
-      )
-      const filteredTags = Object.keys(semanticProximities)
-
-      const { result: formalizedQuery, cost: cost1 } = await modelsService.getGPTResponse(
-        SYSTEM_MESSAGE_QUERY_TO_LOGIC,
-        JSON.stringify({
-          query: query.description,
-        })
-      )
-
-      console.log(formalizedQuery)
-
-      const { result, cost: cost2 } = await modelsService.getGPTResponse(
-        SYSTEM_MESSAGE_SEARCH_GPT_TO_TAGS_V2,
-        JSON.stringify({
-          query: formalizedQuery,
-          tagCollection: filteredTags,
-        })
-      )
-
-      tagsAnd = result.tags_and
-      tagsNot = result.tags_not
-      tagsMisc = result.tags_misc
-      reasoning = result.reasoning
-      cost = cost2
-    }
-
-    const results = this.filterByTags(allPhotos, tagsAnd, tagsNot)
-    const filteredPhotos = [...new Set([...results])]
-
-    console.log(results)
-
-    return {
-      results: filteredPhotos,
-      tagsNot,
-      tagsAnd,
-      reasoning,
-      tagsMisc,
-      cost,
     }
   }
 
@@ -348,7 +284,7 @@ export default class PhotosService {
     )
 
     // Obtener el X% superior de similitudes
-    const resultSetLength = 20
+    const resultSetLength = 10
     const similarityThreshold = 50 // Umbral mínimo de similitud
 
     const sortedProximities = Object.entries(semanticProximities).sort(([, a], [, b]) => b - a)

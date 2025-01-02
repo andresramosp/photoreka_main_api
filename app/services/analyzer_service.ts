@@ -101,7 +101,7 @@ import Photo from '#models/photo'
 import { Exception } from '@adonisjs/core/exceptions'
 import ModelsService from './models_service.js'
 import Tag from '#models/tag'
-import { SYSTEM_MESSAGE_ANALIZER, SYSTEM_MESSAGE_ANALIZER_OBJECTS } from '../utils/GPTMessages.js'
+import { SYSTEM_MESSAGE_ANALIZER, SYSTEM_MESSAGE_ANALIZER_2 } from '../utils/GPTMessages.js'
 import { createRequire } from 'module'
 const require = createRequire(import.meta.url)
 const pluralize = require('pluralize')
@@ -114,7 +114,7 @@ export default class AnalyzerService {
   /**
    * Asociar tags a una foto con soporte por lotes
    */
-  public async analyze(photosIds: string[], maxImagesPerBatch = 5) {
+  public async analyze(photosIds: string[], maxImagesPerBatch = 3) {
     const photosService = new PhotosService()
     const modelsService = new ModelsService()
 
@@ -154,12 +154,8 @@ export default class AnalyzerService {
       const batch = validImages.slice(i, i + maxImagesPerBatch)
 
       const batchPromise = modelsService.getGPTResponse(
-        '',
+        SYSTEM_MESSAGE_ANALIZER_2(batch),
         [
-          {
-            type: 'text',
-            text: SYSTEM_MESSAGE_ANALIZER_OBJECTS(batch),
-          },
           ...batch.map(({ base64 }) => ({
             type: 'image_url',
             image_url: {
@@ -172,6 +168,8 @@ export default class AnalyzerService {
       )
 
       batchPromises.push(batchPromise)
+
+      await new Promise((resolve) => setTimeout(resolve, 2000))
     }
 
     const responses = await Promise.allSettled(batchPromises)

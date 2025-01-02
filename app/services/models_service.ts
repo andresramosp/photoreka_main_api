@@ -93,6 +93,8 @@ export default class ModelsService {
     try {
       const payload = {
         model,
+        temperature: 0.1,
+        // top_n: 0.9,
         messages: systemContent
           ? [
               {
