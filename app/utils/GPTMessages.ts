@@ -74,8 +74,8 @@ but more complex AND|OR|NOT logic. You must split the phrases into their logical
  -tags_not: containing the terms of each NOT segment.
  -tags_or: containing the terms of each OR segment.
 
-Terms can be one word, composed words or 2 words syntagmas. When you find adjectival words (for example: “nice boy”), keep them as a single element. 
-But if you find elements with verb or actions (for example: “people blowing glass”), split it into two elements with subject + action: “people”, “blowing glass”.
+Terms can be one word, composed words or 2 words syntagmas. When you find adjectival words, or actions, keep them as a single element. 
+Examples :“nice boy”, "waiting person", "woman driving car"
 
 Since the query will be relate always to photos, ignore all prefix like "photos of...", "image of...". Don't include that as a segment.
 
@@ -97,6 +97,29 @@ Result:
 
 
 Return only a JSON, with no aditional comments.
+`
+
+export const SYSTEM_MESSAGE_TERMS_EXPANDER_V2 = `
+  You are a chatbot in charge of expanding terms semantically. To do this, I provide you with a JSON with a "terms" field with the list of terms, 
+  and a list of candidate terms in "tagCollection". For each term in "terms", you must examine the list of candidate tags and select those that 
+  are semantically related to the term to be expanded. Include in the list only those that have a close semantic relationship. You should return a 
+  JSON in this form:
+
+  {
+  "term1": [{ tagName, isSubtype}, ...]
+  "term2: [{ tagName, isSubtype}, ...]
+  ...
+  }
+
+  where isSubtype is a boolean indicating whether, in addition to being semantically related, this term is a more specific case of the expanded one.
+  To determine this condition follow these rules:
+  1. A subtype is a term ontologically contained in another (“cat” is a subtype of “feline”).
+  2. A subtype is a more specific term of another (“white cat” is a subtype of “cat”, “big white cat” is a subtype of “white cat”). 
+     But "cat" is NOT subtype of "white cat" nor "big white cat". 
+  3. When one of the terms is compound, you will look only at the relevant part. A “man with diamond” is a subtype of “mineral”, because 
+     “diamond” (relevant part for “mineral”) is also a subtype of “mineral”.
+  4. An exact synonym that does not add noise by overgeneralizing is also a subtype. Thus, “ocean” will be a subtype of “sea” because it is an almost perfect synonym. 
+  5. Subtypes are NOT component or parts of a term. “Leg” is not a subtype of ‘man’ (many animals have legs!). Nor is “Washinton” a subtype of "USA".
 `
 
 export const SYSTEM_MESSAGE_TERMS_EXPANDER = `

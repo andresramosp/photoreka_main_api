@@ -10,6 +10,10 @@ const PRICES = {
     input: 0.15 / 1_000_000, // USD per input token
     output: 0.6 / 1_000_000, // USD per output token
   },
+  'ft:gpt-4o-mini-2024-07-18:personal:curatorlab:AlGXR5Ns': {
+    input: 0.3 / 1_000_000, // USD per input token
+    output: 1.2 / 1_000_000, // USD per output token
+  },
 }
 
 const USD_TO_EUR = 0.92
@@ -88,7 +92,10 @@ export default class ModelsService {
   public async getGPTResponse(
     systemContent: string,
     userContent: any,
-    model: 'gpt-4o' | 'gpt-4o-mini' = 'gpt-4o-mini'
+    model:
+      | 'gpt-4o'
+      | 'gpt-4o-mini'
+      | 'ft:gpt-4o-mini-2024-07-18:personal:curatorlab:AlGXR5Ns' = 'gpt-4o-mini'
   ) {
     try {
       const payload = {

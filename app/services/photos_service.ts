@@ -13,6 +13,7 @@ import {
   SYSTEM_MESSAGE_SEARCH_GPT_TO_TAGS,
   SYSTEM_MESSAGE_SEARCH_GPT_TO_TAGS_V2,
   SYSTEM_MESSAGE_TERMS_EXPANDER,
+  SYSTEM_MESSAGE_TERMS_EXPANDER_V2,
 } from '../utils/GPTMessages.js'
 import ModelsService from './models_service.js'
 import path from 'path'
@@ -108,6 +109,27 @@ export default class PhotosService {
     })
   }
 
+  private async getSemanticNearTags(terms: any, tags: any, query: any) {
+    const modelsService = new ModelsService()
+
+    const semanticProximitiesList = await Promise.all(
+      terms.map((term: string) =>
+        modelsService.semanticProximity(term, tags, 50 - 7 * query.iteration)
+      )
+    )
+
+    // Combinar y filtrar las claves de todos los resultados
+    return semanticProximitiesList.reduce((acc: any, current) => {
+      const keys = Object.keys(current)
+      keys.forEach((key) => {
+        if (!acc.includes(key)) {
+          acc.push(key) // Agrega solo las claves únicas
+        }
+      })
+      return acc
+    }, [])
+  }
+
   public async search_gpt_to_tags_v2(query: any): Promise<any> {
     const modelsService = new ModelsService()
 
@@ -148,20 +170,15 @@ export default class PhotosService {
       allTags = allTags.filter((tag) => !currentQueryTags.includes(tag))
     }
 
-    const semanticProximities = await modelsService.semanticProximity(
-      terms.join(','),
-      allTags,
-      30 - 7 * query.iteration
-    )
-    const filteredTags = Object.keys(semanticProximities)
+    const filteredTags = await this.getSemanticNearTags(terms, allTags, query)
 
     const { result, cost: cost2 } = await modelsService.getGPTResponse(
-      SYSTEM_MESSAGE_TERMS_EXPANDER,
+      SYSTEM_MESSAGE_TERMS_EXPANDER_V2,
       JSON.stringify({
         terms,
         tagCollection: filteredTags,
       }),
-      'gpt-4o'
+      'ft:gpt-4o-mini-2024-07-18:personal:curatorlab:AlGXR5Ns'
     )
 
     const expandedDictionary = Object.entries(result).reduce((acc: any, [key, value]: any) => {
