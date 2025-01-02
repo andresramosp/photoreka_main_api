@@ -169,7 +169,7 @@ export default class AnalyzerService {
 
       batchPromises.push(batchPromise)
 
-      await new Promise((resolve) => setTimeout(resolve, 2000))
+      await new Promise((resolve) => setTimeout(resolve, 1000))
     }
 
     const responses = await Promise.allSettled(batchPromises)

@@ -60,7 +60,8 @@ export default class PhotosService {
     allPhotos: Photo[],
     tagsAnd: string[][],
     tagsNot: string[],
-    tagsOr: string[]
+    tagsOr: string[],
+    flexible: boolean
   ) {
     let filteredPhotos = allPhotos
 
@@ -69,14 +70,16 @@ export default class PhotosService {
 
     // Filter by mandatory tags
     if (tagsAnd.length > 0 && tagsAnd[0].length) {
-      filteredPhotos = filteredPhotos.filter((photo) =>
-        tagsAnd.every((tagGroup) => {
-          return tagGroup.some((tag) => {
-            return photo.tags.some((t) => t.name === tag)
-          })
-        })
-      )
+      filteredPhotos = filteredPhotos.filter((photo) => {
+        const matchedGroups = tagsAnd.filter((tagGroup) =>
+          tagGroup.some((tag) => photo.tags.some((t) => t.name === tag))
+        )
+        return flexible
+          ? matchedGroups.length >= Math.ceil((tagsAnd.length * 2) / 3)
+          : matchedGroups.length === tagsAnd.length
+      })
     }
+
     const exclusionThreshold = 0 // estricto
     if (tagsNot.length > 0) {
       filteredPhotos = filteredPhotos.filter((photo) => {
@@ -87,15 +90,6 @@ export default class PhotosService {
     }
 
     return filteredPhotos
-  }
-
-  private filterByRecommended(allPhotos: Photo[], combinedTags: string[]) {
-    return allPhotos.filter((photo) => {
-      const matchingTags = photo.tags.filter((t) => combinedTags.includes(t.name))
-      const ratio = matchingTags.length / combinedTags.length
-
-      return ratio >= 0.1
-    })
   }
 
   private filterByDescription(allPhotos: Photo[], tags: string[]) {
@@ -118,7 +112,7 @@ export default class PhotosService {
     const modelsService = new ModelsService()
 
     const tags = await Tag.all()
-    const allTags = tags.map((tag) => tag.name)
+    let allTags = tags.map((tag) => tag.name)
     let allPhotos
     let cost1
     let queryLogicResult
@@ -148,10 +142,16 @@ export default class PhotosService {
       ...queryLogicResult.tags_or,
     ]
 
+    // Quito de los tags los que ya estan en el dictionary. Quiza habria que afinar y quitar por term.
+    if (query.currentExpandedDict) {
+      let currentQueryTags = [...new Set(Object.values(query.currentExpandedDict).flat())]
+      allTags = allTags.filter((tag) => !currentQueryTags.includes(tag))
+    }
+
     const semanticProximities = await modelsService.semanticProximity(
       terms.join(','),
       allTags,
-      35 - 5 * query.iteration
+      30 - 7 * query.iteration
     )
     const filteredTags = Object.keys(semanticProximities)
 
@@ -204,7 +204,7 @@ export default class PhotosService {
       })
       .flat()
 
-    const results = this.filterByTags(allPhotos, tagsAnd, tagsNot, tagsOr)
+    const results = this.filterByTags(allPhotos, tagsAnd, tagsNot, tagsOr, query.iteration > 2)
     const filteredPhotos = [...new Set([...results])]
 
     return {
@@ -232,7 +232,7 @@ export default class PhotosService {
       photos = photos.filter((photo) => !query.currentPhotos.includes(photo.id))
     }
 
-    const filteredIds = await this.getSemanticProximePhotos(photos, query)
+    const filteredIds = await this.getSemanticProximePhotos(photos, query, 20)
 
     if (filteredIds.length === 0) {
       return {
@@ -270,7 +270,7 @@ export default class PhotosService {
     }
   }
 
-  public async getSemanticProximePhotos(photos: any, query: any) {
+  public async getSemanticProximePhotos(photos: any, query: any, resultSetLength = 10) {
     // Obtener las proximidades semánticas
     const modelsService = new ModelsService()
     const semanticProximities = await modelsService.semanticProximity(
@@ -284,7 +284,6 @@ export default class PhotosService {
     )
 
     // Obtener el X% superior de similitudes
-    const resultSetLength = 10
     const similarityThreshold = 50 // Umbral mínimo de similitud
 
     const sortedProximities = Object.entries(semanticProximities).sort(([, a], [, b]) => b - a)

@@ -12,6 +12,9 @@ export default class Tag extends BaseModel {
   @column()
   declare group: string
 
+  @column()
+  declare children: Array<string> | null
+
   @column.dateTime({ autoCreate: true })
   declare createdAt: DateTime
 
