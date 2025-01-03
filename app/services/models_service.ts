@@ -10,7 +10,7 @@ const PRICES = {
     input: 0.15 / 1_000_000, // USD per input token
     output: 0.6 / 1_000_000, // USD per output token
   },
-  'ft:gpt-4o-mini-2024-07-18:personal:curatorlab:AlGXR5Ns': {
+  'ft:gpt-4o-mini-2024-07-18:personal:curatorlab-term-expansor:AlVylwdQ': {
     input: 0.3 / 1_000_000, // USD per input token
     output: 1.2 / 1_000_000, // USD per output token
   },
@@ -95,7 +95,7 @@ export default class ModelsService {
     model:
       | 'gpt-4o'
       | 'gpt-4o-mini'
-      | 'ft:gpt-4o-mini-2024-07-18:personal:curatorlab:AlGXR5Ns' = 'gpt-4o-mini'
+      | 'ft:gpt-4o-mini-2024-07-18:personal:curatorlab-term-expansor:AlVylwdQ' = 'gpt-4o-mini'
   ) {
     try {
       const payload = {

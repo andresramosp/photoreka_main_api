@@ -170,25 +170,36 @@ export default class PhotosService {
       allTags = allTags.filter((tag) => !currentQueryTags.includes(tag))
     }
 
-    const filteredTags = await this.getSemanticNearTags(terms, allTags, query)
+    let expansionResults: any = {}
+    const expansionCosts: any[] = []
 
-    const { result, cost: cost2 } = await modelsService.getGPTResponse(
-      SYSTEM_MESSAGE_TERMS_EXPANDER_V2,
-      JSON.stringify({
-        terms,
-        tagCollection: filteredTags,
-      }),
-      'ft:gpt-4o-mini-2024-07-18:personal:curatorlab:AlGXR5Ns'
+    await Promise.all(
+      terms.map(async (term) => {
+        const filteredTermTags = await this.getSemanticNearTags([term], allTags, query)
+
+        const { result, cost } = await modelsService.getGPTResponse(
+          SYSTEM_MESSAGE_TERMS_EXPANDER_V2,
+          JSON.stringify({
+            operation: 'semanticSubExpansion',
+            term,
+            tagCollection: filteredTermTags,
+          }),
+          'ft:gpt-4o-mini-2024-07-18:personal:curatorlab-term-expansor:AlVylwdQ'
+        )
+
+        // Añadir el resultado al diccionario
+        expansionResults[term] = result
+        expansionCosts.push(cost)
+      })
     )
 
-    const expandedDictionary = Object.entries(result).reduce((acc: any, [key, value]: any) => {
-      acc[key] = value
-        .filter(
-          (item: any) => item.isSubtype || item.tagName.includes(key) || key.includes(item.tagName)
-        )
-        .map((item: any) => item.tagName)
-      return acc
-    }, {})
+    const expandedDictionary = Object.entries(expansionResults).reduce(
+      (acc: any, [key, value]: any) => {
+        acc[key] = value.filter((item: any) => item.isSubtype).map((item: any) => item.tagName)
+        return acc
+      },
+      {}
+    )
 
     const mergedDictionary = { ...expandedDictionary }
 
@@ -226,7 +237,7 @@ export default class PhotosService {
 
     return {
       results: filteredPhotos,
-      cost: { cost1, cost2 },
+      cost: { cost1, expansionCosts },
       queryLogicResult,
       expandedDictionary: mergedDictionary,
     }
