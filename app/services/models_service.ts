@@ -14,6 +14,10 @@ const PRICES = {
     input: 0.3 / 1_000_000, // USD per input token
     output: 1.2 / 1_000_000, // USD per output token
   },
+  'ft:gpt-4o-mini-2024-07-18:personal:curatorlab-term-expansor-v3-lr:AldGdmpv': {
+    input: 0.3 / 1_000_000, // USD per input token
+    output: 1.2 / 1_000_000, // USD per output token
+  },
 }
 
 const USD_TO_EUR = 0.92
@@ -90,18 +94,17 @@ export default class ModelsService {
   }
 
   public async getGPTResponse(
-    systemContent: string,
+    systemContent: string | null,
     userContent: any,
     model:
       | 'gpt-4o'
       | 'gpt-4o-mini'
-      | 'ft:gpt-4o-mini-2024-07-18:personal:curatorlab-term-expansor:AlVylwdQ' = 'gpt-4o-mini'
+      | 'ft:gpt-4o-mini-2024-07-18:personal:curatorlab-term-expansor-v3-lr:AldGdmpv' = 'gpt-4o-mini'
   ) {
     try {
       const payload = {
         model,
         temperature: 0.1,
-        // top_n: 0.9,
         messages: systemContent
           ? [
               {

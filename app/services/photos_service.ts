@@ -14,6 +14,9 @@ import {
   SYSTEM_MESSAGE_SEARCH_GPT_TO_TAGS_V2,
   SYSTEM_MESSAGE_TERMS_EXPANDER,
   SYSTEM_MESSAGE_TERMS_EXPANDER_V2,
+  SYSTEM_MESSAGE_TERMS_EXPANDER_V3,
+  SYSTEM_MESSAGE_TERMS_EXPANDER_V3_1,
+  SYSTEM_MESSAGE_TERMS_EXPANDER_V4,
 } from '../utils/GPTMessages.js'
 import ModelsService from './models_service.js'
 import path from 'path'
@@ -114,7 +117,7 @@ export default class PhotosService {
 
     const semanticProximitiesList = await Promise.all(
       terms.map((term: string) =>
-        modelsService.semanticProximity(term, tags, 50 - 7 * query.iteration)
+        modelsService.semanticProximity(term, tags, 45 - 5 * query.iteration)
       )
     )
 
@@ -176,32 +179,34 @@ export default class PhotosService {
     await Promise.all(
       terms.map(async (term) => {
         const filteredTermTags = await this.getSemanticNearTags([term], allTags, query)
-
+        console.log(JSON.stringify(filteredTermTags))
         const { result, cost } = await modelsService.getGPTResponse(
-          SYSTEM_MESSAGE_TERMS_EXPANDER_V2,
+          SYSTEM_MESSAGE_TERMS_EXPANDER_V4,
           JSON.stringify({
             operation: 'semanticSubExpansion',
             term,
             tagCollection: filteredTermTags,
           }),
-          'ft:gpt-4o-mini-2024-07-18:personal:curatorlab-term-expansor:AlVylwdQ'
+          'ft:gpt-4o-mini-2024-07-18:personal:curatorlab-term-expansor-v3-lr:AldGdmpv'
         )
 
         // Añadir el resultado al diccionario
         expansionResults[term] = result
+          .filter((tag: any) => tag.isSubclass)
+          .map((tag: any) => tag.tag)
         expansionCosts.push(cost)
       })
     )
 
-    const expandedDictionary = Object.entries(expansionResults).reduce(
-      (acc: any, [key, value]: any) => {
-        acc[key] = value.filter((item: any) => item.isSubtype).map((item: any) => item.tagName)
-        return acc
-      },
-      {}
-    )
+    // const expandedDictionary = Object.entries(expansionResults).reduce(
+    //   (acc: any, [key, value]: any) => {
+    //     acc[key] = value.filter((item: any) => item.isSubclass).map((item: any) => item.tagName)
+    //     return acc
+    //   },
+    //   {}
+    // )
 
-    const mergedDictionary = { ...expandedDictionary }
+    const mergedDictionary = { ...expansionResults }
 
     for (const key in query.currentExpandedDict) {
       if (Array.isArray(query.currentExpandedDict[key])) {
@@ -400,7 +405,7 @@ export default class PhotosService {
       ]
     )
 
-    const photosResult = result.map((photoRes, idx) =>
+    const photosResult = result.map((photoRes: any, idx: number) =>
       photos.find((photo) => photo.id == validImages[photoRes.id].id)
     )
 
