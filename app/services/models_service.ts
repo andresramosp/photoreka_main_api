@@ -1,5 +1,8 @@
 import env from '#start/env'
 import axios from 'axios'
+import NodeCache from 'node-cache'
+
+const cache = new NodeCache() // Simple in-memory cache
 
 const PRICES = {
   'gpt-4o': {
@@ -58,25 +61,6 @@ export default class ModelsService {
     }
   }
 
-  public async bulkSemanticProximity(tags1: any, tags2: any): Promise<any> {
-    try {
-      const { data } = await axios.post(
-        'http://127.0.0.1:5000/semantic_proximity_bulk',
-        { tags1, tags2 },
-        {
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        }
-      )
-
-      return data.similarities || {}
-    } catch (error) {
-      console.error('Error fetching semantic proximity:', error)
-      return {}
-    }
-  }
-
   public async textToTags(text: string): Promise<string[]> {
     try {
       const payload = { description: text }
@@ -99,7 +83,8 @@ export default class ModelsService {
     model:
       | 'gpt-4o'
       | 'gpt-4o-mini'
-      | 'ft:gpt-4o-mini-2024-07-18:personal:curatorlab-term-expansor-v3-lr:AldGdmpv' = 'gpt-4o-mini'
+      | 'ft:gpt-4o-mini-2024-07-18:personal:curatorlab-term-expansor-v3-lr:AldGdmpv' = 'gpt-4o-mini',
+    cacheDuration = 60 * 15 // Cache duration in seconds
   ) {
     try {
       const payload = {
@@ -123,6 +108,15 @@ export default class ModelsService {
               },
             ],
         max_tokens: 15000,
+      }
+
+      const cacheKey = JSON.stringify({ systemContent, userContent, model })
+
+      // Check cache
+      const cachedResponse = cache.get(cacheKey)
+      if (cachedResponse) {
+        console.log('Cache hit for getGPTResponse')
+        return cachedResponse
       }
 
       console.log(JSON.stringify(payload).length)
@@ -158,7 +152,7 @@ export default class ModelsService {
         }
       }
 
-      return {
+      const result = {
         result: parsedResult,
         cost: {
           totalCostInEur,
@@ -169,6 +163,11 @@ export default class ModelsService {
           completionTokens,
         },
       }
+
+      // Cache the result
+      cache.set(cacheKey, result, cacheDuration)
+
+      return result
     } catch (error) {
       console.error('Error fetching GPT response:', error)
       return {}

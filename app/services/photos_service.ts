@@ -12,6 +12,7 @@ import {
   SYSTEM_MESSAGE_SEARCH_GPT_IMG,
   SYSTEM_MESSAGE_SEARCH_GPT_TO_TAGS,
   SYSTEM_MESSAGE_SEARCH_GPT_TO_TAGS_V2,
+  SYSTEM_MESSAGE_TERMS_ACTIONS_EXPANDER_V4,
   SYSTEM_MESSAGE_TERMS_EXPANDER,
   SYSTEM_MESSAGE_TERMS_EXPANDER_V2,
   SYSTEM_MESSAGE_TERMS_EXPANDER_V3,
@@ -178,33 +179,27 @@ export default class PhotosService {
 
     await Promise.all(
       terms.map(async (term) => {
-        const filteredTermTags = await this.getSemanticNearTags([term], allTags, query)
+        const filteredTermTags = await this.getSemanticNearTags([term.tagName], allTags, query)
         console.log(JSON.stringify(filteredTermTags))
         const { result, cost } = await modelsService.getGPTResponse(
-          SYSTEM_MESSAGE_TERMS_EXPANDER_V4,
+          term.isAction
+            ? SYSTEM_MESSAGE_TERMS_ACTIONS_EXPANDER_V4
+            : SYSTEM_MESSAGE_TERMS_EXPANDER_V4,
           JSON.stringify({
             operation: 'semanticSubExpansion',
-            term,
+            term: term.tagName,
             tagCollection: filteredTermTags,
           }),
           'ft:gpt-4o-mini-2024-07-18:personal:curatorlab-term-expansor-v3-lr:AldGdmpv'
         )
 
         // Añadir el resultado al diccionario
-        expansionResults[term] = result
+        expansionResults[term.tagName] = result
           .filter((tag: any) => tag.isSubclass)
           .map((tag: any) => tag.tag)
         expansionCosts.push(cost)
       })
     )
-
-    // const expandedDictionary = Object.entries(expansionResults).reduce(
-    //   (acc: any, [key, value]: any) => {
-    //     acc[key] = value.filter((item: any) => item.isSubclass).map((item: any) => item.tagName)
-    //     return acc
-    //   },
-    //   {}
-    // )
 
     const mergedDictionary = { ...expansionResults }
 
@@ -220,19 +215,25 @@ export default class PhotosService {
 
     let tagsAnd, tagsNot, tagsOr
 
-    tagsAnd = queryLogicResult.tags_and.map((tag: string) => {
-      let expandedTerms = mergedDictionary[tag].length ? [tag, ...mergedDictionary[tag]] : [tag]
+    tagsAnd = queryLogicResult.tags_and.map((tag: any) => {
+      let expandedTerms = mergedDictionary[tag.tagName].length
+        ? [tag.tagName, ...mergedDictionary[tag.tagName]]
+        : [tag.tagName]
       return expandedTerms
     })
     tagsNot = queryLogicResult.tags_not
-      .map((tag: string) => {
-        let expandedTerms = mergedDictionary[tag].length ? [tag, ...mergedDictionary[tag]] : [tag]
+      .map((tag: any) => {
+        let expandedTerms = mergedDictionary[tag.tagName].length
+          ? [tag.tagName, ...mergedDictionary[tag.tagName]]
+          : [tag.tagName]
         return expandedTerms
       })
       .flat()
     tagsOr = queryLogicResult.tags_or
-      .map((tag: string) => {
-        let expandedTerms = mergedDictionary[tag].length ? [tag, ...mergedDictionary[tag]] : [tag]
+      .map((tag: any) => {
+        let expandedTerms = mergedDictionary[tag.tagName].length
+          ? [tag.tagName, ...mergedDictionary[tag.tagName]]
+          : [tag.tagName]
         return expandedTerms
       })
       .flat()

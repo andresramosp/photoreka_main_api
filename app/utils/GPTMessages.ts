@@ -74,9 +74,11 @@ but more complex AND|OR|NOT logic. You must split the phrases into their logical
  -tags_not: containing the terms of each NOT segment.
  -tags_or: containing the terms of each OR segment.
 
+Each item will be like this: { tagName, isAction }, where isAction indicates if it has a verb
+
 Terms can be one word, composed words or 2 words syntagmas. When you find adjectival words, or actions, keep them as a single element. 
-Examples :“nice boy”, "waiting person", "woman driving car". From this items, remove unnecesary particles and connectors like: "in", "the", "a". etc. 
-Example: "cronopio with blue hat" -> "cronopio blue hat". If you find an action with subject, keep the subject. But if the action lacks subject, add "someone". 
+Examples :“nice boy”, "waiting person", "woman driving car". 
+If you find an action with subject, keep the subject. But if the action lacks subject, add "someone". 
 Example: "cronopios playing" -> "cronopios playing", "playing" -> "someone playing". 
 
 Since the query will be relate always to photos, ignore all prefix like "photos of...", "image of...". Don't include that as a segment.
@@ -84,17 +86,17 @@ Since the query will be relate always to photos, ignore all prefix like "photos 
 Example 1 
 For the query "photos with animals and not people".
 Result: 
-  { tags_and: ['animals'], tags_not: ["people"], tags_or: []} 
+  { tags_and: [{ tagName: 'animals', isAction: false }], tags_not: [{ tagName: 'people', isAction: false }], tags_or: []} 
 
 Example 2 
 For the query "I want pictures showcasing any place in Asia or Africa".
 Result: 
-  { tags_and: [], tags_not: [], tags_or: ['Asia', 'Africa']} 
+  { tags_and: [], tags_not: [], tags_or: [{ tagName: 'Asia', isAction: false }, { tagName: 'Asia', isAction: false }]} 
 
 Example 3
-For the query "Images with friendly mammals, in Asia or Africa, and with no kids around".
+For the query "Images with animals playing, in Asia or Africa, and with no kids around".
 Result: 
-  { tags_and: ['friendly mammals'], tags_not: ['kids'], tags_or: ['Asia', 'Africa']} 
+  { tags_and: [{ tagName: 'animals playing', isAction: true}], tags_not: [{ tagName: 'kids', isAction: false}], tags_or: [{ tagName: 'Asia', isAction: false }, { tagName: 'Asia', isAction: false }]} 
 
 
 
@@ -141,6 +143,9 @@ specific than the term.
 2. A tag is excluded as a subclass ('isSubclass: false') if:  
    - It is broader or more general than the term.  
    - It is unrelated to the semantic domain of the term.  
+3- Term can be single words, syntagm and actions.
+   - For adjectives and verbs, evaluate the subclass according to whether it is a specialization of the term's. 'Big red dog' is a specialization of 'Big dog'. 
+    'Boy running merrily' is a specialization of 'Kid running'. 
 
 **Output format:**  
 For each tag in the tagCollection, return an item structured as:  
@@ -188,85 +193,58 @@ tagCollection: ["child", "girl", "boy", "woman", "person"]
   { "tag": "person", "isSubclass": false }
 ]
 
+
 Always returns a JSON, and only JSON. If there are no terms, return an empty JSON.
 `
+export const SYSTEM_MESSAGE_TERMS_ACTIONS_EXPANDER_V4 = `
+You are a chatbot in charge of determining if short sentences belong to a specific ontological hierarchy. You will receive a general term in the 'term' field and a 
+list of candidates in 'tagCollection'. Your task is to evaluate each candidate and determine if it belongs to the semantic domain of the term and is more 
+specific than the term.
 
-export const SYSTEM_MESSAGE_TERMS_EXPANDER_V2 = `
-You are a chatbot in charge of identifying terms semantically contained in another. You will receive a “term”, and a list of candidates on “tagCollection”. 
-All candidate tags are semantically close to the main term, but not all of them are ontological subtypes of it, and your task is to identify them. 
-You will return a JSON output that adheres to the specified format and rules.
-### Instructions:
-1. **Operation Type:** You are performing a "semanticSubExpansion" task.
-2. **Input JSON Structure:**
-- You will receive a JSON with:
-- "operationType": "semanticSubExpansion"
-- A single 'term' field containing the term to expand.
-- A 'tagCollection' field containing semantically close tags.
-3. **Output JSON Structure:**
-- Return a list with all the candidate tags from "tagCollection". Each tag must include:
-- 'tagName': The name of the tag.
-- 'isSubtype': A boolean indicating whether the tag is a subtype of the term.
-- Follow the rules below to determine whether a tag is a subtype.
-### Rules for Subtypes:
-1. **Subtype Definition:**
-- Sub-identity: A tag is a subtype if it is ontologically contained in the term (e.g., "cat" is a subtype of "feline", "cat" is also a subtype of "animal").
-- More specific: A tag is a subtype if it's a more specific case than the term (e.g., "white cat" is a subtype of "cat", and therefore a subtype of “feline” and “animal”).
-- If a tag is compound (2-3 words syntagmas), you will look only at the relevant part. A “man with diamond” is a subtype of “mineral”, because “diamond” (relevant part for “mineral”) is also a subtype of “mineral”.
-- Similar to the compound tags, tags describing actions (e.g., "child playing") can have subtypes if they specify the type of action (e.g., "child playing soccer" is a subtype of "child playing").
-- Exact or near-synonyms (e.g., "sea" and "ocean") should be treated as subtypes, provided they do not overgeneralize.
-2. **Non-Subtypes:**
-- A tag is not a subtype if it represents a part of the term rather than the term itself (e.g., "leg" is not a subtype of "person",  "Washington" is not a subtype of "USA").
-- A tag that is a **supertype** of the term cannot be a subtype (e.g., "furniture" is not a subtype of "table", "umbrella" is not a subtype of "small umbrella").
-### Example Inputs and Outputs:
-#### Input:
-json
-{
-"operationType": "semanticSubExpansion",
-"term": "table",
-"tagCollection": ["furniture", "wooden table", "chair", "small table", “main repairing table”, “woman repairing furniture”]
-}
-Output:
-json
+**Rules:**  
+1. A tag is selected as a subclass ('isSubclass: true') if:  
+   - It is part of the same semantic domain as the term.  
+   - It is a more specific concept than the term.  
+2. A tag is excluded as a subclass ('isSubclass: false') if:  
+   - It is broader or more general than the term.  
+   - It is unrelated to the semantic domain of the term.  
+3- When you have subject + actoin, evaluate both subject and action.
+   - 'Boy running merrily' is a subclass of 'Kid running', because 'Kid' is subclass of 'Boy' and 'running merrily' and especialization of 'running'. 
+
+**Output format:**  
+For each tag in the tagCollection, return an item structured as:  
+'{ tag: "name_of_the_tag", isSubclass: boolean }'  
+The 'reasoning' field is not required.
+
+### Examples:  
+
+#### Input  
+term: watering plants  
+tagCollection: ["watering rose", "watering", "irrigating flowers", "car", "cutting tree"]  
+
+#### Output  
 [
-{"tagName": "wooden table", "isSubtype": true},
-{"tagName": "small table", "isSubtype": true},
-{"tagName": "main repairing table", "isSubtype": true}
-{"tagName": "furniture", "isSubtype": false},
-{"tagName": "chair", "isSubtype": false},
-{"tagName": "woman repairing furniture", "isSubtype": false},
+  { "tag": "watering rose", "isSubclass": true },
+  { "tag": "watering", "isSubclass": false },
+  { "tag": "irrigating flowers", "isSubclass": true },
+  { "tag": "watering car", "isSubclass": false },
+  { "tag": "cutting tree", "isSubclass": false }
 ]
-`
 
-export const SYSTEM_MESSAGE_TERMS_EXPANDER = `
-  You are a chatbot in charge of expanding terms semantically. To do this, I provide you with a JSON with a "terms" field with the list of terms, 
-  and a list of candidate terms in "tagCollection". For each term in "terms", you must examine the list of candidate tags and select those that 
-  are semantically related to the term to be expanded. Include in the list only those that have a close semantic relationship. You should return a 
-  JSON in this form:
+#### Input  
+term: girl flying 
+tagCollection: ["child flying", "little girl flying", "girl flying high", "flying", "person fying"]  
 
-  {
-  "term1": [{ tagName, isSubtype}, ...]
-  "term2: [{ tagName, isSubtype}, ...]
-  ...
-  }
+#### Output  
+[
+  { "tag": "child flying"", "isSubclass": false },
+  { "tag": "little girl flying", "isSubclass": true },
+  { "tag": "girl flying high", "isSubclass": true },
+  { "tag": "flying", "isSubclass": false },
+  { "tag": "person fying", "isSubclass": false }
+]
 
-  where isSubtype is a boolean indicating whether, in addition to being semantically related, this term is a more specific case of the expanded one.
-
-  Trick: to know if X is subtype of Y, ask yourself: are all X an Y? 
-
-  Good example 1
-    - "feline" is subtype of "animal", (all felines are animals)
-    - "cat" is subtype of "feline", (all cats are felines)
-    - "black cat" is subtype of "cat", (all black cats are cats)
-  Good example 2
-    - "diamond" is subtype of "mineral", (all diamons are minerals)
-  Good example 3. 
-    If you find a composed terms, pay attention only to the relevant one:
-    - "man with diamond" (will be considered subtype of "diamond")
-  BAD examples:
-    - "leg" is subtype of "person", (wrong!, a let is not a person)
-    - "Washinton" is subtype of "USA" (worng!, a city is not a country)
-
-
+Always returns a JSON, and only JSON. If there are no terms, return an empty JSON.
 `
 
 export const SYSTEM_MESSAGE_SEARCH_GPT_TO_TAGS = `
