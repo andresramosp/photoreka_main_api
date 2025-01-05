@@ -13,7 +13,7 @@ const PRICES = {
     input: 0.15 / 1_000_000, // USD per input token
     output: 0.6 / 1_000_000, // USD per output token
   },
-  'ft:gpt-4o-mini-2024-07-18:personal:curatorlab-term-expansor:AlVylwdQ': {
+  'ft:gpt-4o-mini-2024-07-18:personal:refine:AlpaXAxW': {
     input: 0.3 / 1_000_000, // USD per input token
     output: 1.2 / 1_000_000, // USD per output token
   },
@@ -77,13 +77,34 @@ export default class ModelsService {
     }
   }
 
+  public async getSynonymTags(tag: string, tagList: string[]): Promise<string[]> {
+    try {
+      const payload = {
+        tag,
+        tag_list: tagList,
+        proximity_threshold: 0.7,
+        apply_semantic_proximity: false,
+      }
+      const { data } = await axios.post('http://127.0.0.1:5000/get_synonym_tags', payload, {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+
+      return data.matches || []
+    } catch (error) {
+      console.error('Error fetching tags by description:', error)
+      return []
+    }
+  }
+
   public async getGPTResponse(
     systemContent: string | null,
     userContent: any,
     model:
       | 'gpt-4o'
       | 'gpt-4o-mini'
-      | 'ft:gpt-4o-mini-2024-07-18:personal:curatorlab-term-expansor-v3-lr:AldGdmpv' = 'gpt-4o-mini',
+      | 'ft:gpt-4o-mini-2024-07-18:personal:refine:AlpaXAxW' = 'gpt-4o-mini',
     cacheDuration = 60 * 15 // Cache duration in seconds
   ) {
     try {

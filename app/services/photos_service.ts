@@ -97,22 +97,6 @@ export default class PhotosService {
     return filteredPhotos
   }
 
-  private filterByDescription(allPhotos: Photo[], tags: string[]) {
-    const lowerCaseTags = tags.map((tag) => tag.toLowerCase())
-
-    return allPhotos.filter((photo) => {
-      if (!photo.description) return false
-      const descriptionLower = photo.description.toLowerCase()
-
-      const matchingTagsCount = lowerCaseTags.reduce((count, tag) => {
-        return descriptionLower.includes(tag) ? count + 1 : count
-      }, 0)
-
-      const matchRatio = matchingTagsCount / lowerCaseTags.length
-      return matchRatio >= 0.2
-    })
-  }
-
   private async getSemanticNearTags(terms: any, tags: any, query: any) {
     const modelsService = new ModelsService()
 
@@ -190,7 +174,7 @@ export default class PhotosService {
             term: term.tagName,
             tagCollection: filteredTermTags,
           }),
-          'ft:gpt-4o-mini-2024-07-18:personal:curatorlab-term-expansor-v3-lr:AldGdmpv'
+          'ft:gpt-4o-mini-2024-07-18:personal:refine:AlpaXAxW'
         )
 
         // Añadir el resultado al diccionario
