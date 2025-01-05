@@ -118,6 +118,43 @@ export default class PhotosService {
     }, [])
   }
 
+  public async saveExpandadTerms(term: any, tags: any[], expansionResults: any) {
+    const modelsService = new ModelsService()
+
+    try {
+      const similarTags = await modelsService.getSynonymTags(
+        term.tagName,
+        tags.map((tag) => tag.name)
+      )
+      if (similarTags.length) {
+        similarTags.forEach(async (similarTag) => {
+          const tagInDB = tags.find((t) => t.name === similarTag)
+          if (tagInDB) {
+            tagInDB.children = {
+              tags: Array.from(
+                new Set([
+                  ...(tagInDB.children?.length ? tagInDB.children : []),
+                  ...expansionResults[term.tagName],
+                ])
+              ),
+            }
+            await tagInDB.save()
+          }
+        })
+      }
+
+      // Create a new tag only if the term itself is not found in similar tags
+      if (!similarTags.includes(term.tagName)) {
+        const newTag = new Tag()
+        newTag.name = term.tagName
+        newTag.children = { tags: expansionResults[term.tagName] }
+        newTag.save()
+      }
+    } catch (err) {
+      console.error('Error guardando expansores')
+    }
+  }
+
   public async search_gpt_to_tags_v2(query: any): Promise<any> {
     const modelsService = new ModelsService()
 
@@ -152,7 +189,7 @@ export default class PhotosService {
       ...queryLogicResult.tags_or,
     ]
 
-    // Quito de los tags los que ya estan en el dictionary. Quiza habria que afinar y quitar por term.
+    // Remove tags already in the dictionary
     if (query.currentExpandedDict) {
       let currentQueryTags = [...new Set(Object.values(query.currentExpandedDict).flat())]
       allTags = allTags.filter((tag) => !currentQueryTags.includes(tag))
@@ -165,23 +202,32 @@ export default class PhotosService {
       terms.map(async (term) => {
         const filteredTermTags = await this.getSemanticNearTags([term.tagName], allTags, query)
         console.log(JSON.stringify(filteredTermTags))
-        const { result, cost } = await modelsService.getGPTResponse(
-          term.isAction
-            ? SYSTEM_MESSAGE_TERMS_ACTIONS_EXPANDER_V4
-            : SYSTEM_MESSAGE_TERMS_EXPANDER_V4,
-          JSON.stringify({
-            operation: 'semanticSubExpansion',
-            term: term.tagName,
-            tagCollection: filteredTermTags,
-          }),
-          'ft:gpt-4o-mini-2024-07-18:personal:refine:AlpaXAxW'
-        )
 
-        // Añadir el resultado al diccionario
-        expansionResults[term.tagName] = result
-          .filter((tag: any) => tag.isSubclass)
-          .map((tag: any) => tag.tag)
-        expansionCosts.push(cost)
+        const existingTag = tags.find((tag) => tag.name === term.tagName)
+        if (existingTag && existingTag.children?.tags.length) {
+          expansionResults[term.tagName] = existingTag.children.tags || []
+          console.log('Using cached expansors for: ', term.tagName)
+        } else {
+          const { result, cost } = await modelsService.getGPTResponse(
+            term.isAction
+              ? SYSTEM_MESSAGE_TERMS_ACTIONS_EXPANDER_V4
+              : SYSTEM_MESSAGE_TERMS_EXPANDER_V4,
+            JSON.stringify({
+              operation: 'semanticSubExpansion',
+              term: term.tagName,
+              tagCollection: filteredTermTags,
+            }),
+            'ft:gpt-4o-mini-2024-07-18:personal:refine:AlpaXAxW'
+          )
+
+          // Add the result to the dictionary
+          expansionResults[term.tagName] = result
+            .filter((tag: any) => tag.isSubclass)
+            .map((tag: any) => tag.tag)
+
+          expansionCosts.push(cost)
+          this.saveExpandadTerms(term, tags, expansionResults)
+        }
       })
     )
 

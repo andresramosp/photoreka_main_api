@@ -105,7 +105,7 @@ export default class ModelsService {
       | 'gpt-4o'
       | 'gpt-4o-mini'
       | 'ft:gpt-4o-mini-2024-07-18:personal:refine:AlpaXAxW' = 'gpt-4o-mini',
-    cacheDuration = 60 * 15 // Cache duration in seconds
+    cacheDuration = 3 //60 * 15 // Cache duration in seconds
   ) {
     try {
       const payload = {

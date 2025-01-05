@@ -13,7 +13,7 @@ export default class Tag extends BaseModel {
   declare group: string
 
   @column()
-  declare children: Array<string> | null
+  declare children: Record<string, []>
 
   @column.dateTime({ autoCreate: true })
   declare createdAt: DateTime
