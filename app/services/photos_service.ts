@@ -5,27 +5,16 @@ import axios from 'axios'
 import fs from 'fs/promises'
 
 import {
-  SYSTEM_MESSAGE_QUERY_TO_LOGIC,
   SYSTEM_MESSAGE_QUERY_TO_LOGIC_V2,
   SYSTEM_MESSAGE_SEARCH_GPT,
   SYSTEM_MESSAGE_SEARCH_GPT_FORMALIZED,
   SYSTEM_MESSAGE_SEARCH_GPT_IMG,
-  SYSTEM_MESSAGE_SEARCH_GPT_TO_TAGS,
-  SYSTEM_MESSAGE_SEARCH_GPT_TO_TAGS_V2,
   SYSTEM_MESSAGE_TERMS_ACTIONS_EXPANDER_V4,
-  SYSTEM_MESSAGE_TERMS_EXPANDER,
-  SYSTEM_MESSAGE_TERMS_EXPANDER_V2,
-  SYSTEM_MESSAGE_TERMS_EXPANDER_V3,
-  SYSTEM_MESSAGE_TERMS_EXPANDER_V3_1,
   SYSTEM_MESSAGE_TERMS_EXPANDER_V4,
 } from '../utils/GPTMessages.js'
 import ModelsService from './models_service.js'
 import path from 'path'
 import sharp from 'sharp'
-
-const COST_PER_1M_TOKENS_USD = 2.5
-const USD_TO_EUR = 0.92
-const COST_PER_TOKEN_EUR = (COST_PER_1M_TOKENS_USD / 1_000_000) * USD_TO_EUR
 
 export default class PhotosService {
   /**
@@ -169,7 +158,8 @@ export default class PhotosService {
         SYSTEM_MESSAGE_QUERY_TO_LOGIC_V2,
         JSON.stringify({
           query: query.description,
-        })
+        }),
+        'ft:gpt-4o-mini-2024-07-18:personal:refine:AlpaXAxW'
       )
       queryLogicResult = result
       cost1 = cost
@@ -201,7 +191,6 @@ export default class PhotosService {
     await Promise.all(
       terms.map(async (term) => {
         const filteredTermTags = await this.getSemanticNearTags([term.tagName], allTags, query)
-        console.log(JSON.stringify(filteredTermTags))
 
         const existingTag = tags.find((tag) => tag.name === term.tagName)
         if (existingTag && existingTag.children?.tags.length) {

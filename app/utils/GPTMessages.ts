@@ -1,25 +1,3 @@
-export const SYSTEM_MESSAGE_ANALIZER = (photosBatch: any[]) => `
-            Return a JSON, and only a JSON, where each element in the array contains information about one image. 
-            For each image, include:
-
-            - 'id': id of the image, using this comma-separated, ordered list: ${photosBatch.map((img: any) => img.id).join(',')}
-            - 'description' (around 800 words): describes the image in all detail, avoiding all artistic or subjective evaluations, 
-              going through each element / area / object of the image, describing the actions, the objects, the people and relevant details. Make no assumptions 
-              about what might be on the scene, but rather what you actually see. 
-            - 'objects_tags' (up to 10 words): list all the objects you can see in the photo.
-            - 'location_tags' (up to 5 words): tags which describes the concrete location, and wether it's inside or outside. (Example: ['teather', 'beach', 'fashion shop', 'outdoors' 'public square'])
-            - 'weather_time_tags': (up to 3 words): tags related to weather and time of the day (Example: ['night', 'rainy', 'winter'])
-            - 'persons_tags' (up to 10 words): all the persons you can see in the photo, plus a tag indicating number or people. Example: ['man in suits', 'funny kid', 'waiter in black', 'two people', 'six people']
-            - 'action_tags' (up to 5 words): similiar to 'persons_tags', but enphatizing the actions of each person. Example: ['man playing chess', 'kid jumping', 'woman taking photo', 'old man waiting bus']
-            - 'details_tags' (up to 5 words): specifics and/or strange details you appreciate on someone, which can distinct this photo from others. Example: ['long hair', 'tattoo']
-            - 'style_tags' (up to 2 words): the photographic styles you recognize. Example: ['portrait', 'urban photography', 'landscape', 'looking at camera', 'reflections']
-            - 'mood_tags' (up to 2 words): the general mood or feeling you recognize. Example: ['joyful', 'dramatic']
-            - 'culture_tags' (up to 2 words): the culture or country you guess the photo has been taken. As much concrete as possible. Example: ['Madrid', 'China', 'Asia', 'Traditional'])
-
-            IMPORTANT: DON't use labels that are too generic or abstract, such as: [environment, activity, shapes, scene, lights...] 
-            If you really have to use these words, qualify them. For example: “artificial lights”..
-          `
-
 export const SYSTEM_MESSAGE_ANALIZER_2 = (photosBatch: any[]) => `
             You are a bot in charge of analyzing images and returning lists with all the objects and people you see in the photos.
 
@@ -43,29 +21,7 @@ export const SYSTEM_MESSAGE_ANALIZER_2 = (photosBatch: any[]) => `
             Note: cronopios and lunariscas are non existent objects, only for example purposes. 
           `
 
-export const SYSTEM_MESSAGE_QUERY_TO_LOGIC = `
-You are a bot in charge of interpreting and converting user sentences to cold and precise logical sequences. 
-These sentences are in the "query" field and will be natural language picture search filters, like “I want pictures of people sitting down”, 
-but more complex. You must split the phrases into their logical AND | OR | NOT segments, so that I can then do a search by tags in DB. Examples
-
-  query: “pictures of animals”.
-  result: “must be animals”.
-
-  query “photos of animals on the beach and without people nearby”.
-  result: “must be animals AND must be in the beach AND must NOT be people”.
-
-  query “photos showing non domestic animals” 
-  result: “must be animals AND must NOT be domestic animals” 
-
-  query: “pictures with umbrellas at night”
-  result: “must be umbrellas AND must be night” 
-
-  query: “photos of children playing in an Asian or African country” 
-  result: “must be children AND (must be Asia OR must be Africa)”
-
-Return only the phrase without aditional comments in JSON format: { result: 'the phrase' }.
-`
-export const SYSTEM_MESSAGE_QUERY_TO_LOGIC_V2 = `ç
+export const SYSTEM_MESSAGE_QUERY_TO_LOGIC_V2 = `
 You are a bot in charge of interpreting and converting user queries in natural language to cold and precise logical sequences. 
 These sentences are in the "query" field and will be photos search filters, like “I want pictures of people sitting down”, 
 but more complex AND|OR|NOT logic. You must split the phrases into their logical AND | OR | NOT segments and generate 3 arrays:
@@ -76,12 +32,11 @@ but more complex AND|OR|NOT logic. You must split the phrases into their logical
 
 Each item will be like this: { tagName, isAction }, where isAction indicates if it has a verb
 
-Terms can be one word, composed words or 2 words syntagmas. When you find adjectival words, or actions, keep them as a single element. 
-Examples :“nice boy”, "waiting person", "woman driving car". 
-If you find an action with subject, keep the subject. But if the action lacks subject, add "someone". 
-Example: "cronopios playing" -> "cronopios playing", "playing" -> "someone playing". 
-
-Since the query will be relate always to photos, ignore all prefix like "photos of...", "image of...". Don't include that as a segment.
+Instructions:
+1. Ignore prefixes like "photos of..." or "image of...".
+2. Keep adjectival phrases, actions, or subject-action pairs as single elements. 
+   Examples: "nice boy", "waiting person", "woman driving car".
+3. If an action lacks a subject, add "someone". Example: "cronopios playing" -> "cronopios playing", "playing" -> "someone playing". 
 
 Example 1 
 For the query "photos with animals and not people".
@@ -98,9 +53,7 @@ For the query "Images with animals playing, in Asia or Africa, and with no kids 
 Result: 
   { tags_and: [{ tagName: 'animals playing', isAction: true}], tags_not: [{ tagName: 'kids', isAction: false}], tags_or: [{ tagName: 'Asia', isAction: false }, { tagName: 'Asia', isAction: false }]} 
 
-
-
-Return only a JSON, with no aditional comments.
+Return only a JSON, adhering to the provided schema.
 `
 
 // Corresponde al prompt del entrenamiento
@@ -143,9 +96,12 @@ specific than the term.
 2. A tag is excluded as a subclass ('isSubclass: false') if:  
    - It is broader or more general than the term.  
    - It is unrelated to the semantic domain of the term.  
-3- Term can be single words, syntagm and actions.
-   - For adjectives and verbs, evaluate the subclass according to whether it is a specialization of the term's. 'Big red dog' is a specialization of 'Big dog'. 
-    'Boy running merrily' is a specialization of 'Kid running'. 
+3- If a term has qualifiers (like adjectives), the selected subclasses must preserver these qualifiers, and optionally add more (specialization).
+  Examples: 
+   1. 'Big red dog' is a subclass of 'Big dog'. 
+   2. 'Boy running merrily' is a subclass of 'Kid running'. 
+   3) 'table' is NOT a valid subclass for 'big table' (because lacks 'big')
+   4) 'red table' is NOT a valid subclass for 'big table' (because lacks 'red')
 
 **Output format:**  
 For each tag in the tagCollection, return an item structured as:  
@@ -181,18 +137,17 @@ tagCollection: ["rose", "flower", "vegetation", "car", "tree"]
 ]
 
 #### Input  
-term: girl  
-tagCollection: ["child", "girl", "boy", "woman", "person"]  
+term: funny girl  
+tagCollection: ["child", "girl", "boy", "woman", "funny little girl"]  
 
 #### Output  
 [
   { "tag": "child", "isSubclass": false },
-  { "tag": "girl", "isSubclass": true },
+  { "tag": "girl", "isSubclass": false },
   { "tag": "boy", "isSubclass": false },
   { "tag": "woman", "isSubclass": false },
-  { "tag": "person", "isSubclass": false }
+  { "tag": "funny little girl", "isSubclass": true }
 ]
-
 
 Always returns a JSON, and only JSON. If there are no terms, return an empty JSON.
 `

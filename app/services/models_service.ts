@@ -104,11 +104,11 @@ export default class ModelsService {
     model:
       | 'gpt-4o'
       | 'gpt-4o-mini'
-      | 'ft:gpt-4o-mini-2024-07-18:personal:refine:AlpaXAxW' = 'gpt-4o-mini',
-    cacheDuration = 3 //60 * 15 // Cache duration in seconds
+      | 'ft:gpt-4o-mini-2024-07-18:personal:refine:AlpaXAxW' = 'gpt-4o-mini'
   ) {
+    let cacheDuration = 60 * 5
     try {
-      const payload = {
+      let payload: any = {
         model,
         temperature: 0.1,
         messages: systemContent
@@ -129,6 +129,7 @@ export default class ModelsService {
               },
             ],
         max_tokens: 15000,
+        // response_format: { type: 'json_object' }, // TODO: probar si da problemas de consistencia al devolver JSON, pero tratar el .result
       }
 
       const cacheKey = JSON.stringify({ systemContent, userContent, model })
@@ -139,8 +140,6 @@ export default class ModelsService {
         console.log('Cache hit for getGPTResponse')
         return cachedResponse
       }
-
-      console.log(JSON.stringify(payload).length)
 
       const { data } = await axios.post(`${env.get('OPENAI_BASEURL')}/chat/completions`, payload, {
         headers: {
