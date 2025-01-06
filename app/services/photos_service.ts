@@ -86,13 +86,11 @@ export default class PhotosService {
     return filteredPhotos
   }
 
-  private async getSemanticNearTags(terms: any, tags: any, query: any) {
+  private async getSemanticNearTags(terms: any, tags: any, threshold: number = 40) {
     const modelsService = new ModelsService()
 
     const semanticProximitiesList = await Promise.all(
-      terms.map((term: string) =>
-        modelsService.semanticProximity(term, tags, 45 - 5 * query.iteration)
-      )
+      terms.map((term: string) => modelsService.semanticProximity(term, tags, threshold))
     )
 
     // Combinar y filtrar las claves de todos los resultados
@@ -127,7 +125,10 @@ export default class PhotosService {
                 ])
               ),
             }
-            await tagInDB.save()
+            tagInDB.save()
+            console.log(
+              `Saved children for existing tag ${tagInDB.name}: ${JSON.stringify(tagInDB.children)}`
+            )
           }
         })
       }
@@ -138,17 +139,63 @@ export default class PhotosService {
         newTag.name = term.tagName
         newTag.children = { tags: expansionResults[term.tagName] }
         newTag.save()
+        console.log(`Saved children for new tag ${newTag.name}: ${JSON.stringify(newTag.children)}`)
       }
     } catch (err) {
       console.error('Error guardando expansores')
     }
   }
 
+  public async performTermsExpansion(terms: any[], allTags: any[]) {
+    let expansionResults: any = {}
+    const expansionCosts: any[] = []
+    const modelsService = new ModelsService()
+
+    await Promise.all(
+      terms.map(async (term) => {
+        const filteredTermTags = await this.getSemanticNearTags(
+          [term.tagName],
+          allTags.map((tag) => tag.name),
+          40
+        )
+
+        const existingTag = allTags.find((tag) => tag.name === term.tagName)
+        if (existingTag && existingTag.children?.tags.length) {
+          expansionResults[term.tagName] = existingTag.children.tags || []
+          console.log(
+            `Using stored expansors for ${term.tagName}: ${JSON.stringify(existingTag.children.tags)} `
+          )
+        } else {
+          const { result, cost } = await modelsService.getGPTResponse(
+            term.isAction
+              ? SYSTEM_MESSAGE_TERMS_ACTIONS_EXPANDER_V4
+              : SYSTEM_MESSAGE_TERMS_EXPANDER_V4,
+            JSON.stringify({
+              operation: 'semanticSubExpansion',
+              term: term.tagName,
+              tagCollection: filteredTermTags,
+            }),
+            'ft:gpt-4o-mini-2024-07-18:personal:refine:AlpaXAxW'
+          )
+
+          // Add the result to the dictionary
+          expansionResults[term.tagName] = result
+            .filter((tag: any) => tag.isSubclass)
+            .map((tag: any) => tag.tag)
+
+          expansionCosts.push(cost)
+          this.saveExpandadTerms(term, allTags, expansionResults)
+        }
+      })
+    )
+
+    return { expansionResults, expansionCosts }
+  }
+
   public async search_gpt_to_tags_v2(query: any): Promise<any> {
     const modelsService = new ModelsService()
 
-    const tags = await Tag.all()
-    let allTags = tags.map((tag) => tag.name)
+    const allTags = await Tag.all()
     let allPhotos
     let cost1
     let queryLogicResult
@@ -179,79 +226,28 @@ export default class PhotosService {
       ...queryLogicResult.tags_or,
     ]
 
-    // Remove tags already in the dictionary
-    if (query.currentExpandedDict) {
-      let currentQueryTags = [...new Set(Object.values(query.currentExpandedDict).flat())]
-      allTags = allTags.filter((tag) => !currentQueryTags.includes(tag))
-    }
-
-    let expansionResults: any = {}
-    const expansionCosts: any[] = []
-
-    await Promise.all(
-      terms.map(async (term) => {
-        const filteredTermTags = await this.getSemanticNearTags([term.tagName], allTags, query)
-
-        const existingTag = tags.find((tag) => tag.name === term.tagName)
-        if (existingTag && existingTag.children?.tags.length) {
-          expansionResults[term.tagName] = existingTag.children.tags || []
-          console.log('Using cached expansors for: ', term.tagName)
-        } else {
-          const { result, cost } = await modelsService.getGPTResponse(
-            term.isAction
-              ? SYSTEM_MESSAGE_TERMS_ACTIONS_EXPANDER_V4
-              : SYSTEM_MESSAGE_TERMS_EXPANDER_V4,
-            JSON.stringify({
-              operation: 'semanticSubExpansion',
-              term: term.tagName,
-              tagCollection: filteredTermTags,
-            }),
-            'ft:gpt-4o-mini-2024-07-18:personal:refine:AlpaXAxW'
-          )
-
-          // Add the result to the dictionary
-          expansionResults[term.tagName] = result
-            .filter((tag: any) => tag.isSubclass)
-            .map((tag: any) => tag.tag)
-
-          expansionCosts.push(cost)
-          this.saveExpandadTerms(term, tags, expansionResults)
-        }
-      })
-    )
-
-    const mergedDictionary = { ...expansionResults }
-
-    for (const key in query.currentExpandedDict) {
-      if (Array.isArray(query.currentExpandedDict[key])) {
-        mergedDictionary[key] = [
-          ...new Set([...(mergedDictionary[key] || []), ...query.currentExpandedDict[key]]),
-        ]
-      } else {
-        mergedDictionary[key] = query.currentExpandedDict[key]
-      }
-    }
+    let { expansionResults, expansionCosts } = await this.performTermsExpansion(terms, allTags)
 
     let tagsAnd, tagsNot, tagsOr
 
     tagsAnd = queryLogicResult.tags_and.map((tag: any) => {
-      let expandedTerms = mergedDictionary[tag.tagName].length
-        ? [tag.tagName, ...mergedDictionary[tag.tagName]]
+      let expandedTerms = expansionResults[tag.tagName].length
+        ? [tag.tagName, ...expansionResults[tag.tagName]]
         : [tag.tagName]
       return expandedTerms
     })
     tagsNot = queryLogicResult.tags_not
       .map((tag: any) => {
-        let expandedTerms = mergedDictionary[tag.tagName].length
-          ? [tag.tagName, ...mergedDictionary[tag.tagName]]
+        let expandedTerms = expansionResults[tag.tagName].length
+          ? [tag.tagName, ...expansionResults[tag.tagName]]
           : [tag.tagName]
         return expandedTerms
       })
       .flat()
     tagsOr = queryLogicResult.tags_or
       .map((tag: any) => {
-        let expandedTerms = mergedDictionary[tag.tagName].length
-          ? [tag.tagName, ...mergedDictionary[tag.tagName]]
+        let expandedTerms = expansionResults[tag.tagName].length
+          ? [tag.tagName, ...expansionResults[tag.tagName]]
           : [tag.tagName]
         return expandedTerms
       })
@@ -264,7 +260,7 @@ export default class PhotosService {
       results: filteredPhotos,
       cost: { cost1, expansionCosts },
       queryLogicResult,
-      expandedDictionary: mergedDictionary,
+      expandedDictionary: expansionResults,
     }
   }
 
@@ -275,7 +271,7 @@ export default class PhotosService {
 
     if (query.iteration == 1) {
       const { result: formalizedQuery, cost: cost1 } = await modelsService.getGPTResponse(
-        SYSTEM_MESSAGE_QUERY_TO_LOGIC,
+        SYSTEM_MESSAGE_QUERY_TO_LOGIC_V2,
         JSON.stringify({
           query: query.description,
         })

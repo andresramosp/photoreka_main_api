@@ -105,7 +105,7 @@ export default class ModelsService {
       | 'gpt-4o'
       | 'gpt-4o-mini'
       | 'ft:gpt-4o-mini-2024-07-18:personal:refine:AlpaXAxW' = 'gpt-4o-mini'
-  ) {
+  ): Promise<any> {
     let cacheDuration = 60 * 5
     try {
       let payload: any = {
@@ -136,10 +136,10 @@ export default class ModelsService {
 
       // Check cache
       const cachedResponse = cache.get(cacheKey)
-      if (cachedResponse) {
-        console.log('Cache hit for getGPTResponse')
-        return cachedResponse
-      }
+      // if (cachedResponse) {
+      //   console.log('Cache hit for getGPTResponse')
+      //   return cachedResponse
+      // }
 
       const { data } = await axios.post(`${env.get('OPENAI_BASEURL')}/chat/completions`, payload, {
         headers: {
