@@ -50,13 +50,7 @@ export default class PhotosService {
     return expandedTags // Return the array of arrays
   }
 
-  private filterByTags(
-    allPhotos: Photo[],
-    tagsAnd: string[][],
-    tagsNot: string[],
-    tagsOr: string[],
-    flexible: boolean
-  ) {
+  private filterByTags(allPhotos: Photo[], tagsAnd: any[][], tagsNot: string[], tagsOr: string[]) {
     let filteredPhotos = allPhotos
 
     // los or se meten todos como segmento más del AND
@@ -66,11 +60,9 @@ export default class PhotosService {
     if (tagsAnd.length > 0 && tagsAnd[0].length) {
       filteredPhotos = filteredPhotos.filter((photo) => {
         const matchedGroups = tagsAnd.filter((tagGroup) =>
-          tagGroup.some((tag) => photo.tags.some((t) => t.name === tag))
+          tagGroup.some((tag) => photo.tags.some((t) => t.name === tag.tag))
         )
-        return flexible
-          ? matchedGroups.length >= Math.ceil((tagsAnd.length * 2) / 3)
-          : matchedGroups.length === tagsAnd.length
+        return matchedGroups.length === tagsAnd.length
       })
     }
 
@@ -86,23 +78,35 @@ export default class PhotosService {
     return filteredPhotos
   }
 
-  private async getSemanticNearTags(terms: any, tags: any, threshold: number = 40) {
+  private async getSemanticNearTags(
+    terms: any,
+    tags: any,
+    threshold: number = 40,
+    maxResults: number = 15
+  ) {
     const modelsService = new ModelsService()
 
     const semanticProximitiesList = await Promise.all(
       terms.map((term: string) => modelsService.semanticProximity(term, tags, threshold))
     )
 
-    // Combinar y filtrar las claves de todos los resultados
-    return semanticProximitiesList.reduce((acc: any, current) => {
-      const keys = Object.keys(current)
-      keys.forEach((key) => {
-        if (!acc.includes(key)) {
-          acc.push(key) // Agrega solo las claves únicas
+    // Combinar y filtrar las claves de todos los resultados con sus valores
+    const combinedResults = semanticProximitiesList.reduce((acc: any, current) => {
+      Object.entries(current).forEach(([key, value]: any) => {
+        if (!acc[key] || acc[key] < value) {
+          acc[key] = value // Mantén el mayor valor de proximidad
         }
       })
       return acc
-    }, [])
+    }, {})
+
+    // Convertir el objeto combinado a un array de objetos { name, value }
+    const sortedResults = Object.entries(combinedResults)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a: any, b: any) => b.value - a.value) // Ordenar por proximidad descendente
+      .slice(0, maxResults) // Tomar solo los N más cercanos
+
+    return sortedResults
   }
 
   public async saveExpandadTerms(term: any, tags: any[], expansionResults: any) {
@@ -117,13 +121,17 @@ export default class PhotosService {
         similarTags.forEach(async (similarTag) => {
           const tagInDB = tags.find((t) => t.name === similarTag)
           if (tagInDB) {
+            const existingChildren = [...(tagInDB.children?.length ? tagInDB.children : [])]
+
+            const mergedChildren = [...existingChildren, ...expansionResults[term.tagName]].reduce(
+              (acc, item) => {
+                acc[item.tag] = { ...acc[item.tag], ...item }
+                return acc
+              },
+              {}
+            )
             tagInDB.children = {
-              tags: Array.from(
-                new Set([
-                  ...(tagInDB.children?.length ? tagInDB.children : []),
-                  ...expansionResults[term.tagName],
-                ])
-              ),
+              tags: Object.values(mergedChildren),
             }
             tagInDB.save()
             console.log(
@@ -153,17 +161,16 @@ export default class PhotosService {
 
     await Promise.all(
       terms.map(async (term) => {
-        const filteredTermTags = await this.getSemanticNearTags(
+        const nearTags = await this.getSemanticNearTags(
           [term.tagName],
-          allTags.map((tag) => tag.name),
-          40
+          allTags.map((tag) => tag.name).filter((tagName) => tagName !== term.tagName),
+          30
         )
-
         const existingTag = allTags.find((tag) => tag.name === term.tagName)
         if (existingTag && existingTag.children?.tags.length) {
           expansionResults[term.tagName] = existingTag.children.tags || []
           console.log(
-            `Using stored expansors for ${term.tagName}: ${JSON.stringify(existingTag.children.tags)} `
+            `Using stored expansors for ${term.tagName}: ${JSON.stringify(existingTag.children.tags.map((t: any) => t.tag))} `
           )
         } else {
           const { result, cost } = await modelsService.getGPTResponse(
@@ -173,15 +180,20 @@ export default class PhotosService {
             JSON.stringify({
               operation: 'semanticSubExpansion',
               term: term.tagName,
-              tagCollection: filteredTermTags,
+              tagCollection: nearTags.map((tag) => tag.name),
             }),
             'ft:gpt-4o-mini-2024-07-18:personal:refine:AlpaXAxW'
           )
 
-          // Add the result to the dictionary
-          expansionResults[term.tagName] = result
-            .filter((tag: any) => tag.isSubclass)
-            .map((tag: any) => tag.tag)
+          // Recuperamos la proximidad semántica
+          if (result.length) {
+            for (let tag of result) {
+              tag.value = nearTags.find((nearTag) => nearTag.name == tag.tag)?.value
+            }
+            expansionResults[term.tagName] = result.filter((tag: any) => tag.isSubclass)
+          } else {
+            expansionResults[term.tagName] = []
+          }
 
           expansionCosts.push(cost)
           this.saveExpandadTerms(term, allTags, expansionResults)
@@ -229,38 +241,60 @@ export default class PhotosService {
     let { expansionResults, expansionCosts } = await this.performTermsExpansion(terms, allTags)
 
     let tagsAnd, tagsNot, tagsOr
+    let tagPerIteration = 2
+    let results = []
+    let hasMoreTerms = true
 
-    tagsAnd = queryLogicResult.tags_and.map((tag: any) => {
-      let expandedTerms = expansionResults[tag.tagName].length
-        ? [tag.tagName, ...expansionResults[tag.tagName]]
-        : [tag.tagName]
-      return expandedTerms
-    })
-    tagsNot = queryLogicResult.tags_not
-      .map((tag: any) => {
-        let expandedTerms = expansionResults[tag.tagName].length
-          ? [tag.tagName, ...expansionResults[tag.tagName]]
-          : [tag.tagName]
-        return expandedTerms
+    do {
+      tagsAnd = queryLogicResult.tags_and.map((tag: any) => {
+        const expandedTerms = expansionResults[tag.tagName].slice(
+          0,
+          query.iteration * tagPerIteration
+        )
+        const hasMore = expandedTerms.length < expansionResults[tag.tagName].length
+        tag.hasMore = hasMore
+        return expandedTerms.length
+          ? [{ tag: tag.tagName, value: 100 }, ...expandedTerms]
+          : [{ tag: tag.tagName, value: 100 }]
       })
-      .flat()
-    tagsOr = queryLogicResult.tags_or
-      .map((tag: any) => {
-        let expandedTerms = expansionResults[tag.tagName].length
-          ? [tag.tagName, ...expansionResults[tag.tagName]]
-          : [tag.tagName]
-        return expandedTerms
-      })
-      .flat()
 
-    const results = this.filterByTags(allPhotos, tagsAnd, tagsNot, tagsOr, query.iteration > 2)
-    const filteredPhotos = [...new Set([...results])]
+      tagsNot = queryLogicResult.tags_not
+        .map((tag: any) => {
+          const expandedTerms = expansionResults[tag.tagName].slice(0, tagPerIteration) // En not no expandimos más con iterations
+          const hasMore = expandedTerms.length < expansionResults[tag.tagName].length
+          tag.hasMore = hasMore
+          return expandedTerms.length ? [tag.tagName, ...expandedTerms] : [tag.tagName]
+        })
+        .flat()
+
+      tagsOr = queryLogicResult.tags_or
+        .map((tag: any) => {
+          const expandedTerms = expansionResults[tag.tagName].slice(
+            0,
+            query.iteration * tagPerIteration
+          )
+          const hasMore = expandedTerms.length < expansionResults[tag.tagName].length
+          tag.hasMore = hasMore
+          return expandedTerms.length ? [tag.tagName, ...expandedTerms] : [tag.tagName]
+        })
+        .flat()
+
+      results = this.filterByTags(allPhotos, tagsAnd, tagsNot, tagsOr)
+
+      const andHasMore = queryLogicResult.tags_and.some((tag: any) => tag.hasMore)
+      const orHasMore = queryLogicResult.tags_or.some((tag: any) => tag.hasMore)
+
+      hasMoreTerms = andHasMore || orHasMore
+
+      query.iteration++
+    } while (!results.length && hasMoreTerms)
 
     return {
-      results: filteredPhotos,
+      results: [...new Set([...results])],
       cost: { cost1, expansionCosts },
       queryLogicResult,
-      expandedDictionary: expansionResults,
+      termsExpansion: { tagsAnd, tagsNot, tagsOr },
+      hasMore: hasMoreTerms,
     }
   }
 

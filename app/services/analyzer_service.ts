@@ -180,7 +180,7 @@ export default class AnalyzerService {
     responses.forEach((response) => {
       if (response.status === 'fulfilled') {
         try {
-          results.push(...response.value.result)
+          results.push(response.value.result)
           costs.push(response.value.cost)
         } catch (err) {
           console.log(err)

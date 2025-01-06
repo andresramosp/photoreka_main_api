@@ -129,7 +129,7 @@ export default class ModelsService {
               },
             ],
         max_tokens: 15000,
-        // response_format: { type: 'json_object' }, // TODO: probar si da problemas de consistencia al devolver JSON, pero tratar el .result
+        response_format: { type: 'json_object' }, // TODO: probar si da problemas de consistencia al devolver JSON, pero tratar el .result
       }
 
       const cacheKey = JSON.stringify({ systemContent, userContent, model })
@@ -173,7 +173,7 @@ export default class ModelsService {
       }
 
       const result = {
-        result: parsedResult,
+        result: parsedResult.result ? parsedResult.result : parsedResult,
         cost: {
           totalCostInEur,
           inputCost,

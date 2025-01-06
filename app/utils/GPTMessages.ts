@@ -85,17 +85,18 @@ You will return a JSON output with the selected candidates.
 
 // Varia un poco respecto al prompt del entrenamiento
 export const SYSTEM_MESSAGE_TERMS_EXPANDER_V4 = `
-You are a chatbot in charge of determining if words belong to a specific ontological hierarchy. You will receive a general term in the 'term' field and a 
+You are a chatbot in charge of determining if tags belong to a specific ontological hierarchy (subclass). You will receive a general term in the 'term' field and a 
 list of candidates in 'tagCollection'. Your task is to evaluate each candidate and determine if it belongs to the semantic domain of the term and is more 
 specific than the term.
 
 **Rules:**  
 1. A tag is selected as a subclass ('isSubclass: true') if:  
-   - It is part of the same semantic domain as the term.  
+   - It is part of the same semantic domain as the term AND 
    - It is a more specific concept than the term.  
 2. A tag is excluded as a subclass ('isSubclass: false') if:  
-   - It is broader or more general than the term.  
-   - It is unrelated to the semantic domain of the term.  
+   - It is broader or more general than the term OR
+   - It is unrelated to the semantic domain of the term OR
+   - It is merely a component or part of the term, but not a subtype ('tail' is not subclass of 'dog', just a part of it). 
 3- If a term has qualifiers (like adjectives), the selected subclasses must preserver these qualifiers, and optionally add more (specialization).
   Examples: 
    1. 'Big red dog' is a subclass of 'Big dog'. 
@@ -105,35 +106,39 @@ specific than the term.
 
 **Output format:**  
 For each tag in the tagCollection, return an item structured as:  
-'{ tag: "name_of_the_tag", isSubclass: boolean }'  
-The 'reasoning' field is not required.
+'{ tag: "name_of_the_tag", isSubclass: boolean, reason: 'because...' }'  
+
+Think step by step to check every previous rule for each tag candidate. 
 
 ### Examples:  
 
 #### Input  
 term: animal  
-tagCollection: ["cat", "dog", "feline", "rock", "furniture"]  
+tagCollection: ["cat", "dog", "feline", "rock", "furniture", "leg", 'living being']  
 
 #### Output  
 [
-  { "tag": "cat", "isSubclass": true },
-  { "tag": "dog", "isSubclass": true },
-  { "tag": "feline", "isSubclass": true },
-  { "tag": "rock", "isSubclass": false },
-  { "tag": "furniture", "isSubclass": false }
+  { "tag": "cat", "isSubclass": true, reason: 'ontological subclass' },
+  { "tag": "dog", "isSubclass": true, reason: 'ontological subclass' },
+  { "tag": "feline", "isSubclass": 'ontological subclass' },
+  { "tag": "rock", "isSubclass": false, reason: 'different domain' }, 
+  { "tag": "furniture", "isSubclass": false, reason: 'different domain' } 
+  { "tag": "animal leg", "isSubclass": false, reason: 'merely a component' } 
+  { "tag": "living being", "isSubclass": false, reason: 'more general' } 
 ]
 
 #### Input  
 term: flower  
-tagCollection: ["rose", "flower", "vegetation", "car", "tree"]  
+tagCollection: ["rose", "flower", "vegetation", "car", "tree", "petal"]  
 
 #### Output  
 [
-  { "tag": "rose", "isSubclass": true },
-  { "tag": "flower", "isSubclass": true },
-  { "tag": "vegetation", "isSubclass": false },
-  { "tag": "car", "isSubclass": false },
-  { "tag": "tree", "isSubclass": false }
+  { "tag": "rose", "isSubclass": true, reason: 'ontological subclass' },
+  { "tag": "flower", "isSubclass": true, reason: 'perfect synonym' },
+  { "tag": "vegetation", "isSubclass": false, reason: 'more general' },
+  { "tag": "car", "isSubclass": false, reason: 'different domain' }, 
+  { "tag": "tree", "isSubclass": false, reason: 'different domain' } 
+  { "tag": "petal", "isSubclass": false, reason: 'merely a component' } 
 ]
 
 #### Input  
@@ -142,11 +147,11 @@ tagCollection: ["child", "girl", "boy", "woman", "funny little girl"]
 
 #### Output  
 [
-  { "tag": "child", "isSubclass": false },
-  { "tag": "girl", "isSubclass": false },
-  { "tag": "boy", "isSubclass": false },
-  { "tag": "woman", "isSubclass": false },
-  { "tag": "funny little girl", "isSubclass": true }
+  { "tag": "child", "isSubclass": false, reason: 'more general' }, 
+  { "tag": "girl", "isSubclass": false, reason: 'more general' }, 
+  { "tag": "boy", "isSubclass": false, reason: 'different domain' }, 
+  { "tag": "woman", "isSubclass": false, reason: 'more general' }, 
+  { "tag": "funny little girl", "isSubclass": true, reason: 'specialization' } 
 ]
 
 Always returns a JSON, and only JSON. If there are no terms, return an empty JSON.
@@ -163,7 +168,7 @@ specific than the term.
 2. A tag is excluded as a subclass ('isSubclass: false') if:  
    - It is broader or more general than the term.  
    - It is unrelated to the semantic domain of the term.  
-3- When you have subject + actoin, evaluate both subject and action.
+3- When you have subject + action, evaluate both subject and action.
    - 'Boy running merrily' is a subclass of 'Kid running', because 'Kid' is subclass of 'Boy' and 'running merrily' and especialization of 'running'. 
 
 **Output format:**  
