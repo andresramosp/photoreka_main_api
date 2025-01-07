@@ -25,31 +25,6 @@ export default class PhotosService {
     return photos
   }
 
-  private async expandTag(
-    tag: string,
-    tagCollection: string[],
-    threshold: number
-  ): Promise<string[]> {
-    const modelsService = new ModelsService()
-    const semanticProximities = await modelsService.semanticProximity(tag, tagCollection, threshold)
-    return Array.from(Object.keys(semanticProximities))
-  }
-  async expandTags(tagArrays: any, allTags: any, threshold: number) {
-    const expandedTags = await Promise.all(
-      tagArrays.map(async (subArray: any) => {
-        if (subArray.length === 0) return []
-
-        const baseTag = subArray[0] // Only expand based on the first tag
-        const newTags = await this.expandTag(baseTag, allTags, threshold)
-
-        let result = new Set([...subArray, ...Object.values(newTags)]) // Append new tags to the original subarray
-        return Array.from(result)
-      })
-    )
-
-    return expandedTags // Return the array of arrays
-  }
-
   private filterByTags(allPhotos: Photo[], tagsAnd: any[][], tagsNot: string[], tagsOr: string[]) {
     let filteredPhotos = allPhotos
 
@@ -109,7 +84,7 @@ export default class PhotosService {
     return sortedResults
   }
 
-  public async saveExpandadTerms(term: any, tags: any[], expansionResults: any) {
+  public async saveExpandadTags(term: any, tags: any[], expansionResults: any) {
     const modelsService = new ModelsService()
 
     try {
@@ -154,7 +129,7 @@ export default class PhotosService {
     }
   }
 
-  public async performTermsExpansion(terms: any[], allTags: any[]) {
+  public async performTagsExpansion(terms: any[], allTags: any[]) {
     let expansionResults: any = {}
     const expansionCosts: any[] = []
     const modelsService = new ModelsService()
@@ -196,7 +171,7 @@ export default class PhotosService {
           }
 
           expansionCosts.push(cost)
-          this.saveExpandadTerms(term, allTags, expansionResults)
+          this.saveExpandadTags(term, allTags, expansionResults)
         }
       })
     )
@@ -238,7 +213,7 @@ export default class PhotosService {
       ...queryLogicResult.tags_or,
     ]
 
-    let { expansionResults, expansionCosts } = await this.performTermsExpansion(terms, allTags)
+    let { expansionResults, expansionCosts } = await this.performTagsExpansion(terms, allTags)
 
     let tagsAnd, tagsNot, tagsOr
     let tagPerIteration = 2
@@ -304,81 +279,86 @@ export default class PhotosService {
     let photos: Photo[] = await Photo.query().preload('tags')
 
     if (query.iteration == 1) {
-      const { result: formalizedQuery, cost: cost1 } = await modelsService.getGPTResponse(
-        SYSTEM_MESSAGE_QUERY_TO_LOGIC_V2,
-        JSON.stringify({
-          query: query.description,
-        })
-      )
-      query.description = formalizedQuery.result
     } else {
       photos = photos.filter((photo) => !query.currentPhotos.includes(photo.id))
     }
 
-    const filteredIds = await this.getSemanticProximePhotos(photos, query, 20)
+    const nearPhotos = await this.getSemanticNearPhotos(photos, query, 20)
 
-    if (filteredIds.length === 0) {
+    if (nearPhotos.length === 0) {
       return {
         results: [],
       }
     }
 
-    let collection: any = filteredIds.map((id: any) => {
-      let photo: any = photos.find((photo) => photo.id == id)
-      return {
-        id,
-        // description: photo?.description,
-        description: photo?.description + ' ' + photo?.tags.map((tag: any) => tag.name).join(','), // TODO solo tags semanticamente proximas! Y apra desc?
-      }
-    })
+    // const { result, cost: cost2 } = await modelsService.getGPTResponse(
+    //   SYSTEM_MESSAGE_SEARCH_GPT_FORMALIZED,
+    //   JSON.stringify({
+    //     query: query.description,
+    //     collection: nearPhotos,
+    //   }),
+    //   'gpt-4o-mini'
+    // )
 
-    const { result, cost: cost2 } = await modelsService.getGPTResponse(
-      SYSTEM_MESSAGE_SEARCH_GPT_FORMALIZED,
-      JSON.stringify({
-        query: query.description,
-        collection,
-      }),
-      'gpt-4o-mini'
-    )
+    // const photosResult = result.map((res: any) => photos.find((photo: any) => photo.id == res.id))
 
-    const photosResult = result.map((res: any) => photos.find((photo: any) => photo.id == res.id))
+    // console.log(query.description)
+    // console.log(result)
 
-    console.log(query.description)
-    console.log(result)
-
-    // Retornar la respuesta
-    return {
-      results: photosResult[0]?.id ? photosResult : [],
-      cost: cost2,
-    }
+    // // Retornar la respuesta
+    // return {
+    //   results: photosResult[0]?.id ? photosResult : [],
+    //   cost: cost2,
+    // }
   }
 
-  public async getSemanticProximePhotos(photos: any, query: any, resultSetLength = 10) {
-    // Obtener las proximidades semánticas
+  public async getSemanticNearPhotos(photos: any, query: any, resultSetLength = 10) {
     const modelsService = new ModelsService()
+
     const semanticProximities = await modelsService.semanticProximity(
       query.description,
-      photos.map((photo: any) => {
-        return {
-          id: photo.id,
-          text: photo.tags.map((tag: any) => tag.name).join(','),
-        }
-      })
+      photos.map((photo: any) => ({
+        id: photo.id,
+        text: photo.tags.map((tag: any) => tag.name).join(','),
+      }))
     )
 
-    // Obtener el X% superior de similitudes
-    const similarityThreshold = 50 // Umbral mínimo de similitud
+    const similarityThresholdTags = 50
+    const similarityThresholdDesc = 25
 
     const sortedProximities = Object.entries(semanticProximities).sort(([, a], [, b]) => b - a)
     const topCount = Math.ceil(resultSetLength)
 
     const topIds = sortedProximities.slice(0, topCount).map(([id]) => id)
     const thresholdIds = Object.entries(semanticProximities)
-      .filter(([, similarity]) => similarity >= similarityThreshold)
+      .filter(([, similarity]) => similarity >= similarityThresholdTags)
       .map(([id]) => id)
 
     const filteredIds = Array.from(new Set([...topIds, ...thresholdIds]))
-    return filteredIds
+
+    const filteredPhotos = photos.filter((photo: any) => filteredIds.includes(photo.id))
+
+    const results = []
+    for (const photo of filteredPhotos) {
+      if (!photo.description) continue
+
+      const chunkProximities = await modelsService.semanticProximitChunks(
+        query.description,
+        photo.description,
+        query.description.length * 8
+      )
+
+      const selectedChunks = chunkProximities
+        .filter(({ proximity }: any) => proximity >= similarityThresholdDesc / 100)
+        .sort((a: any, b: any) => b.proximity - a.proximity)
+
+      results.push({
+        id: photo.id,
+        chunks: selectedChunks.map(({ text_chunk }: any) => text_chunk),
+      })
+    }
+
+    return results
   }
 
   public async search_gpt_img(query: any): Promise<any> {
@@ -386,7 +366,7 @@ export default class PhotosService {
 
     let photos: Photo[] = await Photo.query().preload('tags')
 
-    const filteredIds = await this.getSemanticProximePhotos(photos, query)
+    const filteredIds = await this.getSemanticNearPhotos(photos, query)
 
     if (query.iteration > 1) {
       photos = photos.filter((photo) => !query.currentPhotos.includes(photo.id))

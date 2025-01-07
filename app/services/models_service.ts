@@ -61,6 +61,35 @@ export default class ModelsService {
     }
   }
 
+  public async semanticProximitChunks(
+    text1: string,
+    text2: any,
+    chunkSize: number = 50
+  ): Promise<any[]> {
+    try {
+      const payload = {
+        text1,
+        text2,
+        chunk_size: chunkSize,
+      }
+
+      const { data } = await axios.post(
+        'http://127.0.0.1:5000/semantic_proximity_chunks',
+        payload,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        }
+      )
+
+      return data || []
+    } catch (error) {
+      console.error('Error fetching semantic proximity:', error)
+      return {}
+    }
+  }
+
   public async textToTags(text: string): Promise<string[]> {
     try {
       const payload = { description: text }
