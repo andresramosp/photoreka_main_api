@@ -9,6 +9,7 @@ import {
   SYSTEM_MESSAGE_SEARCH_GPT,
   SYSTEM_MESSAGE_SEARCH_GPT_FORMALIZED,
   SYSTEM_MESSAGE_SEARCH_GPT_IMG,
+  SYSTEM_MESSAGE_SEARCH_GPT_V2,
   SYSTEM_MESSAGE_TERMS_ACTIONS_EXPANDER_V4,
   SYSTEM_MESSAGE_TERMS_EXPANDER_V4,
 } from '../utils/GPTMessages.js'
@@ -283,7 +284,7 @@ export default class PhotosService {
       photos = photos.filter((photo) => !query.currentPhotos.includes(photo.id))
     }
 
-    const nearPhotos = await this.getSemanticNearPhotos(photos, query, 20)
+    const nearPhotos = await this.getSemanticNearPhotos(photos, query, 10)
 
     if (nearPhotos.length === 0) {
       return {
@@ -291,30 +292,36 @@ export default class PhotosService {
       }
     }
 
-    // const { result, cost: cost2 } = await modelsService.getGPTResponse(
-    //   SYSTEM_MESSAGE_SEARCH_GPT_FORMALIZED,
-    //   JSON.stringify({
-    //     query: query.description,
-    //     collection: nearPhotos,
-    //   }),
-    //   'gpt-4o-mini'
-    // )
+    const { result, cost: cost2 } = await modelsService.getGPTResponse(
+      SYSTEM_MESSAGE_SEARCH_GPT_V2,
+      JSON.stringify({
+        query: this.clearQuery(query.description),
+        collection: nearPhotos.map((photo, idx) => ({
+          id: idx,
+          description: photo.chunks.join('... '),
+        })),
+      }),
+      'gpt-4o'
+    )
 
-    // const photosResult = result.map((res: any) => photos.find((photo: any) => photo.id == res.id))
+    const photosResult = nearPhotos.filter((_, idx) =>
+      result.find((res: any) => res.id == idx && res.isIncluded)
+    )
 
-    // console.log(query.description)
-    // console.log(result)
-
-    // // Retornar la respuesta
-    // return {
-    //   results: photosResult[0]?.id ? photosResult : [],
-    //   cost: cost2,
-    // }
+    // Retornar la respuesta
+    return {
+      results: photosResult,
+      reasoning: result.map((res: any) => {
+        return { ...res, chunks: nearPhotos.find((_, idx) => res.id == idx).chunks.join('... ') }
+      }),
+      cost: cost2,
+    }
   }
 
   public async getSemanticNearPhotos(photos: any, query: any, resultSetLength = 10) {
     const modelsService = new ModelsService()
 
+    // Obtener las proximidades semánticas iniciales (tags)
     const semanticProximities = await modelsService.semanticProximity(
       query.description,
       photos.map((photo: any) => ({
@@ -323,8 +330,9 @@ export default class PhotosService {
       }))
     )
 
-    const similarityThresholdTags = 50
-    const similarityThresholdDesc = 25
+    // Obtener el X% superior de similitudes y los IDs que superan el umbral
+    const similarityThresholdTags = 35 // Umbral mínimo de similitud
+    const similarityThresholdDesc = 30 // Umbral mínimo de similitud
 
     const sortedProximities = Object.entries(semanticProximities).sort(([, a], [, b]) => b - a)
     const topCount = Math.ceil(resultSetLength)
@@ -336,29 +344,40 @@ export default class PhotosService {
 
     const filteredIds = Array.from(new Set([...topIds, ...thresholdIds]))
 
+    // Filtrar las fotos seleccionadas
     const filteredPhotos = photos.filter((photo: any) => filteredIds.includes(photo.id))
 
-    const results = []
-    for (const photo of filteredPhotos) {
-      if (!photo.description) continue
+    // Analizar las descriptions de las fotos seleccionadas
+    const promises = filteredPhotos.map(async (photo: Photo) => {
+      if (!photo.description) return null
 
+      // Obtener proximidades de los chunks
       const chunkProximities = await modelsService.semanticProximitChunks(
         query.description,
         photo.description,
         query.description.length * 8
       )
 
+      // Filtrar chunks por umbral de proximidad y ordenarlos
       const selectedChunks = chunkProximities
         .filter(({ proximity }: any) => proximity >= similarityThresholdDesc / 100)
         .sort((a: any, b: any) => b.proximity - a.proximity)
 
-      results.push({
-        id: photo.id,
+      return {
+        // url: photo.url,
+        // id: photo.id,
+        // name: photo.name,
+        // metadata: photo.metadata,
+        ...photo.$attributes,
         chunks: selectedChunks.map(({ text_chunk }: any) => text_chunk),
-      })
-    }
+      }
+    })
 
-    return results
+    // Esperar a que todas las promesas se resuelvan
+    const results = (await Promise.all(promises)).filter(Boolean)
+
+    // Devolver los resultados
+    return results.filter((photo) => photo.chunks.length)
   }
 
   public async search_gpt_img(query: any): Promise<any> {
@@ -444,5 +463,32 @@ export default class PhotosService {
       results: photosResult[0]?.id ? photosResult : [],
       cost: cost2,
     }
+  }
+
+  public clearQuery(description: string): string {
+    return description
+      .replace('photos of', '')
+      .replace('photos with', '')
+      .replace('photos at', '')
+      .replace('photos in', '')
+      .replace('images of', '')
+      .replace('images with', '')
+      .replace('images at', '')
+      .replace('images in', '')
+      .replace('pictures of', '')
+      .replace('pictures with', '')
+      .replace('pictures at', '')
+      .replace('pictures in', '')
+      .replace('shots of', '')
+      .replace('shots with', '')
+      .replace('shots at', '')
+      .replace('shots in', '')
+      .replace('taken at', '')
+      .replace('taken in', '')
+      .replace('taken on', '')
+      .replace('showing', '')
+      .replace('depicting', '')
+      .replace('featuring', '')
+      .trim()
   }
 }

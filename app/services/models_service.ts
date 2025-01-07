@@ -202,7 +202,11 @@ export default class ModelsService {
       }
 
       const result = {
-        result: parsedResult.result ? parsedResult.result : parsedResult,
+        result: parsedResult.result
+          ? parsedResult.result
+          : parsedResult.results
+            ? parsedResult.results
+            : parsedResult,
         cost: {
           totalCostInEur,
           inputCost,
