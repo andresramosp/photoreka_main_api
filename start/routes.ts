@@ -21,7 +21,7 @@ router.get('/', async () => {
 router.post('/api/analyzer/', [AnalyzerController, 'analyze'])
 router.post('/api/catalog/upload', [CatalogController, 'upload'])
 router.get('/api/catalog/', [CatalogController, 'fetch'])
-router.post('/api/catalog/search_gpt', [CatalogController, 'searchGPT'])
+router.post('/api/catalog/search_desc', [CatalogController, 'searchDesc'])
 router.post('/api/catalog/search_tags', [CatalogController, 'searchTags'])
 
 router.get('/api/tags/', [TagsController, 'list'])

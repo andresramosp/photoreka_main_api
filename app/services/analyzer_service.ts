@@ -101,7 +101,7 @@ import Photo from '#models/photo'
 import { Exception } from '@adonisjs/core/exceptions'
 import ModelsService from './models_service.js'
 import Tag from '#models/tag'
-import { SYSTEM_MESSAGE_ANALIZER, SYSTEM_MESSAGE_ANALIZER_2 } from '../utils/GPTMessages.js'
+import { SYSTEM_MESSAGE_ANALIZER_2 } from '../utils/GPTMessages.js'
 import { createRequire } from 'module'
 const require = createRequire(import.meta.url)
 const pluralize = require('pluralize')
@@ -200,10 +200,35 @@ export default class AnalyzerService {
     }
   }
 
+  public findTagsWithSimilarWords(tag: string, tagList: string[]) {
+    const STOPWORDS = ['at', 'in', 'on', 'the', 'and', 'or', 'but', 'a', 'an', 'of', 'for', 'to']
+
+    // Helper function to lemmatize and filter words
+    function lemmatizeAndFilter(text: string) {
+      const words = text
+        .toLowerCase()
+        .split(/\W+/) // Split on non-word characters
+        .filter((word) => word && !STOPWORDS.includes(word)) // Remove stopwords
+
+      return words.map((word) => lemmatizer.stem(word))
+    }
+
+    // Lemmatize and filter the input tag
+    const lemmatizedTagWords = lemmatizeAndFilter(tag)
+
+    // Find tags with at least 50% overlapping lemmatized words in both directions
+    return tagList.filter((candidateTag) => {
+      const candidateWords = lemmatizeAndFilter(candidateTag)
+      const matchCount = candidateWords.filter((word) => lemmatizedTagWords.includes(word)).length
+      const forwardMatch = matchCount / lemmatizedTagWords.length >= 0.5
+      const backwardMatch = matchCount / candidateWords.length >= 0.5
+      return forwardMatch && backwardMatch
+    })
+  }
+
   public async addMetadata(metadata: { id: string; [key: string]: any }[]) {
     const modelsService = new ModelsService()
 
-    // Fetch all tags once and preprocess them
     const existingTags = await Tag.all()
     const tagMap = new Map(
       existingTags.map((tag) => [lemmatizer.stem(tag.name.toLowerCase()), tag])
@@ -211,70 +236,93 @@ export default class AnalyzerService {
 
     const isStopword = (tagName: string) => STOPWORDS.includes(tagName.toLowerCase())
 
-    for (const data of metadata) {
-      const { id, description, ...rest } = data
-      const photo = await Photo.query().where('id', id).first()
+    // Process all metadata entries in parallel
+    await Promise.all(
+      metadata.map(async (data) => {
+        const { id, description, ...rest } = data
+        const photo = await Photo.query().where('id', id).first()
 
-      if (photo) {
-        const updateData: Partial<Photo> = {}
-        const tagInstances: any[] = []
+        if (photo) {
+          const updateData: any = {}
+          const tagInstances: any[] = []
 
-        const processTag = async (tagName: string, group: string) => {
-          if (!isStopword(tagName)) {
-            const lemmatizedTagName = lemmatizer.stem(tagName.toLowerCase())
-            let tag = tagMap.get(lemmatizedTagName)
+          const processTag = async (tagName: string, group: string) => {
+            if (!isStopword(tagName)) {
+              const lemmatizedTagName = lemmatizer.stem(tagName.toLowerCase())
 
-            if (!tag) {
-              tag = await Tag.create({ name: tagName, group })
-              tagMap.set(lemmatizedTagName, tag)
-              console.log('Adding new tag: ', lemmatizedTagName)
+              let tag = tagMap.get(lemmatizedTagName)
+
+              let similarTagsResult: any
+              try {
+                similarTagsResult = await modelsService.getSemanticSynonymTags(
+                  tagName,
+                  this.findTagsWithSimilarWords(lemmatizedTagName, Array.from(tagMap.keys()))
+                )
+              } catch (err) {
+                console.log('error getSemanticSynonymTags')
+              }
+
+              if (similarTagsResult?.length > 0) {
+                for (const similarTagName of similarTagsResult) {
+                  const existingTag = tagMap.get(similarTagName)
+                  if (existingTag) {
+                    tagInstances.push(existingTag)
+                  }
+                }
+                console.log(
+                  `Using existing similar tags for ${tag?.name}: ${JSON.stringify(similarTagsResult)}`
+                )
+
+                return
+              }
+
+              if (!tag) {
+                tag = await Tag.create({ name: tagName, group })
+                tagMap.set(lemmatizedTagName, tag)
+                console.log('Adding new tag: ', lemmatizedTagName)
+              } else {
+                console.log('Using exact existing tag: ', lemmatizedTagName)
+              }
+              tagInstances.push(tag)
+            } else {
+              console.log('Ignoring tag: ', tagName)
             }
-
-            tagInstances.push(tag)
-          } else {
-            console.log('Ignoring tag: ', tagName)
           }
-        }
 
-        // Extract tags from description
-        if (description) {
-          const descTags = await modelsService.textToTags(description)
-          for (const tagName of descTags) {
-            await processTag(tagName, 'desc')
+          if (description) {
+            const descTags = await modelsService.textToTags(description)
+            await Promise.all(descTags.map((tagName) => processTag(tagName, 'desc')))
           }
-        }
 
-        // Process rest tags
-        for (const key of Object.keys(rest)) {
-          if (key.endsWith('_tags')) {
-            const group = key.replace('_tags', '')
-            const tags = rest[key] || []
-            for (const tagName of tags) {
-              await processTag(tagName, group)
-            }
-          }
-        }
-
-        // Update photo fields and metadata
-        const fields = Array.from(Photo.$columnsDefinitions.keys()) as (keyof Photo)[]
-        for (const key of fields) {
-          if (rest[key]) {
-            updateData[key] = rest[key] as any
-            delete rest[key]
-          }
-        }
-
-        photo.merge({ ...updateData, description, metadata: { ...photo.metadata, ...rest } })
-        await photo.save()
-
-        // Sync tags with the photo
-        if (tagInstances.length > 0) {
-          await photo.related('tags').sync(
-            tagInstances.map((tag) => tag.id),
-            true
+          await Promise.all(
+            Object.keys(rest)
+              .filter((key) => key.endsWith('_tags'))
+              .map(async (key) => {
+                const group = key.replace('_tags', '')
+                const tags = rest[key] || []
+                await Promise.all(tags.map((tagName) => processTag(tagName, group)))
+              })
           )
+
+          const fields = Array.from(Photo.$columnsDefinitions.keys())
+          fields.forEach((key) => {
+            if (rest[key]) {
+              updateData[key] = rest[key]
+              delete rest[key]
+            }
+          })
+
+          photo.merge({ ...updateData, description, metadata: { ...photo.metadata, ...rest } })
+          await photo.save()
+
+          if (tagInstances.length > 0) {
+            await photo.related('tags').sync(
+              tagInstances.map((tag) => tag.id),
+              true
+            )
+          }
         }
-      }
-    }
+      })
+    )
   }
 }

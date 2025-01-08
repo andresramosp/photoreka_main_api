@@ -21,6 +21,10 @@ const PRICES = {
     input: 0.3 / 1_000_000, // USD per input token
     output: 1.2 / 1_000_000, // USD per output token
   },
+  'deepseek-chat': {
+    input: 0.27 / 1_000_000, // USD per input token
+    output: 1.1 / 1_000_000, // USD per output token
+  },
 }
 
 const USD_TO_EUR = 0.92
@@ -127,13 +131,38 @@ export default class ModelsService {
     }
   }
 
+  public async getSemanticSynonymTags(tag: string, tagList: string[]): Promise<{ matches: any[] }> {
+    try {
+      const payload = {
+        tag,
+        tag_list: tagList,
+        proximity_threshold: 0.85,
+      }
+      const { data } = await axios.post(
+        'http://127.0.0.1:5000/get_advanced_synonym_tags',
+        payload,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        }
+      )
+
+      return data.matches || []
+    } catch (error) {
+      // console.error('Error fetching tags:', error)
+      return []
+    }
+  }
+
   public async getGPTResponse(
     systemContent: string | null,
     userContent: any,
     model:
       | 'gpt-4o'
       | 'gpt-4o-mini'
-      | 'ft:gpt-4o-mini-2024-07-18:personal:refine:AlpaXAxW' = 'gpt-4o-mini'
+      | 'ft:gpt-4o-mini-2024-07-18:personal:refine:AlpaXAxW' = 'gpt-4o-mini',
+    responseFormat: any = { type: 'json_object' }
   ): Promise<any> {
     let cacheDuration = 60 * 5
     try {
@@ -158,7 +187,10 @@ export default class ModelsService {
               },
             ],
         max_tokens: 15000,
-        response_format: { type: 'json_object' }, // TODO: probar si da problemas de consistencia al devolver JSON, pero tratar el .result
+      }
+
+      if (responseFormat) {
+        payload.response_format = responseFormat
       }
 
       const cacheKey = JSON.stringify({ systemContent, userContent, model })
@@ -223,6 +255,111 @@ export default class ModelsService {
       return result
     } catch (error) {
       console.error('Error fetching GPT response:', error)
+      return {}
+    }
+  }
+
+  public async getDSResponse(
+    systemContent: string | null,
+    userContent: any,
+    model: 'deepseek-chat' = 'deepseek-chat',
+    responseFormat: any = { type: 'json_object' }
+  ): Promise<any> {
+    let cacheDuration = 60 * 5
+    try {
+      let payload: any = {
+        model,
+        temperature: 0.1,
+        messages: systemContent
+          ? [
+              {
+                role: 'system',
+                content: systemContent,
+              },
+              {
+                role: 'user',
+                content: userContent,
+              },
+            ]
+          : [
+              {
+                role: 'user',
+                content: userContent,
+              },
+            ],
+        stream: false,
+      }
+
+      const cacheKey = JSON.stringify({ systemContent, userContent, model })
+
+      if (responseFormat) {
+        payload.response_format = responseFormat
+      }
+
+      // Check cache
+      const cachedResponse = cache.get(cacheKey)
+      // if (cachedResponse) {
+      //   console.log('Cache hit for getGPTResponse')
+      //   return cachedResponse
+      // }
+
+      const { data } = await axios.post(
+        `${env.get('DEEPSEEK_BASEURL')}/chat/completions`,
+        payload,
+        {
+          headers: {
+            'Authorization': `Bearer ${env.get('DEEPSEEK_KEY')}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      )
+
+      const { prompt_tokens: promptTokens, completion_tokens: completionTokens } = data.usage
+      const totalTokens = promptTokens + completionTokens
+
+      const inputCost = promptTokens * PRICES[model].input * USD_TO_EUR
+      const outputCost = completionTokens * PRICES[model].output * USD_TO_EUR
+      const totalCostInEur = inputCost + outputCost
+
+      const rawResult = data.choices[0].message.content
+      let parsedResult
+
+      try {
+        parsedResult = JSON.parse(rawResult.replace(/```(?:json)?\s*/g, '').trim())
+      } catch {
+        const jsonArrayMatch = rawResult.match(/\[.*?\]/s)
+        const jsonObjectMatch = rawResult.match(/\{.*?\}/s)
+        if (jsonArrayMatch) {
+          parsedResult = JSON.parse(jsonArrayMatch[0])
+        } else if (jsonObjectMatch) {
+          parsedResult = JSON.parse(jsonObjectMatch[0])
+        } else {
+          parsedResult = {}
+        }
+      }
+
+      const result = {
+        result: parsedResult.result
+          ? parsedResult.result
+          : parsedResult.results
+            ? parsedResult.results
+            : parsedResult,
+        cost: {
+          totalCostInEur,
+          inputCost,
+          outputCost,
+          totalTokens,
+          promptTokens,
+          completionTokens,
+        },
+      }
+
+      // Cache the result
+      cache.set(cacheKey, result, cacheDuration)
+
+      return result
+    } catch (error) {
+      console.error('Error fetching DS response:', error)
       return {}
     }
   }

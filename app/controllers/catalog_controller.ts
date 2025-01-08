@@ -80,13 +80,13 @@ export default class CatalogController {
     }
   }
 
-  public async searchGPT({ response, request }: HttpContext) {
+  public async searchDesc({ response, request }: HttpContext) {
     try {
       const photosService = new PhotosService()
 
       const query = request.body()
 
-      const result = await photosService.search_gpt(query)
+      const result = await photosService.search_desc(query)
 
       return response.ok(result)
     } catch (error) {

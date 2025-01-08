@@ -5,11 +5,12 @@ import axios from 'axios'
 import fs from 'fs/promises'
 
 import {
+  SCHEMA_SEARCH_MODEL_V2,
   SYSTEM_MESSAGE_QUERY_TO_LOGIC_V2,
   SYSTEM_MESSAGE_SEARCH_GPT,
-  SYSTEM_MESSAGE_SEARCH_GPT_FORMALIZED,
-  SYSTEM_MESSAGE_SEARCH_GPT_IMG,
-  SYSTEM_MESSAGE_SEARCH_GPT_V2,
+  SYSTEM_MESSAGE_SEARCH_MODEL_FORMALIZED,
+  SYSTEM_MESSAGE_SEARCH_MODEL_IMG,
+  SYSTEM_MESSAGE_SEARCH_MODEL_V2,
   SYSTEM_MESSAGE_TERMS_ACTIONS_EXPANDER_V4,
   SYSTEM_MESSAGE_TERMS_EXPANDER_V4,
 } from '../utils/GPTMessages.js'
@@ -140,7 +141,8 @@ export default class PhotosService {
         const nearTags = await this.getSemanticNearTags(
           [term.tagName],
           allTags.map((tag) => tag.name).filter((tagName) => tagName !== term.tagName),
-          30
+          30,
+          20
         )
         const existingTag = allTags.find((tag) => tag.name === term.tagName)
         if (existingTag && existingTag.children?.tags.length) {
@@ -149,16 +151,16 @@ export default class PhotosService {
             `Using stored expansors for ${term.tagName}: ${JSON.stringify(existingTag.children.tags.map((t: any) => t.tag))} `
           )
         } else {
-          const { result, cost } = await modelsService.getGPTResponse(
+          const { result, cost } = await modelsService.getDSResponse(
             term.isAction
               ? SYSTEM_MESSAGE_TERMS_ACTIONS_EXPANDER_V4
               : SYSTEM_MESSAGE_TERMS_EXPANDER_V4,
             JSON.stringify({
-              operation: 'semanticSubExpansion',
+              // operation: 'semanticSubExpansion',
               term: term.tagName,
               tagCollection: nearTags.map((tag) => tag.name),
-            }),
-            'ft:gpt-4o-mini-2024-07-18:personal:refine:AlpaXAxW'
+            })
+            // 'ft:gpt-4o-mini-2024-07-18:personal:refine:AlpaXAxW'
           )
 
           // Recuperamos la proximidad semántica
@@ -189,13 +191,17 @@ export default class PhotosService {
     let queryLogicResult
 
     if (query.iteration == 1) {
-      const { result, cost } = await modelsService.getGPTResponse(
+      const { result, cost } = await modelsService.getDSResponse(
         SYSTEM_MESSAGE_QUERY_TO_LOGIC_V2,
         JSON.stringify({
           query: query.description,
-        }),
-        'ft:gpt-4o-mini-2024-07-18:personal:refine:AlpaXAxW'
+        })
+        //'ft:gpt-4o-mini-2024-07-18:personal:refine:AlpaXAxW'
       )
+      if (result == 'NON_TAGGABLE') {
+        console.log('Query non taggable: ', query.description)
+        return this.search_desc(query)
+      }
       queryLogicResult = result
       cost1 = cost
       allPhotos = await Photo.query().preload('tags')
@@ -271,11 +277,12 @@ export default class PhotosService {
       queryLogicResult,
       termsExpansion: { tagsAnd, tagsNot, tagsOr },
       hasMore: hasMoreTerms,
+      searchType: 'TAGS',
     }
   }
 
   // TODO: Cambiar a getGPTResponse de modelService, adaptando el regex de parseo
-  public async search_gpt(query: any): Promise<any> {
+  public async search_desc(query: any): Promise<any> {
     let modelsService = new ModelsService()
     let photos: Photo[] = await Photo.query().preload('tags')
 
@@ -284,27 +291,34 @@ export default class PhotosService {
       photos = photos.filter((photo) => !query.currentPhotos.includes(photo.id))
     }
 
-    const nearPhotos = await this.getSemanticNearPhotos(photos, query, 10)
+    const nearPhotos = await this.getSemanticNearPhotos(photos, query, 30)
+    let pageSize = 10
+    const offset = (query.iteration - 1) * pageSize
+    const paginatedPhotos = nearPhotos.slice(offset, offset + pageSize)
+    const hasMore = offset + pageSize < nearPhotos.length
 
-    if (nearPhotos.length === 0) {
+    if (paginatedPhotos.length === 0) {
       return {
         results: [],
+        hasMore,
       }
     }
 
-    const { result, cost: cost2 } = await modelsService.getGPTResponse(
-      SYSTEM_MESSAGE_SEARCH_GPT_V2,
+    const { result, cost: cost2 } = await modelsService.getDSResponse(
+      SYSTEM_MESSAGE_SEARCH_MODEL_V2,
       JSON.stringify({
         query: this.clearQuery(query.description),
-        collection: nearPhotos.map((photo, idx) => ({
+        collection: paginatedPhotos.map((photo, idx) => ({
           id: idx,
           description: photo.chunks.join('... '),
         })),
       }),
-      'gpt-4o'
+      'deepseek-chat',
+      null
+      // SCHEMA_SEARCH_MODEL_V2
     )
 
-    const photosResult = nearPhotos.filter((_, idx) =>
+    const photosResult = paginatedPhotos.filter((_, idx) =>
       result.find((res: any) => res.id == idx && res.isIncluded)
     )
 
@@ -312,14 +326,20 @@ export default class PhotosService {
     return {
       results: photosResult,
       reasoning: result.map((res: any) => {
-        return { ...res, chunks: nearPhotos.find((_, idx) => res.id == idx).chunks.join('... ') }
+        return {
+          ...res,
+          chunks: paginatedPhotos.find((_, idx) => res.id == idx).chunks.join('... '),
+        }
       }),
+      hasMore,
       cost: cost2,
+      searchType: 'GPT',
     }
   }
 
   public async getSemanticNearPhotos(photos: any, query: any, resultSetLength = 10) {
     const modelsService = new ModelsService()
+    const similarityThresholdDesc = 25 // Umbral mínimo de similitud
 
     // Obtener las proximidades semánticas iniciales (tags)
     const semanticProximities = await modelsService.semanticProximity(
@@ -330,19 +350,12 @@ export default class PhotosService {
       }))
     )
 
-    // Obtener el X% superior de similitudes y los IDs que superan el umbral
-    const similarityThresholdTags = 35 // Umbral mínimo de similitud
-    const similarityThresholdDesc = 30 // Umbral mínimo de similitud
-
     const sortedProximities = Object.entries(semanticProximities).sort(([, a], [, b]) => b - a)
     const topCount = Math.ceil(resultSetLength)
 
     const topIds = sortedProximities.slice(0, topCount).map(([id]) => id)
-    const thresholdIds = Object.entries(semanticProximities)
-      .filter(([, similarity]) => similarity >= similarityThresholdTags)
-      .map(([id]) => id)
 
-    const filteredIds = Array.from(new Set([...topIds, ...thresholdIds]))
+    const filteredIds = Array.from(new Set([...topIds]))
 
     // Filtrar las fotos seleccionadas
     const filteredPhotos = photos.filter((photo: any) => filteredIds.includes(photo.id))
@@ -364,10 +377,6 @@ export default class PhotosService {
         .sort((a: any, b: any) => b.proximity - a.proximity)
 
       return {
-        // url: photo.url,
-        // id: photo.id,
-        // name: photo.name,
-        // metadata: photo.metadata,
         ...photo.$attributes,
         chunks: selectedChunks.map(({ text_chunk }: any) => text_chunk),
       }
@@ -435,7 +444,7 @@ export default class PhotosService {
     }
 
     const { result, cost: cost2 } = await modelsService.getGPTResponse(
-      SYSTEM_MESSAGE_SEARCH_GPT_IMG,
+      SYSTEM_MESSAGE_SEARCH_MODEL_IMG,
       [
         {
           type: 'text',
