@@ -136,7 +136,7 @@ export default class ModelsService {
       const payload = {
         tag,
         tag_list: tagList,
-        proximity_threshold: 0.85,
+        proximity_threshold: 0.9,
       }
       const { data } = await axios.post(
         'http://127.0.0.1:5000/get_advanced_synonym_tags',

@@ -223,7 +223,7 @@ export default class PhotosService {
     let { expansionResults, expansionCosts } = await this.performTagsExpansion(terms, allTags)
 
     let tagsAnd, tagsNot, tagsOr
-    let tagPerIteration = 2
+    let tagPerIteration = 3
     let results = []
     let hasMoreTerms = true
 

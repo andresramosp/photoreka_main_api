@@ -234,8 +234,6 @@ export default class AnalyzerService {
       existingTags.map((tag) => [lemmatizer.stem(tag.name.toLowerCase()), tag])
     )
 
-    const isStopword = (tagName: string) => STOPWORDS.includes(tagName.toLowerCase())
-
     // Process all metadata entries in parallel
     await Promise.all(
       metadata.map(async (data) => {
@@ -246,52 +244,13 @@ export default class AnalyzerService {
           const updateData: any = {}
           const tagInstances: any[] = []
 
-          const processTag = async (tagName: string, group: string) => {
-            if (!isStopword(tagName)) {
-              const lemmatizedTagName = lemmatizer.stem(tagName.toLowerCase())
-
-              let tag = tagMap.get(lemmatizedTagName)
-
-              let similarTagsResult: any
-              try {
-                similarTagsResult = await modelsService.getSemanticSynonymTags(
-                  tagName,
-                  this.findTagsWithSimilarWords(lemmatizedTagName, Array.from(tagMap.keys()))
-                )
-              } catch (err) {
-                console.log('error getSemanticSynonymTags')
-              }
-
-              if (similarTagsResult?.length > 0) {
-                for (const similarTagName of similarTagsResult) {
-                  const existingTag = tagMap.get(similarTagName)
-                  if (existingTag) {
-                    tagInstances.push(existingTag)
-                  }
-                }
-                console.log(
-                  `Using existing similar tags for ${tag?.name}: ${JSON.stringify(similarTagsResult)}`
-                )
-
-                return
-              }
-
-              if (!tag) {
-                tag = await Tag.create({ name: tagName, group })
-                tagMap.set(lemmatizedTagName, tag)
-                console.log('Adding new tag: ', lemmatizedTagName)
-              } else {
-                console.log('Using exact existing tag: ', lemmatizedTagName)
-              }
-              tagInstances.push(tag)
-            } else {
-              console.log('Ignoring tag: ', tagName)
-            }
-          }
-
           if (description) {
             const descTags = await modelsService.textToTags(description)
-            await Promise.all(descTags.map((tagName) => processTag(tagName, 'desc')))
+            await Promise.all(
+              descTags.map((tagName) =>
+                this.processTag(tagName, 'desc', tagMap, modelsService, tagInstances)
+              )
+            )
           }
 
           await Promise.all(
@@ -300,7 +259,11 @@ export default class AnalyzerService {
               .map(async (key) => {
                 const group = key.replace('_tags', '')
                 const tags = rest[key] || []
-                await Promise.all(tags.map((tagName) => processTag(tagName, group)))
+                await Promise.all(
+                  tags.map((tagName: string) =>
+                    this.processTag(tagName, group, tagMap, modelsService, tagInstances)
+                  )
+                )
               })
           )
 
@@ -324,5 +287,57 @@ export default class AnalyzerService {
         }
       })
     )
+  }
+
+  public async processTag(
+    tagName: string,
+    group: string,
+    tagMap: Map<string, any>,
+    modelsService: ModelsService,
+    tagInstances: any[]
+  ) {
+    const isStopword = (tagName: string) => STOPWORDS.includes(tagName.toLowerCase())
+
+    if (!isStopword(tagName)) {
+      const lemmatizedTagName = lemmatizer.stem(tagName.toLowerCase())
+
+      let tag = tagMap.get(lemmatizedTagName)
+
+      if (!tag) {
+        let similarTagsResult: any
+        try {
+          similarTagsResult = await modelsService.getSemanticSynonymTags(
+            tagName,
+            this.findTagsWithSimilarWords(lemmatizedTagName, Array.from(tagMap.keys()))
+          )
+        } catch (err) {
+          console.log('Error in getSemanticSynonymTags')
+        }
+
+        if (similarTagsResult?.length > 0) {
+          for (const similarTagName of similarTagsResult) {
+            const existingTag = tagMap.get(similarTagName)
+            if (existingTag) {
+              tagInstances.push(existingTag)
+            }
+          }
+          console.log(
+            `Using existing similar tags for ${tagName}: ${JSON.stringify(similarTagsResult)}`
+          )
+          return
+        }
+      }
+
+      if (!tag) {
+        tag = await Tag.create({ name: tagName, group })
+        tagMap.set(lemmatizedTagName, tag)
+        console.log('Adding new tag: ', lemmatizedTagName)
+      } else {
+        console.log('Using exact existing tag: ', lemmatizedTagName)
+      }
+      tagInstances.push(tag)
+    } else {
+      console.log('Ignoring tag: ', tagName)
+    }
   }
 }
