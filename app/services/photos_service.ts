@@ -86,7 +86,7 @@ export default class PhotosService {
     return sortedResults
   }
 
-  public async saveExpandadTags(term: any, tags: any[], expansionResults: any) {
+  public async saveExpandedTags(term: any, tags: any[], expansionResults: any) {
     const modelsService = new ModelsService()
 
     try {
@@ -121,6 +121,8 @@ export default class PhotosService {
       // Create a new tag only if the term itself is not found in similar tags
       if (!similarTags.includes(term.tagName)) {
         const newTag = new Tag()
+        const { embeddings } = await modelsService.getEmbeddings([term.tagName])
+        newTag.embedding = embeddings[0]
         newTag.name = term.tagName
         newTag.children = { tags: expansionResults[term.tagName] }
         newTag.save()
@@ -145,7 +147,7 @@ export default class PhotosService {
         //   30,
         //   20
         // )
-        const nearTags = await tagsService.findSimilarTags(tag)
+        const nearTags = await tagsService.findSimilarTagsToText(term.tagName, 0.4, 15)
         const existingTag = allTags.find((tag) => tag.name === term.tagName)
         if (existingTag && existingTag.children?.tags.length) {
           expansionResults[term.tagName] = existingTag.children.tags || []
@@ -158,17 +160,18 @@ export default class PhotosService {
               ? SYSTEM_MESSAGE_TERMS_ACTIONS_EXPANDER_V4
               : SYSTEM_MESSAGE_TERMS_EXPANDER_V4,
             JSON.stringify({
-              // operation: 'semanticSubExpansion',
+              operation: 'semanticSubExpansion',
               term: term.tagName,
-              tagCollection: nearTags.map((tag) => tag.name),
-            })
-            // 'ft:gpt-4o-mini-2024-07-18:personal:refine:AlpaXAxW'
+              tagCollection: nearTags.map((tag: any) => tag.name),
+            }),
+            'deepseek-chat',
+            null
           )
 
           // Recuperamos la proximidad semántica
           if (result.length) {
             for (let tag of result) {
-              tag.value = nearTags.find((nearTag) => nearTag.name == tag.tag)?.value
+              tag.value = nearTags.find((nearTag: any) => nearTag.name == tag.tag)?.proximity
             }
             expansionResults[term.tagName] = result.filter((tag: any) => tag.isSubclass)
           } else {
@@ -176,7 +179,7 @@ export default class PhotosService {
           }
 
           expansionCosts.push(cost)
-          this.saveExpandadTags(term, allTags, expansionResults)
+          // this.saveExpandedTags(term, allTags, expansionResults)
         }
       })
     )
