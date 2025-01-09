@@ -94,6 +94,25 @@ export default class ModelsService {
     }
   }
 
+  public async getEmbeddings(tags: string[]): Promise<{ embeddings: number[][] }> {
+    try {
+      const payload = {
+        tags,
+      }
+
+      const { data } = await axios.post('http://127.0.0.1:5000/get_embeddings', payload, {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+
+      return data || {}
+    } catch (error) {
+      console.error('Error fetching semantic proximity:', error)
+      return { embeddings: [] }
+    }
+  }
+
   public async textToTags(text: string): Promise<string[]> {
     try {
       const payload = { description: text }
@@ -263,13 +282,14 @@ export default class ModelsService {
     systemContent: string | null,
     userContent: any,
     model: 'deepseek-chat' = 'deepseek-chat',
-    responseFormat: any = { type: 'json_object' }
+    responseFormat: any = { type: 'json_object' },
+    temperature: number = 0.1
   ): Promise<any> {
     let cacheDuration = 60 * 5
     try {
       let payload: any = {
         model,
-        temperature: 0.1,
+        temperature,
         messages: systemContent
           ? [
               {

@@ -5,10 +5,9 @@ import axios from 'axios'
 import fs from 'fs/promises'
 
 import {
-  SCHEMA_SEARCH_MODEL_V2,
   SYSTEM_MESSAGE_QUERY_TO_LOGIC_V2,
   SYSTEM_MESSAGE_SEARCH_GPT,
-  SYSTEM_MESSAGE_SEARCH_MODEL_FORMALIZED,
+  SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE,
   SYSTEM_MESSAGE_SEARCH_MODEL_IMG,
   SYSTEM_MESSAGE_SEARCH_MODEL_V2,
   SYSTEM_MESSAGE_TERMS_ACTIONS_EXPANDER_V4,
@@ -17,6 +16,7 @@ import {
 import ModelsService from './models_service.js'
 import path from 'path'
 import sharp from 'sharp'
+import TagsService from './tags_service.js'
 
 export default class PhotosService {
   /**
@@ -135,15 +135,17 @@ export default class PhotosService {
     let expansionResults: any = {}
     const expansionCosts: any[] = []
     const modelsService = new ModelsService()
+    const tagsService = new TagsService()
 
     await Promise.all(
       terms.map(async (term) => {
-        const nearTags = await this.getSemanticNearTags(
-          [term.tagName],
-          allTags.map((tag) => tag.name).filter((tagName) => tagName !== term.tagName),
-          30,
-          20
-        )
+        // const nearTags = await this.getSemanticNearTags(
+        //   [term.tagName],
+        //   allTags.map((tag) => tag.name).filter((tagName) => tagName !== term.tagName),
+        //   30,
+        //   20
+        // )
+        const nearTags = await tagsService.findSimilarTags(tag)
         const existingTag = allTags.find((tag) => tag.name === term.tagName)
         if (existingTag && existingTag.children?.tags.length) {
           expansionResults[term.tagName] = existingTag.children.tags || []
@@ -337,9 +339,68 @@ export default class PhotosService {
     }
   }
 
-  public async getSemanticNearPhotos(photos: any, query: any, resultSetLength = 10) {
+  public async search_creative(query: any): Promise<any> {
+    let modelsService = new ModelsService()
+    let photos: Photo[] = await Photo.query().preload('tags')
+
+    if (query.iteration == 1) {
+    } else {
+      photos = photos.filter((photo) => !query.currentPhotos.includes(photo.id))
+    }
+
+    const nearPhotos = await this.getSemanticNearPhotos(photos, query, 30, 20)
+    let pageSize = 5
+    const offset = (query.iteration - 1) * pageSize
+    const paginatedPhotos = nearPhotos.slice(offset, offset + pageSize)
+    const hasMore = offset + pageSize < nearPhotos.length
+
+    if (paginatedPhotos.length === 0) {
+      return {
+        results: [],
+        hasMore,
+      }
+    }
+
+    const { result, cost: cost2 } = await modelsService.getDSResponse(
+      SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE,
+      JSON.stringify({
+        query: this.clearQuery(query.description),
+        collection: paginatedPhotos.map((photo, idx) => ({
+          id: idx,
+          description: photo.chunks.join('... '),
+        })),
+      }),
+      'deepseek-chat',
+      null,
+      1
+    )
+
+    const photosResult = paginatedPhotos.filter((_, idx) =>
+      result.find((res: any) => res.id == idx && res.isIncluded)
+    )
+
+    // Retornar la respuesta
+    return {
+      results: photosResult,
+      reasoning: result.map((res: any) => {
+        return {
+          ...res,
+          chunks: paginatedPhotos.find((_, idx) => res.id == idx).chunks.join('... '),
+        }
+      }),
+      hasMore,
+      cost: cost2,
+      searchType: 'GPT',
+    }
+  }
+
+  public async getSemanticNearPhotos(
+    photos: any,
+    query: any,
+    resultSetLength = 10,
+    similarityThresholdDesc = 25
+  ) {
     const modelsService = new ModelsService()
-    const similarityThresholdDesc = 25 // Umbral mínimo de similitud
 
     // Obtener las proximidades semánticas iniciales (tags)
     const semanticProximities = await modelsService.semanticProximity(

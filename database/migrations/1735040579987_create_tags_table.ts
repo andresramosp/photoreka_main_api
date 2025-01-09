@@ -4,17 +4,20 @@ export default class extends BaseSchema {
   protected tableName = 'tags'
 
   async up() {
-    this.schema.createTable(this.tableName, (table) => {
-      table.increments('id')
-      table.string('name', 255).notNullable()
-      table.string('group')
-      table.jsonb('children')
-      table.timestamp('created_at')
-      table.timestamp('updated_at')
-    })
+    this.schema.raw(`
+      CREATE TABLE ${this.tableName} (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        "group" VARCHAR(255),
+        children JSONB,
+        embedding VECTOR(384),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
   }
 
   async down() {
-    this.schema.dropTable(this.tableName)
+    this.schema.raw(`DROP TABLE ${this.tableName}`)
   }
 }

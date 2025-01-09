@@ -94,4 +94,19 @@ export default class CatalogController {
       return response.internalServerError({ message: 'Error fetching photos' })
     }
   }
+
+  public async searchCreative({ response, request }: HttpContext) {
+    try {
+      const photosService = new PhotosService()
+
+      const query = request.body()
+
+      const result = await photosService.search_creative(query)
+
+      return response.ok(result)
+    } catch (error) {
+      console.error('Error fetching photos:', error)
+      return response.internalServerError({ message: 'Error fetching photos' })
+    }
+  }
 }

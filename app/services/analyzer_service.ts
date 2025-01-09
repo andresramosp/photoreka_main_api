@@ -329,7 +329,8 @@ export default class AnalyzerService {
       }
 
       if (!tag) {
-        tag = await Tag.create({ name: tagName, group })
+        const { embeddings } = await modelsService.getEmbeddings([tagName])
+        tag = await Tag.create({ name: tagName, group, embedding: embeddings[0] })
         tagMap.set(lemmatizedTagName, tag)
         console.log('Adding new tag: ', lemmatizedTagName)
       } else {
