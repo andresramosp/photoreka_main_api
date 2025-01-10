@@ -279,8 +279,13 @@ export default class AnalyzerService {
           await photo.save()
 
           if (tagInstances.length > 0) {
+            // Eliminar duplicados basados en el campo "name"
+            const uniqueTagInstances = Array.from(
+              new Map(tagInstances.map((tag) => [tag.name.toLowerCase(), tag])).values()
+            )
+
             await photo.related('tags').sync(
-              tagInstances.map((tag) => tag.id),
+              uniqueTagInstances.map((tag) => tag.id),
               true
             )
           }
@@ -329,14 +334,21 @@ export default class AnalyzerService {
       }
 
       if (!tag) {
-        const { embeddings } = await modelsService.getEmbeddings([tagName])
-        tag = await Tag.create({ name: tagName, group, embedding: embeddings[0] })
-        tagMap.set(lemmatizedTagName, tag)
-        console.log('Adding new tag: ', lemmatizedTagName)
-      } else {
-        console.log('Using exact existing tag: ', lemmatizedTagName)
+        try {
+          const { embeddings } = await modelsService.getEmbeddings([tagName])
+          tag = await Tag.create({ name: tagName, group, embedding: embeddings[0] })
+          tagMap.set(lemmatizedTagName, tag)
+          console.log('Adding new tag: ', lemmatizedTagName)
+        } catch (err) {
+          if (err.code === '23505') {
+            console.log(`Tag ${tagName} already exists, fetching existing one.`)
+            tag = await Tag.query().where('name', tagName).first()
+          } else {
+            throw err
+          }
+        }
       }
-      tagInstances.push(tag)
+      if (tag) tagInstances.push(tag)
     } else {
       console.log('Ignoring tag: ', tagName)
     }

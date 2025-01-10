@@ -1,6 +1,7 @@
 import type { HttpContext } from '@adonisjs/core/http'
 
 import AnalyzerService from '#services/analyzer_service'
+import EmbeddingsService from '#services/embeddings_service'
 
 export default class AnalyzerController {
   public async analyze({ request, response }: HttpContext) {
@@ -25,5 +26,11 @@ export default class AnalyzerController {
       console.error(error)
       return response.internalServerError({ message: 'Something went wrong', error: error.message })
     }
+  }
+
+  public async compare({ request, response }: HttpContext) {
+    const embedddingsService = new EmbeddingsService()
+    const { term, texts } = request.body()
+    return embedddingsService.compareGenerality(term, texts)
   }
 }

@@ -323,6 +323,8 @@ export default class ModelsService {
       //   return cachedResponse
       // }
 
+      const start = performance.now() // Marca el tiempo de inicio
+
       const { data } = await axios.post(
         `${env.get('DEEPSEEK_BASEURL')}/chat/completions`,
         payload,
@@ -376,6 +378,12 @@ export default class ModelsService {
 
       // Cache the result
       cache.set(cacheKey, result, cacheDuration)
+
+      const end = performance.now()
+      const executionTime = ((end - start) / 1000).toFixed(3) // Calcula el tiempo en segundos
+      console.log(
+        `Execution time [getDSResponse]: ${executionTime} seconds, for ${JSON.stringify(payload).length}`
+      )
 
       return result
     } catch (error) {
