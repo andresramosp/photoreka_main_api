@@ -29,7 +29,7 @@ AND|OR|NOT logic.
 Your first task is to evaluate the query and classify it into one of the following categories:
 
 Taggable: The query can be split into clear logical segments suitable for a tag-based search.
-Not Taggable: The query is either too subtle, abstract (e.g., involving atmosphere, or artistic concepts), or needs too long tags  
+Not Taggable: The query is either too subtle, abstract (e.g., involving atmosphere, or artistic concepts)
 
 If the query is Not Taggable, return only this JSON: { result: 'NON_TAGGABLE' }.
 
@@ -64,11 +64,6 @@ Result:
 
 Example 4 (not taggable, too subtle)
 For the query "Pictures that convey a sense of melancholy and solitude".
-Result: 
-  { result: 'NON_TAGGABLE' } 
-
-Example 5 (not taggable, too long tag)
-For the query "Pictures with blonde little asian girl kicking big red balloon".
 Result: 
   { result: 'NON_TAGGABLE' } 
 

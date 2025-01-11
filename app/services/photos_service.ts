@@ -24,32 +24,53 @@ export default class PhotosService {
     return photos
   }
 
-  private filterByTags(allPhotos: Photo[], tagsAnd: any[][], tagsNot: string[], tagsOr: string[]) {
-    let filteredPhotos = allPhotos
-
-    // los or se meten todos como segmento más del AND
-    if (tagsOr.length) tagsAnd.push(tagsOr)
-
-    // Filter by mandatory tags
-    if (tagsAnd.length > 0 && tagsAnd[0].length) {
-      filteredPhotos = filteredPhotos.filter((photo) => {
-        const matchedGroups = tagsAnd.filter((tagGroup) =>
-          tagGroup.some((tag) => photo.tags.some((t) => t.name === tag.tag))
-        )
-        return matchedGroups.length === tagsAnd.length
-      })
+  public async filterByTags(
+    tagsAnd: any[][],
+    tagsNot: string[],
+    tagsOr: string[],
+    currentPhotosIds: string[]
+  ): Promise<any[]> {
+    if (tagsOr.length) {
+      tagsAnd.push(tagsOr)
     }
 
-    const exclusionThreshold = 0 // estricto
+    // Construcción de la query base
+    const query = Photo.query().preload('tags')
+
+    // Exclusión de fotos actuales
+    if (currentPhotosIds?.length > 0) {
+      query.whereNotIn('id', currentPhotosIds)
+    }
+
+    if (tagsAnd.length > 0) {
+      for (const tagGroup of tagsAnd) {
+        query.whereHas('tags', (tagQuery) => {
+          tagQuery.whereIn(
+            'name',
+            tagGroup.map((tag) => tag.tag)
+          )
+        })
+      }
+    }
+
+    // Exclusión de tags NOT
     if (tagsNot.length > 0) {
-      filteredPhotos = filteredPhotos.filter((photo) => {
-        const excludedTagCount = photo.tags.filter((t) => tagsNot.includes(t.name)).length
-        const exclusionPercentage = (excludedTagCount / tagsNot.length) * 100
-        return exclusionPercentage <= exclusionThreshold
+      query.whereDoesntHave('tags', (tagQuery) => {
+        tagQuery.whereIn('name', tagsNot)
       })
     }
 
-    return filteredPhotos
+    // Ejecutar la consulta
+    const photos = await query.exec()
+
+    // Agregar matchingTags manualmente después de la consulta
+    return photos.map((photo) => {
+      const matchingTags = photo.tags
+        .filter((tag) => tagsAnd.flat().some((andTag) => andTag.tag === tag.name))
+        .map((tag) => tag.name)
+
+      return { ...photo.toJSON(), matchingTags }
+    })
   }
 
   public async saveExpandedTags(term: any, tags: any[], expansionResults: any) {
@@ -107,15 +128,27 @@ export default class PhotosService {
 
     await Promise.all(
       terms.map(async (term) => {
-        const nearTags = await embeddingsService.findSimilarTagsToText(term.tagName, 0.4, 20)
+        let existingTag = allTags.find((tag) => tag.name === term.tagName)
+        if (!existingTag) {
+          const semanticallyCloseTags = await embeddingsService.findSimilarTagsToText(
+            term.tagName,
+            0.9,
+            1
+          )
+          if (semanticallyCloseTags.length)
+            console.log(
+              `Found semantically close tag ${semanticallyCloseTags[0].name} for ${term.tagName}`
+            )
+          existingTag = semanticallyCloseTags[0]
+        }
 
-        const existingTag = allTags.find((tag) => tag.name === term.tagName)
         if (existingTag && existingTag.children?.tags.length) {
           expansionResults[term.tagName] = existingTag.children.tags || []
           console.log(
             `Using stored expansors for ${term.tagName}: ${JSON.stringify(existingTag.children.tags.map((t: any) => t.tag))} `
           )
         } else {
+          const nearTags = await embeddingsService.findSimilarTagsToText(term.tagName, 0.4, 20)
           const { result, cost } = await modelsService.getDSResponse(
             term.isAction
               ? SYSTEM_MESSAGE_TERMS_ACTIONS_EXPANDER_V4
@@ -152,7 +185,7 @@ export default class PhotosService {
     const modelsService = new ModelsService()
 
     const allTags = await Tag.all()
-    let allPhotos
+    // let allPhotos
     let cost1
     let queryLogicResult
 
@@ -169,14 +202,8 @@ export default class PhotosService {
       }
       queryLogicResult = result
       cost1 = cost
-      allPhotos = await Photo.query().preload('tags')
     } else {
       queryLogicResult = query.currentQueryLogicResult
-      allPhotos = await Photo.query()
-        .preload('tags')
-        .if(query.iteration > 1, (queryBuilder) => {
-          queryBuilder.whereNotIn('id', query.currentPhotos)
-        })
     }
 
     const terms = [
@@ -189,7 +216,7 @@ export default class PhotosService {
 
     let tagsAnd, tagsNot, tagsOr
     let tagPerIteration = 3
-    let results = []
+    let results: any[] = []
     let hasMoreTerms = true
 
     do {
@@ -222,11 +249,13 @@ export default class PhotosService {
           )
           const hasMore = expandedTerms.length < expansionResults[tag.tagName].length
           tag.hasMore = hasMore
-          return expandedTerms.length ? [tag.tagName, ...expandedTerms] : [tag.tagName]
+          return expandedTerms.length
+            ? [{ tag: tag.tagName }, ...expandedTerms]
+            : [{ tag: tag.tagName }]
         })
         .flat()
 
-      results = this.filterByTags(allPhotos, tagsAnd, tagsNot, tagsOr)
+      results = await this.filterByTags(tagsAnd, tagsNot, tagsOr, query.currentPhotos)
 
       const andHasMore = queryLogicResult.tags_and.some((tag: any) => tag.hasMore)
       const orHasMore = queryLogicResult.tags_or.some((tag: any) => tag.hasMore)
@@ -243,6 +272,7 @@ export default class PhotosService {
       termsExpansion: { tagsAnd, tagsNot, tagsOr },
       hasMore: hasMoreTerms,
       searchType: 'TAGS',
+      iteration: query.iteration,
     }
   }
 
@@ -261,7 +291,7 @@ export default class PhotosService {
     const nearPhotos = await embeddingsService.getSemanticNearPhotos(photos, query, 30)
     let pageSize = 10
     const offset = (query.iteration - 1) * pageSize
-    const paginatedPhotos = nearPhotos.slice(offset, offset + pageSize)
+    let paginatedPhotos = nearPhotos.slice(offset, offset + pageSize)
     const hasMore = offset + pageSize < nearPhotos.length
 
     if (paginatedPhotos.length === 0) {
@@ -271,7 +301,7 @@ export default class PhotosService {
       }
     }
 
-    const { result, cost: cost2 } = await modelsService.getDSResponse(
+    const { result: modelResult, cost: cost2 } = await modelsService.getDSResponse(
       SYSTEM_MESSAGE_SEARCH_MODEL_V2,
       JSON.stringify({
         query: this.clearQuery(query.description),
@@ -285,19 +315,17 @@ export default class PhotosService {
       // SCHEMA_SEARCH_MODEL_V2
     )
 
+    paginatedPhotos = paginatedPhotos.map((photo, idx) => {
+      return { ...photo, reasoning: modelResult.find((res: any) => res.id == idx).reasoning }
+    })
+
     const photosResult = paginatedPhotos.filter((_, idx) =>
-      result.find((res: any) => res.id == idx && res.isIncluded)
+      modelResult.find((res: any) => res.id == idx && res.isIncluded)
     )
 
     // Retornar la respuesta
     return {
       results: photosResult,
-      reasoning: result.map((res: any) => {
-        return {
-          ...res,
-          chunks: paginatedPhotos.find((_, idx) => res.id == idx).chunks.join('... '),
-        }
-      }),
       hasMore,
       cost: cost2,
       searchType: 'GPT',
@@ -317,7 +345,7 @@ export default class PhotosService {
     const nearPhotos = await embeddingsService.getSemanticNearPhotos(photos, query, 30, 20)
     let pageSize = 5
     const offset = (query.iteration - 1) * pageSize
-    const paginatedPhotos = nearPhotos.slice(offset, offset + pageSize)
+    let paginatedPhotos = nearPhotos.slice(offset, offset + pageSize)
     const hasMore = offset + pageSize < nearPhotos.length
 
     if (paginatedPhotos.length === 0) {
@@ -327,7 +355,7 @@ export default class PhotosService {
       }
     }
 
-    const { result, cost: cost2 } = await modelsService.getDSResponse(
+    const { result: modelResult, cost: cost2 } = await modelsService.getDSResponse(
       SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE,
       JSON.stringify({
         query: this.clearQuery(query.description),
@@ -341,19 +369,17 @@ export default class PhotosService {
       1
     )
 
+    paginatedPhotos = paginatedPhotos.map((photo, idx) => {
+      return { ...photo, reasoning: modelResult.find((res: any) => res.id == idx).reasoning }
+    })
+
     const photosResult = paginatedPhotos.filter((_, idx) =>
-      result.find((res: any) => res.id == idx && res.isIncluded)
+      modelResult.find((res: any) => res.id == idx && res.isIncluded)
     )
 
     // Retornar la respuesta
     return {
       results: photosResult,
-      reasoning: result.map((res: any) => {
-        return {
-          ...res,
-          chunks: paginatedPhotos.find((_, idx) => res.id == idx).chunks.join('... '),
-        }
-      }),
       hasMore,
       cost: cost2,
       searchType: 'GPT',
