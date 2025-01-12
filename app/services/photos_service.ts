@@ -24,7 +24,7 @@ export default class PhotosService {
     return photos
   }
 
-  public async filterByTags(tagsAnd: any[][], tagsNot: string[], tagsOr: string[]): Promise<any[]> {
+  public async filterByTags(tagsAnd: any[][], tagsNot: any[], tagsOr: any[]): Promise<any[]> {
     if (tagsOr.length) {
       tagsAnd.push(tagsOr)
     }
@@ -46,7 +46,10 @@ export default class PhotosService {
     // Exclusión de tags NOT
     if (tagsNot.length > 0) {
       query.whereDoesntHave('tags', (tagQuery) => {
-        tagQuery.whereIn('name', tagsNot)
+        tagQuery.whereIn(
+          'name',
+          tagsNot.map((tag) => tag.tag)
+        )
       })
     }
 
@@ -201,59 +204,70 @@ export default class PhotosService {
 
     const { expansionResults, expansionCosts } = await this.performTagsExpansion(terms, allTags)
 
-    // Step 3: Precompute all expansions and perform database queries
+    // Step 3: Precompute all expansions and initialize tracking
     const precomputedIterations: Record<string, any[]> = {}
-    const expansorsPerIteration = 3
+    const usedPrecomputedIterations: Record<string, any[]> = {}
+    const expansorsPerIteration = 2
 
     queryLogicResult.tags_and.forEach((tag: any) => {
       const expandedTerms = expansionResults[tag.tagName]
       precomputedIterations[tag.tagName] = [...expandedTerms]
+      usedPrecomputedIterations[tag.tagName] = [...expandedTerms.slice(0, 0)]
     })
 
     queryLogicResult.tags_or.forEach((tag: any) => {
       const expandedTerms = expansionResults[tag.tagName]
       precomputedIterations[tag.tagName] = [...expandedTerms]
+      usedPrecomputedIterations[tag.tagName] = [...expandedTerms.slice(0, 0)]
     })
 
     queryLogicResult.tags_not.forEach((tag: any) => {
       const expandedTerms = expansionResults[tag.tagName]
       precomputedIterations[tag.tagName] = [...expandedTerms]
+      usedPrecomputedIterations[tag.tagName] = [...expandedTerms.slice(0, 0)]
     })
 
-    // Perform filtering without mutating precomputedIterations
-    let iterationResults: Record<number, any[]> = {}
+    // Perform filtering while tracking used terms
+    let results: Record<number, any> = {}
     let seenPhotoIds = new Set<number>()
     let iteration = 1
 
     while (
-      queryLogicResult.tags_and.some((tag: any) => precomputedIterations[tag.tagName].length > 0) ||
-      queryLogicResult.tags_or.some((tag: any) => precomputedIterations[tag.tagName].length > 0)
+      Object.keys(precomputedIterations).some(
+        (key) => usedPrecomputedIterations[key].length < precomputedIterations[key].length
+      )
     ) {
       const tagsAnd = queryLogicResult.tags_and.map((tag: any) => {
-        const terms = precomputedIterations[tag.tagName].slice(0, iteration * expansorsPerIteration)
-        return terms
+        const remainingTerms = precomputedIterations[tag.tagName].slice(
+          usedPrecomputedIterations[tag.tagName].length,
+          usedPrecomputedIterations[tag.tagName].length + expansorsPerIteration
+        )
+        usedPrecomputedIterations[tag.tagName].push(...remainingTerms)
+        return [{ tag: tag.tagName }, ...usedPrecomputedIterations[tag.tagName]]
       })
 
       const tagsOr = queryLogicResult.tags_or
         .map((tag: any) => {
-          const terms = precomputedIterations[tag.tagName].slice(
-            0,
-            iteration * expansorsPerIteration
+          const remainingTerms = precomputedIterations[tag.tagName].slice(
+            usedPrecomputedIterations[tag.tagName].length,
+            usedPrecomputedIterations[tag.tagName].length + expansorsPerIteration
           )
-          return terms
+          usedPrecomputedIterations[tag.tagName].push(...remainingTerms)
+          return [{ tag: tag.tagName }, ...usedPrecomputedIterations[tag.tagName]]
         })
         .flat()
 
       const tagsNot = queryLogicResult.tags_not
         .map((tag: any) => {
-          return precomputedIterations[tag.tagName]
+          const allTerms = precomputedIterations[tag.tagName]
+          precomputedIterations[tag.tagName] = []
+          return [{ tag: tag.tagName }, ...allTerms]
         })
         .flat()
 
-      const filteredPhotos = await this.filterByTags(tagsAnd, tagsNot, tagsOr)
+      let filteredPhotos = await this.filterByTags(tagsAnd, tagsNot, tagsOr)
 
-      // Remove duplicates based on photo IDs
-      iterationResults[iteration] = filteredPhotos.filter((photo: any) => {
+      filteredPhotos = filteredPhotos.filter((photo: any) => {
         if (seenPhotoIds.has(photo.id)) {
           return false
         }
@@ -261,12 +275,21 @@ export default class PhotosService {
         return true
       })
 
+      if (filteredPhotos.length) {
+        results[iteration] = {
+          photos: filteredPhotos,
+          tagsAnd,
+          tagsNot,
+          tagsOr,
+        }
+      }
+
       iteration++
     }
 
     // Step 4: Return precomputed expansions and iteration results
     return {
-      iterationResults,
+      results,
       cost: { cost1, expansionCosts },
       queryLogicResult,
     }
