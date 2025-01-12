@@ -24,23 +24,13 @@ export default class PhotosService {
     return photos
   }
 
-  public async filterByTags(
-    tagsAnd: any[][],
-    tagsNot: string[],
-    tagsOr: string[],
-    currentPhotosIds: string[]
-  ): Promise<any[]> {
+  public async filterByTags(tagsAnd: any[][], tagsNot: string[], tagsOr: string[]): Promise<any[]> {
     if (tagsOr.length) {
       tagsAnd.push(tagsOr)
     }
 
     // Construcción de la query base
     const query = Photo.query().preload('tags')
-
-    // Exclusión de fotos actuales
-    if (currentPhotosIds?.length > 0) {
-      query.whereNotIn('id', currentPhotosIds)
-    }
 
     if (tagsAnd.length > 0) {
       for (const tagGroup of tagsAnd) {
@@ -188,88 +178,97 @@ export default class PhotosService {
     let cost1
     let queryLogicResult
 
-    if (query.iteration == 1) {
-      const { result, cost } = await modelsService.getDSResponse(
-        SYSTEM_MESSAGE_QUERY_TO_LOGIC_V2,
-        JSON.stringify({
-          query: query.description,
-        })
-      )
-      queryLogicResult = result
-      cost1 = cost
-      if (result == 'NON_TAGGABLE') {
-        return { queryLogicResult }
-      }
-    } else {
-      queryLogicResult = query.currentQueryLogicResult
+    // Step 1: Perform initial logic query
+    const { result, cost } = await modelsService.getDSResponse(
+      SYSTEM_MESSAGE_QUERY_TO_LOGIC_V2,
+      JSON.stringify({
+        query: query.description,
+      })
+    )
+    queryLogicResult = result
+    cost1 = cost
+
+    if (result === 'NON_TAGGABLE') {
+      return { queryLogicResult }
     }
 
+    // Step 2: Extract and expand terms
     const terms = [
       ...queryLogicResult.tags_and,
       ...queryLogicResult.tags_not,
       ...queryLogicResult.tags_or,
     ]
 
-    let { expansionResults, expansionCosts } = await this.performTagsExpansion(terms, allTags)
+    const { expansionResults, expansionCosts } = await this.performTagsExpansion(terms, allTags)
 
-    let tagsAnd, tagsNot, tagsOr
-    let tagPerIteration = 3
-    let results: any[] = []
-    let hasMoreTerms = true
+    // Step 3: Precompute all expansions and perform database queries
+    const precomputedIterations: Record<string, any[]> = {}
+    const expansorsPerIteration = 3
 
-    do {
-      tagsAnd = queryLogicResult.tags_and.map((tag: any) => {
-        const expandedTerms = expansionResults[tag.tagName].slice(
-          0,
-          query.iteration * tagPerIteration
-        )
-        const hasMore = expandedTerms.length < expansionResults[tag.tagName].length
-        tag.hasMore = hasMore
-        return expandedTerms.length
-          ? [{ tag: tag.tagName, value: 100 }, ...expandedTerms]
-          : [{ tag: tag.tagName, value: 100 }]
+    queryLogicResult.tags_and.forEach((tag: any) => {
+      const expandedTerms = expansionResults[tag.tagName]
+      precomputedIterations[tag.tagName] = [...expandedTerms]
+    })
+
+    queryLogicResult.tags_or.forEach((tag: any) => {
+      const expandedTerms = expansionResults[tag.tagName]
+      precomputedIterations[tag.tagName] = [...expandedTerms]
+    })
+
+    queryLogicResult.tags_not.forEach((tag: any) => {
+      const expandedTerms = expansionResults[tag.tagName]
+      precomputedIterations[tag.tagName] = [...expandedTerms]
+    })
+
+    // Perform filtering without mutating precomputedIterations
+    let iterationResults: Record<number, any[]> = {}
+    let seenPhotoIds = new Set<number>()
+    let iteration = 1
+
+    while (
+      queryLogicResult.tags_and.some((tag: any) => precomputedIterations[tag.tagName].length > 0) ||
+      queryLogicResult.tags_or.some((tag: any) => precomputedIterations[tag.tagName].length > 0)
+    ) {
+      const tagsAnd = queryLogicResult.tags_and.map((tag: any) => {
+        const terms = precomputedIterations[tag.tagName].slice(0, iteration * expansorsPerIteration)
+        return terms
       })
 
-      tagsNot = queryLogicResult.tags_not
+      const tagsOr = queryLogicResult.tags_or
         .map((tag: any) => {
-          const expandedTerms = expansionResults[tag.tagName].slice(0, tagPerIteration) // En not no expandimos más con iterations
-          const hasMore = expandedTerms.length < expansionResults[tag.tagName].length
-          tag.hasMore = hasMore
-          return expandedTerms.length ? [tag.tagName, ...expandedTerms] : [tag.tagName]
-        })
-        .flat()
-
-      tagsOr = queryLogicResult.tags_or
-        .map((tag: any) => {
-          const expandedTerms = expansionResults[tag.tagName].slice(
+          const terms = precomputedIterations[tag.tagName].slice(
             0,
-            query.iteration * tagPerIteration
+            iteration * expansorsPerIteration
           )
-          const hasMore = expandedTerms.length < expansionResults[tag.tagName].length
-          tag.hasMore = hasMore
-          return expandedTerms.length
-            ? [{ tag: tag.tagName }, ...expandedTerms]
-            : [{ tag: tag.tagName }]
+          return terms
         })
         .flat()
 
-      results = await this.filterByTags(tagsAnd, tagsNot, tagsOr, query.currentPhotos)
+      const tagsNot = queryLogicResult.tags_not
+        .map((tag: any) => {
+          return precomputedIterations[tag.tagName]
+        })
+        .flat()
 
-      const andHasMore = queryLogicResult.tags_and.some((tag: any) => tag.hasMore)
-      const orHasMore = queryLogicResult.tags_or.some((tag: any) => tag.hasMore)
+      const filteredPhotos = await this.filterByTags(tagsAnd, tagsNot, tagsOr)
 
-      hasMoreTerms = andHasMore || orHasMore
+      // Remove duplicates based on photo IDs
+      iterationResults[iteration] = filteredPhotos.filter((photo: any) => {
+        if (seenPhotoIds.has(photo.id)) {
+          return false
+        }
+        seenPhotoIds.add(photo.id)
+        return true
+      })
 
-      query.iteration++
-    } while (!results.length && hasMoreTerms)
+      iteration++
+    }
 
+    // Step 4: Return precomputed expansions and iteration results
     return {
-      results: [...new Set([...results])],
+      iterationResults,
       cost: { cost1, expansionCosts },
       queryLogicResult,
-      termsExpansion: { tagsAnd, tagsNot, tagsOr },
-      hasMore: hasMoreTerms,
-      iteration: query.iteration,
     }
   }
 
