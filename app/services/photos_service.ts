@@ -158,7 +158,7 @@ export default class PhotosService {
           // Recuperamos la proximidad semántica
           if (result.length) {
             for (let tag of result) {
-              tag.value = nearTags.find((nearTag: any) => nearTag.name == tag.tag)?.value
+              tag.proximity = nearTags.find((nearTag: any) => nearTag.name == tag.tag)?.proximity
             }
             expansionResults[term.tagName] = result.filter((tag: any) => tag.isSubclass)
           } else {
@@ -265,7 +265,7 @@ export default class PhotosService {
         })
         .flat()
 
-      let filteredPhotos = await this.filterByTags(tagsAnd, tagsNot, tagsOr)
+      let filteredPhotos = await this.filterByTags(tagsAnd, [...tagsNot], [...tagsOr])
 
       filteredPhotos = filteredPhotos.filter((photo: any) => {
         if (seenPhotoIds.has(photo.id)) {
