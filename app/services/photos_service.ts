@@ -154,7 +154,7 @@ export default class PhotosService {
               ? SYSTEM_MESSAGE_TERMS_ACTIONS_EXPANDER_V4
               : SYSTEM_MESSAGE_TERMS_EXPANDER_V4,
             JSON.stringify({
-              operation: 'semanticSubExpansion',
+              // operation: 'semanticSubExpansion',
               term: term.tagName,
               tagCollection: nearTags.map((tag: any) => tag.name),
             }),
@@ -185,7 +185,6 @@ export default class PhotosService {
     const modelsService = new ModelsService()
 
     const allTags = await Tag.all()
-    // let allPhotos
     let cost1
     let queryLogicResult
 
@@ -196,12 +195,11 @@ export default class PhotosService {
           query: query.description,
         })
       )
-      if (result == 'NON_TAGGABLE') {
-        console.log('Query non taggable: ', query.description)
-        return this.search_desc(query)
-      }
       queryLogicResult = result
       cost1 = cost
+      if (result == 'NON_TAGGABLE') {
+        return { queryLogicResult }
+      }
     } else {
       queryLogicResult = query.currentQueryLogicResult
     }
@@ -271,7 +269,6 @@ export default class PhotosService {
       queryLogicResult,
       termsExpansion: { tagsAnd, tagsNot, tagsOr },
       hasMore: hasMoreTerms,
-      searchType: 'TAGS',
       iteration: query.iteration,
     }
   }
@@ -328,7 +325,6 @@ export default class PhotosService {
       results: photosResult,
       hasMore,
       cost: cost2,
-      searchType: 'GPT',
     }
   }
 
@@ -342,6 +338,7 @@ export default class PhotosService {
       photos = photos.filter((photo) => !query.currentPhotos.includes(photo.id))
     }
 
+    // TODO: añadir llamada LLM para adensar query si es demasiado sucinta ("photos of vegetation"), y quitar "fotos de..."
     const nearPhotos = await embeddingsService.getSemanticNearPhotos(photos, query, 30, 20)
     let pageSize = 5
     const offset = (query.iteration - 1) * pageSize
@@ -382,7 +379,6 @@ export default class PhotosService {
       results: photosResult,
       hasMore,
       cost: cost2,
-      searchType: 'GPT',
     }
   }
 
