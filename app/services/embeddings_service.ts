@@ -284,15 +284,16 @@ export default class EmbeddingsService {
 
   public async getSemanticNearPhotos(
     photos: any,
-    query: any,
+    description: string,
     resultSetLength = 10,
-    similarityThresholdDesc = 25
+    similarityThresholdDesc = 25,
+    negativeDescription: string | null = null
   ) {
     const modelsService = new ModelsService()
 
     // Obtener las proximidades semánticas iniciales (tags)
     const semanticProximities = await modelsService.semanticProximity(
-      query.description,
+      description,
       photos.map((photo: any) => ({
         id: photo.id,
         text: photo.tags.map((tag: any) => tag.name).join(','),
@@ -307,7 +308,7 @@ export default class EmbeddingsService {
     const filteredIds = Array.from(new Set([...topIds]))
 
     // Filtrar las fotos seleccionadas
-    const filteredPhotos = photos.filter((photo: any) => filteredIds.includes(photo.id))
+    let filteredPhotos = photos.filter((photo: any) => filteredIds.includes(photo.id))
 
     // Analizar las descriptions de las fotos seleccionadas
     const promises = filteredPhotos.map(async (photo: Photo) => {
@@ -315,9 +316,9 @@ export default class EmbeddingsService {
 
       // Obtener proximidades de los chunks
       const chunkProximities = await modelsService.semanticProximitChunks(
-        query.description,
+        description,
         photo.description,
-        query.description.length * 8
+        description.length * 8
       )
 
       // Filtrar chunks por umbral de proximidad y ordenarlos
@@ -332,10 +333,23 @@ export default class EmbeddingsService {
     })
 
     // Esperar a que todas las promesas se resuelvan
-    const results = (await Promise.all(promises)).filter(Boolean)
+    let results = (await Promise.all(promises)).filter(Boolean)
 
-    // Devolver los resultados
-    return results.filter((photo) => photo.chunks.length)
+    // Filtrar por negativeDescription
+    if (negativeDescription) {
+      const negativeProximities = await modelsService.semanticProximity(
+        negativeDescription,
+        results.map((photo: any) => ({
+          id: photo.id,
+          text: photo.description || photo.tags.map((tag: any) => tag.name).join(','),
+        }))
+      )
+
+      results = results.filter((photo: any) => (negativeProximities[photo.id] || 0) > 0.65)
+    }
+
+    // Devolver los resultados filtrados finales
+    return results.filter((photo: any) => photo.chunks && photo.chunks.length)
   }
 
   /////////////////////////////////

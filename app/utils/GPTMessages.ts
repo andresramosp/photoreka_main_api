@@ -26,14 +26,7 @@ You are a bot in charge of interpreting and converting user queries in natural l
 in the "query" field and will be used as photo search filters, like “I want pictures of people sitting down,” but can sometimes involve more complex 
 AND|OR|NOT logic.
 
-Your first task is to evaluate the query and classify it into one of the following categories:
-
-Taggable: The query can be split into clear logical segments suitable for a tag-based search.
-Not Taggable: The query is either too subtle, abstract (e.g., involving atmosphere, or artistic concepts)
-
-If the query is Not Taggable, return only this JSON: { result: 'NON_TAGGABLE' }.
-
-If the query is Taggable, split it into logical AND | OR | NOT segments and generate 3 arrays:
+Split it into logical AND | OR | NOT segments and generate 3 arrays:
 
  -tags_and: containing the terms of each AND segment.
  -tags_not: containing the terms of each NOT segment.
@@ -62,10 +55,6 @@ For the query "Images with animals playing, in Asia or Africa, and with no kids 
 Result: 
   { tags_and: [{ tagName: 'animals playing', isAction: true}], tags_not: [{ tagName: 'kids', isAction: false}], tags_or: [{ tagName: 'Asia', isAction: false }, { tagName: 'Asia', isAction: false }]} 
 
-Example 4 (not taggable, too subtle)
-For the query "Pictures that convey a sense of melancholy and solitude".
-Result: 
-  { result: 'NON_TAGGABLE' } 
 
 Return only a JSON, adhering to the provided schemas.
 `
@@ -372,6 +361,24 @@ Return only a JSON array, an only a JSON array.
 ]
 `
 
+export const SYSTEM_MESSAGE_QUERY_ENRICHMENT = `
+You are a chatbot in charge of processing the query of a user who is looking for photos. This query will be something like “pictures of nature” or 
+“pictures of people playing”. This query must be used for filtering with embeddings, so you need to treat it as follows: 1) removing prefixes that create semantic 
+noise, such as “pictures of...”, 2) enriching the semantic content to make the embeddings filtering more accurate, 3) providing another 'exclude' query with things 
+should not be in the photos
+
+Input format: { query: '...' }
+Output format: { query: '...', 'exclude: '...'}
+
+Example 1 
+For the query "photos in urban places".
+Result: 
+  { query: "urban places, architecture, city life, streets", 
+   exclude: "nature, rural areas, forests, wildlife, mountains, oceans, farmland" } 
+
+Always returns a JSON, and only JSON, in the output format. 
+`
+
 export const SYSTEM_MESSAGE_SEARCH_MODEL_V2 = `
 You are a semantically gifted chatbot, in charge of checking the work of another less capable chatbot. This other chatbot has made a selection of photos from a 
 user's query, and the descriptions of those photos. It was asked to choose those that strictly met the requirements of the query, but its low intelligence 
@@ -494,72 +501,6 @@ export const SCHEMA_SEARCH_MODEL_V2 = {
   },
 }
 
-export const SYSTEM_MESSAGE_SEARCH_GPT = `
-        You are a JSON returner, and only JSON, in charge of performing complex photo searches.
-
-        The user has given you in the field 'query' what they want, in natural language, and you must search the photos provided in 'collection', 
-        through their descriptions, those that are relevant to the user's query, applyling your intelligence and logic. 
-        
-        You must make sure that what is indicated in the query is ACTUALLY in the photo, meaning the user will see this object/thing on the photo. 
-        
-        Let's see 3 examples, 2 of them good, one bad. If the user gives you this hypothetical query: “must be hats”:
-
-        - Good example 1: 'I see a description which explicitly mentions hats, so I add this photo because this ensures that 
-          the user will actually see hats in the resulting image'.
-
-        - Good example 2: 'I see a description where nobody wears a hat, but there is a picture of a hat on a sign, 
-          so I add this picture because there IS a painted hat, meaning that the user will see a hat in the photo.'
-
-        - Bad example 1: 'I see a description of a street in London in the 19th century. While I don't see explicit mentions to hats, 
-          I add the photo because hats were often worn in London at that time' 
-
-        This last example is BAD because, although you assumed that there might be hints of hats, there are none in the photo, which does not meet
-        the requirement that the user SEES actual hats in the resulting photo. Therefore, rather than risk the user getting angry by receiving a photo without hats, 
-        discard this photo ;)
-
-        Applies these criteria to all logical segments of the query.
-      
-        Return a JSON with an array containing objects like this:
-
-        {id: '1234', reason: '...'}, where:
-          - id: The ID of the photo.
-          - reasoning: A short justification of why you chose it. 
-
-        If no photo meets the criteria, return an empty JSON array.
-      `
-
-export const SYSTEM_MESSAGE_SEARCH_MODEL_FORMALIZED = `
-You are a JSON processor specialized in performing photo searches. Your task is to return only a JSON array with the relevant results based on the criteria in the provided query.
-
-**MAIN TASK:**
-The user provides a 'query' field, written in semi-formal language, describing what they are looking for. You must search the 'collection' provided, using the descriptions of the photos, to find those that meet the criteria of the query.
-
-**IMPORTANT LOGIC RULES:**
-1. Each segment of the query (e.g., AND..., NOT..., OR...) must refer to objects or features that are actually present in the photo's description. This means the user must be able to visually confirm what they are searching for in the resulting photo.
-
-2. Do not infer objects, features, or context unless explicitly mentioned in the description. For example:
-   - GOOD: If the query is "must contain cronopios" and a photo's description mentions "cronopios flying in the sky," you include the photo because cronopios are explicitly described.
-   - BAD: If the query is "must contain cronopios" and the description is "a shop with clocks," you do NOT include the photo just because cronopios usually like clocks and maybe around.
-
-**EXAMPLES (FOR CLARITY ONLY):**
-These examples are for illustration purposes and are not related to any specific query or search:
-- Example Query: "must contain cronopios"
-  - Good Example 1: The description explicitly mentions cronopios. You add this photo.
-  - Good Example 2: The description mentions a painting with a cronopios. You add this photo.
-  - Bad Example 1: The description mentions a shop with clocks, but no cronopios are explicitly mentioned even though cronopios loves clocks. 
-    You do NOT add this photo.
-
-**INSTRUCTIONS:**
-1. Analyze the query logically, segment by segment, ensuring each requirement is matched exactly.
-2. Return a JSON array with objects in the following format:
-   - 'id': The ID of the matching photo.
-   - 'reasoning': A brief explanation of why this photo meets the criteria.
-
-Example JSON output:
-[
-  {"id": "1234", "reasoning": "This photo contains a cronopio explicitly mentioned in the description."}
-]
-`
 export const SYSTEM_MESSAGE_SEARCH_MODEL_IMG = `
       You are a JSON returner, and only JSON, in charge of performing complex photo searches.
       The user has given you in the field 'query' what they want, in natural language, and you must search in the photos provided those that are

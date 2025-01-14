@@ -103,6 +103,7 @@ import ModelsService from './models_service.js'
 import Tag from '#models/tag'
 import { SYSTEM_MESSAGE_ANALIZER_2 } from '../utils/GPTMessages.js'
 import { createRequire } from 'module'
+import EmbeddingsService from './embeddings_service.js'
 const require = createRequire(import.meta.url)
 const pluralize = require('pluralize')
 
@@ -247,9 +248,7 @@ export default class AnalyzerService {
           if (description) {
             const descTags = await modelsService.textToTags(description)
             await Promise.all(
-              descTags.map((tagName) =>
-                this.processTag(tagName, 'desc', tagMap, modelsService, tagInstances)
-              )
+              descTags.map((tagName) => this.processTag(tagName, 'desc', tagMap, tagInstances))
             )
           }
 
@@ -261,7 +260,7 @@ export default class AnalyzerService {
                 const tags = rest[key] || []
                 await Promise.all(
                   tags.map((tagName: string) =>
-                    this.processTag(tagName, group, tagMap, modelsService, tagInstances)
+                    this.processTag(tagName, group, tagMap, tagInstances)
                   )
                 )
               })
@@ -298,9 +297,11 @@ export default class AnalyzerService {
     tagName: string,
     group: string,
     tagMap: Map<string, any>,
-    modelsService: ModelsService,
     tagInstances: any[]
   ) {
+    const modelsService = new ModelsService()
+    const embedddingsService = new EmbeddingsService()
+
     const isStopword = (tagName: string) => STOPWORDS.includes(tagName.toLowerCase())
 
     if (!isStopword(tagName)) {
@@ -311,23 +312,24 @@ export default class AnalyzerService {
       if (!tag) {
         let similarTagsResult: any
         try {
-          similarTagsResult = await modelsService.getSemanticSynonymTags(
-            tagName,
-            this.findTagsWithSimilarWords(lemmatizedTagName, Array.from(tagMap.keys()))
-          )
+          // similarTagsResult = await modelsService.getSemanticSynonymTags(
+          //   tagName,
+          //   this.findTagsWithSimilarWords(lemmatizedTagName, Array.from(tagMap.keys()))
+          // )
+          similarTagsResult = await embedddingsService.findSimilarTagsToText(tagName, 0.9, 5)
         } catch (err) {
           console.log('Error in getSemanticSynonymTags')
         }
 
         if (similarTagsResult?.length > 0) {
-          for (const similarTagName of similarTagsResult) {
-            const existingTag = tagMap.get(similarTagName)
+          for (const similarTag of similarTagsResult) {
+            const existingTag = tagMap.get(similarTag.name)
             if (existingTag) {
               tagInstances.push(existingTag)
             }
           }
           console.log(
-            `Using existing similar tags for ${tagName}: ${JSON.stringify(similarTagsResult)}`
+            `Using existing similar tags for ${tagName}: ${JSON.stringify(similarTagsResult.map((tag: any) => tag.name))}`
           )
           return
         }

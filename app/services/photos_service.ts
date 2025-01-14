@@ -3,6 +3,7 @@ import Tag from '#models/tag'
 import fs from 'fs/promises'
 
 import {
+  SYSTEM_MESSAGE_QUERY_ENRICHMENT,
   SYSTEM_MESSAGE_QUERY_TO_LOGIC_V2,
   SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE,
   SYSTEM_MESSAGE_SEARCH_MODEL_IMG,
@@ -26,7 +27,7 @@ export default class PhotosService {
 
   public async filterByTags(tagsAnd: any[][], tagsNot: any[], tagsOr: any[]): Promise<any[]> {
     if (tagsOr.length) {
-      tagsAnd.push(tagsOr)
+      tagsAnd.push(tagsOr.flat())
     }
 
     // Construcción de la query base
@@ -92,7 +93,7 @@ export default class PhotosService {
             }
             tagInDB.save()
             console.log(
-              `Saved children for existing tag ${tagInDB.name}: ${JSON.stringify(tagInDB.children)}`
+              `Saved children for existing tag ${tagInDB.name}: ${JSON.stringify(tagInDB.children.tags.map((tag: any) => tag.tag))}`
             )
           }
         })
@@ -246,16 +247,14 @@ export default class PhotosService {
         return [{ tag: tag.tagName }, ...usedPrecomputedIterations[tag.tagName]]
       })
 
-      const tagsOr = queryLogicResult.tags_or
-        .map((tag: any) => {
-          const remainingTerms = precomputedIterations[tag.tagName].slice(
-            usedPrecomputedIterations[tag.tagName].length,
-            usedPrecomputedIterations[tag.tagName].length + expansorsPerIteration
-          )
-          usedPrecomputedIterations[tag.tagName].push(...remainingTerms)
-          return [{ tag: tag.tagName }, ...usedPrecomputedIterations[tag.tagName]]
-        })
-        .flat()
+      const tagsOr = queryLogicResult.tags_or.map((tag: any) => {
+        const remainingTerms = precomputedIterations[tag.tagName].slice(
+          usedPrecomputedIterations[tag.tagName].length,
+          usedPrecomputedIterations[tag.tagName].length + expansorsPerIteration
+        )
+        usedPrecomputedIterations[tag.tagName].push(...remainingTerms)
+        return [{ tag: tag.tagName }, ...usedPrecomputedIterations[tag.tagName]]
+      })
 
       const tagsNot = queryLogicResult.tags_not
         .map((tag: any) => {
@@ -265,7 +264,7 @@ export default class PhotosService {
         })
         .flat()
 
-      let filteredPhotos = await this.filterByTags(tagsAnd, [...tagsNot], [...tagsOr])
+      let filteredPhotos = await this.filterByTags([...tagsAnd], [...tagsNot], [...tagsOr])
 
       filteredPhotos = filteredPhotos.filter((photo: any) => {
         if (seenPhotoIds.has(photo.id)) {
@@ -300,53 +299,78 @@ export default class PhotosService {
     let modelsService = new ModelsService()
     let embeddingsService = new EmbeddingsService()
 
+    let results: Record<number, any> = {}
+
     let photos: Photo[] = await Photo.query().preload('tags')
 
-    if (query.iteration == 1) {
-    } else {
-      photos = photos.filter((photo) => !query.currentPhotos.includes(photo.id))
-    }
-
-    const nearPhotos = await embeddingsService.getSemanticNearPhotos(photos, query, 30)
-    let pageSize = 10
-    const offset = (query.iteration - 1) * pageSize
-    let paginatedPhotos = nearPhotos.slice(offset, offset + pageSize)
-    const hasMore = offset + pageSize < nearPhotos.length
-
-    if (paginatedPhotos.length === 0) {
-      return {
-        results: [],
-        hasMore,
-      }
-    }
-
-    const { result: modelResult, cost: cost2 } = await modelsService.getDSResponse(
-      SYSTEM_MESSAGE_SEARCH_MODEL_V2,
+    const { result: enrichementResult, cost1 } = await modelsService.getDSResponse(
+      SYSTEM_MESSAGE_QUERY_ENRICHMENT,
       JSON.stringify({
-        query: this.clearQuery(query.description),
-        collection: paginatedPhotos.map((photo, idx) => ({
-          id: idx,
-          description: photo.chunks.join('... '),
-        })),
-      }),
-      'deepseek-chat',
-      null
-      // SCHEMA_SEARCH_MODEL_V2
+        query: query.description,
+      })
     )
 
-    paginatedPhotos = paginatedPhotos.map((photo, idx) => {
-      return { ...photo, reasoning: modelResult.find((res: any) => res.id == idx).reasoning }
-    })
-
-    const photosResult = paginatedPhotos.filter((_, idx) =>
-      modelResult.find((res: any) => res.id == idx && res.isIncluded)
+    const nearPhotos = await embeddingsService.getSemanticNearPhotos(
+      photos,
+      enrichementResult.query,
+      40, // cambiar por ilimitado, solo con filtro por threshold, algo como 0.4,
+      15
+      // enrichementResult.exclude
     )
+    let pageSize = 4
+    let photosResult = []
+    let hasMore
+    let costs2 = []
+
+    do {
+      const offset = (query.iteration - 1) * pageSize
+      let paginatedPhotos = nearPhotos.slice(offset, offset + pageSize)
+      hasMore = offset + pageSize < nearPhotos.length
+
+      if (paginatedPhotos.length === 0) {
+        return {
+          results: [],
+          hasMore,
+        }
+      }
+
+      const { result: modelResult, cost: cost2 } = await modelsService.getDSResponse(
+        SYSTEM_MESSAGE_SEARCH_MODEL_V2,
+        JSON.stringify({
+          query: 'Photos featuring: ' + enrichementResult.query,
+          // '. When some photos meet the cri, try to avoid a very strong or foreground presence of: ' +
+          // enrichementResult.exclude,
+          collection: paginatedPhotos.map((photo, idx) => ({
+            id: idx,
+            description: photo.chunks.join('... '),
+          })),
+        }),
+        'deepseek-chat',
+        null
+        // SCHEMA_SEARCH_MODEL_V2
+      )
+
+      costs2.push(cost2)
+
+      paginatedPhotos = paginatedPhotos.map((photo, idx) => {
+        return { ...photo, reasoning: modelResult.find((res: any) => res.id == idx).reasoning }
+      })
+
+      photosResult = paginatedPhotos.filter((_, idx) =>
+        modelResult.find((res: any) => res.id == idx && res.isIncluded)
+      )
+
+      query.iteration++
+    } while (!photosResult.length)
+
+    results[query.iteration] = { photos: photosResult }
 
     // Retornar la respuesta
     return {
-      results: photosResult,
+      results,
       hasMore,
-      cost: cost2,
+      cost: { cost1, costs2 },
+      iteration: query.iteration,
     }
   }
 
@@ -355,13 +379,22 @@ export default class PhotosService {
     let embeddingsService = new EmbeddingsService()
     let photos: Photo[] = await Photo.query().preload('tags')
 
-    if (query.iteration == 1) {
-    } else {
-      photos = photos.filter((photo) => !query.currentPhotos.includes(photo.id))
-    }
+    let results: Record<number, any> = {}
+
+    const { result: enrichementResult, cost1 } = await modelsService.getDSResponse(
+      SYSTEM_MESSAGE_QUERY_ENRICHMENT,
+      JSON.stringify({
+        query: query.description,
+      })
+    )
 
     // TODO: añadir llamada LLM para adensar query si es demasiado sucinta ("photos of vegetation"), y quitar "fotos de..."
-    const nearPhotos = await embeddingsService.getSemanticNearPhotos(photos, query, 30, 20)
+    const nearPhotos = await embeddingsService.getSemanticNearPhotos(
+      photos,
+      enrichementResult.query,
+      100, // cambiar por ilimitado, solo con filtro por threshold
+      20
+    )
     let pageSize = 5
     const offset = (query.iteration - 1) * pageSize
     let paginatedPhotos = nearPhotos.slice(offset, offset + pageSize)
@@ -377,7 +410,7 @@ export default class PhotosService {
     const { result: modelResult, cost: cost2 } = await modelsService.getDSResponse(
       SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE,
       JSON.stringify({
-        query: this.clearQuery(query.description),
+        query: enrichementResult.query + '. And excluding: ' + enrichementResult.exclude,
         collection: paginatedPhotos.map((photo, idx) => ({
           id: idx,
           description: photo.chunks.join('... '),
@@ -396,11 +429,13 @@ export default class PhotosService {
       modelResult.find((res: any) => res.id == idx && res.isIncluded)
     )
 
+    results[query.iteration] = { photos: photosResult }
+
     // Retornar la respuesta
     return {
-      results: photosResult,
+      results,
       hasMore,
-      cost: cost2,
+      cost: { cost1, cost2 },
     }
   }
 
@@ -410,7 +445,7 @@ export default class PhotosService {
 
     let photos: Photo[] = await Photo.query().preload('tags')
 
-    const filteredIds = await embeddingsService.getSemanticNearPhotos(photos, query)
+    const filteredIds = await embeddingsService.getSemanticNearPhotos(photos, query.description)
 
     if (query.iteration > 1) {
       photos = photos.filter((photo) => !query.currentPhotos.includes(photo.id))
@@ -488,32 +523,5 @@ export default class PhotosService {
       results: photosResult[0]?.id ? photosResult : [],
       cost: cost2,
     }
-  }
-
-  public clearQuery(description: string): string {
-    return description
-      .replace('photos of', '')
-      .replace('photos with', '')
-      .replace('photos at', '')
-      .replace('photos in', '')
-      .replace('images of', '')
-      .replace('images with', '')
-      .replace('images at', '')
-      .replace('images in', '')
-      .replace('pictures of', '')
-      .replace('pictures with', '')
-      .replace('pictures at', '')
-      .replace('pictures in', '')
-      .replace('shots of', '')
-      .replace('shots with', '')
-      .replace('shots at', '')
-      .replace('shots in', '')
-      .replace('taken at', '')
-      .replace('taken in', '')
-      .replace('taken on', '')
-      .replace('showing', '')
-      .replace('depicting', '')
-      .replace('featuring', '')
-      .trim()
   }
 }

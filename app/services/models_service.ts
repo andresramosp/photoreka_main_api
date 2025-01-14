@@ -285,11 +285,12 @@ export default class ModelsService {
     responseFormat: any = { type: 'json_object' },
     temperature: number = 0.1
   ): Promise<any> {
-    let cacheDuration = 60 * 5
+    let cacheDuration = 60 * 30
     try {
       let payload: any = {
         model,
         temperature,
+        stream: false,
         messages: systemContent
           ? [
               {
@@ -318,10 +319,10 @@ export default class ModelsService {
 
       // Check cache
       const cachedResponse = cache.get(cacheKey)
-      // if (cachedResponse) {
-      //   console.log('Cache hit for getGPTResponse')
-      //   return cachedResponse
-      // }
+      if (cachedResponse) {
+        console.log('Cache hit for getGPTResponse')
+        return cachedResponse
+      }
 
       const start = performance.now() // Marca el tiempo de inicio
 
