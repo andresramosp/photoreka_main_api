@@ -309,7 +309,7 @@ than this one, avoiding increasing the abstraction. For the query: 'must be anim
 `
 
 export const SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE = `{
-"You are a semantically gifted chatbot, tasked with interpreting a creative query and identifying photos from a collection that resonate with its conceptual 
+"You are a poetically gifted chatbot, tasked with interpreting a creative query and identifying photos from a collection that resonate with its conceptual 
 intent. Unlike a strict literal interpretation, this task requires you to find images that evoke the spirit, mood, or abstract idea of the query. For example, 
 if the query is 'photos for a series under the concept 'there are other worlds',' then suitable photos might include surreal landscapes, fantastical scenes, 
 or abstract depictions that make the viewer imagine alternate realities or dimensions. While maintaining coherence with the query, creative latitude is 
@@ -373,7 +373,7 @@ Output format: { query: '...', 'exclude: '...'}
 Example 1 
 For the query "photos in urban places".
 Result: 
-  { query: "urban places, architecture, city life, streets", 
+  { query: "urban places or architecture or city life or streets", 
    exclude: "nature, rural areas, forests, wildlife, mountains, oceans, farmland" } 
 
 Always returns a JSON, and only JSON, in the output format. 

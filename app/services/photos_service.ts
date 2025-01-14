@@ -107,7 +107,9 @@ export default class PhotosService {
         newTag.name = term.tagName
         newTag.children = { tags: expansionResults[term.tagName] }
         newTag.save()
-        console.log(`Saved children for new tag ${newTag.name}: ${JSON.stringify(newTag.children)}`)
+        console.log(
+          `Saved children for new tag ${newTag.name}: ${JSON.stringify(newTag.children.tags.map((tag: any) => tag.tag))}`
+        )
       }
     } catch (err) {
       console.error('Error guardando expansores')
@@ -303,7 +305,7 @@ export default class PhotosService {
 
     let photos: Photo[] = await Photo.query().preload('tags')
 
-    const { result: enrichementResult, cost1 } = await modelsService.getDSResponse(
+    const { result: enrichmentResult, cost1 } = await modelsService.getDSResponse(
       SYSTEM_MESSAGE_QUERY_ENRICHMENT,
       JSON.stringify({
         query: query.description,
@@ -312,56 +314,77 @@ export default class PhotosService {
 
     const nearPhotos = await embeddingsService.getSemanticNearPhotos(
       photos,
-      enrichementResult.query,
-      40, // cambiar por ilimitado, solo con filtro por threshold, algo como 0.4,
+      enrichmentResult.query,
+      4000, // cambiar por ilimitado, solo con filtro por threshold, algo como 0.4,
       15
-      // enrichementResult.exclude
     )
-    let pageSize = 4
-    let photosResult = []
+
+    let pageSize = 5
+    let photosResult: any[] = []
     let hasMore
-    let costs2 = []
+    let costs2: any[] = []
+    let attemps = 0
+    const batchSize = 2 // Número de llamadas paralelas por batch
 
     do {
       const offset = (query.iteration - 1) * pageSize
       let paginatedPhotos = nearPhotos.slice(offset, offset + pageSize)
       hasMore = offset + pageSize < nearPhotos.length
 
-      if (paginatedPhotos.length === 0) {
+      if (attemps > 5) {
+        // damos por hecho que en las fotos siguientes, ordenadas por prox semantica desc, no habrá ya...
         return {
-          results: [],
-          hasMore,
+          results,
+          hasMore: false,
+          cost: { cost1, costs2 },
+          iteration: query.iteration,
         }
       }
 
-      const { result: modelResult, cost: cost2 } = await modelsService.getDSResponse(
-        SYSTEM_MESSAGE_SEARCH_MODEL_V2,
-        JSON.stringify({
-          query: 'Photos featuring: ' + enrichementResult.query,
-          // '. When some photos meet the cri, try to avoid a very strong or foreground presence of: ' +
-          // enrichementResult.exclude,
-          collection: paginatedPhotos.map((photo, idx) => ({
-            id: idx,
-            description: photo.chunks.join('... '),
-          })),
-        }),
-        'deepseek-chat',
-        null
-        // SCHEMA_SEARCH_MODEL_V2
+      // Dividir las fotos en batches para realizar llamadas paralelas
+      const photoBatches = []
+      for (let i = 0; i < paginatedPhotos.length; i += batchSize) {
+        photoBatches.push(paginatedPhotos.slice(i, i + batchSize))
+      }
+
+      // Realizar llamadas paralelas con Promise.all
+      const batchResults = await Promise.all(
+        photoBatches.map((batch, batchIndex) =>
+          modelsService.getDSResponse(
+            SYSTEM_MESSAGE_SEARCH_MODEL_V2,
+            JSON.stringify({
+              query: 'Photos featuring: ' + enrichmentResult.query, // and with no relevant presence of...
+              collection: batch.map((photo, idx) => ({
+                id: batchIndex * batchSize + idx,
+                description: photo.chunks.join('... '),
+              })),
+            }),
+            'deepseek-chat',
+            null
+          )
+        )
       )
 
-      costs2.push(cost2)
+      // Combinar resultados de los batches
+      batchResults.forEach(({ result: modelResult, cost: cost2 }, batchIndex) => {
+        costs2.push(cost2)
 
-      paginatedPhotos = paginatedPhotos.map((photo, idx) => {
-        return { ...photo, reasoning: modelResult.find((res: any) => res.id == idx).reasoning }
+        paginatedPhotos = paginatedPhotos.map((photo, idx) => {
+          const absoluteIndex = batchIndex * batchSize + idx
+          const reasoning = modelResult.find((res: any) => res.id === absoluteIndex)?.reasoning
+          return reasoning ? { ...photo, reasoning } : photo
+        })
+
+        photosResult = photosResult.concat(
+          paginatedPhotos.filter((_, idx) =>
+            modelResult.find((res: any) => res.id === idx && res.isIncluded)
+          )
+        )
       })
 
-      photosResult = paginatedPhotos.filter((_, idx) =>
-        modelResult.find((res: any) => res.id == idx && res.isIncluded)
-      )
-
       query.iteration++
-    } while (!photosResult.length)
+      attemps++
+    } while (photosResult.length < 5)
 
     results[query.iteration] = { photos: photosResult }
 
@@ -393,7 +416,7 @@ export default class PhotosService {
       photos,
       enrichementResult.query,
       100, // cambiar por ilimitado, solo con filtro por threshold
-      20
+      5
     )
     let pageSize = 5
     const offset = (query.iteration - 1) * pageSize
@@ -410,7 +433,7 @@ export default class PhotosService {
     const { result: modelResult, cost: cost2 } = await modelsService.getDSResponse(
       SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE,
       JSON.stringify({
-        query: enrichementResult.query + '. And excluding: ' + enrichementResult.exclude,
+        query: enrichementResult.query, // + '. And excluding: ' + enrichementResult.exclude,
         collection: paginatedPhotos.map((photo, idx) => ({
           id: idx,
           description: photo.chunks.join('... '),
@@ -418,7 +441,7 @@ export default class PhotosService {
       }),
       'deepseek-chat',
       null,
-      1
+      1.2
     )
 
     paginatedPhotos = paginatedPhotos.map((photo, idx) => {
@@ -436,6 +459,7 @@ export default class PhotosService {
       results,
       hasMore,
       cost: { cost1, cost2 },
+      iteration: query.iteration,
     }
   }
 
