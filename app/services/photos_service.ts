@@ -8,6 +8,7 @@ import {
   SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE,
   SYSTEM_MESSAGE_SEARCH_MODEL_IMG,
   SYSTEM_MESSAGE_SEARCH_MODEL_V2,
+  SYSTEM_MESSAGE_SEARCH_MODEL_V3,
   SYSTEM_MESSAGE_TERMS_ACTIONS_EXPANDER_V4,
   SYSTEM_MESSAGE_TERMS_EXPANDER_V4,
 } from '../utils/GPTMessages.js'
@@ -319,12 +320,12 @@ export default class PhotosService {
       15
     )
 
-    let pageSize = 5
+    let pageSize = 10
     let photosResult: any[] = []
     let hasMore
     let costs2: any[] = []
     let attemps = 0
-    const batchSize = 2 // Número de llamadas paralelas por batch
+    const batchSize = 10
 
     do {
       const offset = (query.iteration - 1) * pageSize
@@ -351,9 +352,14 @@ export default class PhotosService {
       const batchResults = await Promise.all(
         photoBatches.map((batch, batchIndex) =>
           modelsService.getDSResponse(
-            SYSTEM_MESSAGE_SEARCH_MODEL_V2,
+            SYSTEM_MESSAGE_SEARCH_MODEL_V3,
             JSON.stringify({
-              query: 'Photos featuring: ' + enrichmentResult.query, // and with no relevant presence of...
+              query:
+                // 'Photos featuring: ' +
+                // enrichmentResult.query +
+                query.description +
+                '. And with no relevant presence of: ' +
+                enrichmentResult.exclude,
               collection: batch.map((photo, idx) => ({
                 id: batchIndex * batchSize + idx,
                 description: photo.chunks.join('... '),
@@ -384,7 +390,7 @@ export default class PhotosService {
 
       query.iteration++
       attemps++
-    } while (photosResult.length < 5)
+    } while (photosResult.length < 2)
 
     results[query.iteration] = { photos: photosResult }
 

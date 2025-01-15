@@ -308,7 +308,6 @@ export default class ModelsService {
                 content: userContent,
               },
             ],
-        stream: false,
       }
 
       const cacheKey = JSON.stringify({ systemContent, userContent, model })

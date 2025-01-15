@@ -2,6 +2,9 @@ import Tag from '#models/tag'
 import db from '@adonisjs/lucid/services/db'
 import ModelsService from './models_service.js'
 import Photo from '#models/photo'
+import NodeCache from 'node-cache'
+
+const cache = new NodeCache({ stdTTL: 3600 })
 
 const partitions: any = {
   creatures: ['cat', 'feline'], // Desde "gato" hasta "animal"
@@ -291,6 +294,18 @@ export default class EmbeddingsService {
   ) {
     const modelsService = new ModelsService()
 
+    // Generar una clave única para la caché basada en los parámetros de entrada
+    const cacheKey = `getSemanticNearPhotos_${description}_${resultSetLength}_${similarityThresholdDesc}_${negativeDescription}`
+
+    // Verificar si existe un resultado en caché
+    if (cache.has(cacheKey)) {
+      console.log('Cache hit: Returning cached result')
+      return cache.get(cacheKey)
+    }
+
+    console.log('Cache miss: Computing result')
+    const start = performance.now()
+
     // Obtener las proximidades semánticas iniciales (tags)
     const semanticProximities = await modelsService.semanticProximity(
       description,
@@ -348,8 +363,17 @@ export default class EmbeddingsService {
       results = results.filter((photo: any) => (negativeProximities[photo.id] || 0) > 0.65)
     }
 
+    const end = performance.now()
+    const executionTime = ((end - start) / 1000).toFixed(3) // Calcula el tiempo en segundos
+    console.log(`Execution time [getSemanticNearPhotos]: ${executionTime} seconds`)
+
     // Devolver los resultados filtrados finales
-    return results.filter((photo: any) => photo.chunks && photo.chunks.length)
+    const finalResults = results.filter((photo: any) => photo.chunks && photo.chunks.length)
+
+    // Almacenar el resultado en la caché
+    cache.set(cacheKey, finalResults)
+
+    return finalResults
   }
 
   /////////////////////////////////
