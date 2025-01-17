@@ -4,6 +4,7 @@ import fs from 'fs/promises'
 
 import {
   SYSTEM_MESSAGE_QUERY_ENRICHMENT,
+  SYSTEM_MESSAGE_QUERY_ENRICHMENT_CREATIVE,
   SYSTEM_MESSAGE_QUERY_TO_LOGIC_V2,
   SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE,
   SYSTEM_MESSAGE_SEARCH_MODEL_IMG,
@@ -354,7 +355,7 @@ export default class PhotosService {
             query: query.description, //+ '. And with no relevant presence of: ' + enrichmentResult.exclude,
             collection: batch.map((photo, idx) => ({
               id: batchIndex * batchSize + idx,
-              description: photo.chunks.join('... '),
+              description: photo?.chunks?.map((chunk) => chunk.text_chunk).join('... '),
             })),
           }),
           'deepseek-chat',
@@ -400,22 +401,16 @@ export default class PhotosService {
 
     let results: Record<number, any> = {}
 
-    const { result: enrichementResult, cost1 } = await modelsService.getDSResponse(
-      SYSTEM_MESSAGE_QUERY_ENRICHMENT,
+    const { result: enrichmentResult, cost1 } = await modelsService.getDSResponse(
+      SYSTEM_MESSAGE_QUERY_ENRICHMENT_CREATIVE,
       JSON.stringify({
         query: query.description,
       })
     )
 
     // TODO: busqueda por mezcla de tags y desc?
-    const nearPhotos = await embeddingsService.getSemanticNearPhotos(
-      photos,
-      enrichementResult.query,
-      100, // cambiar por ilimitado, solo con filtro por threshold
-      5,
-      null,
-      false
-    )
+    const nearPhotos = await embeddingsService.getSemanticNearPhotos(photos, enrichmentResult.query)
+
     let pageSize = 5
     const offset = (query.iteration - 1) * pageSize
     let paginatedPhotos = nearPhotos.slice(offset, offset + pageSize)
@@ -431,10 +426,10 @@ export default class PhotosService {
     const { result: modelResult, cost: cost2 } = await modelsService.getDSResponse(
       SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE,
       JSON.stringify({
-        query: enrichementResult.query, // + '. And excluding: ' + enrichementResult.exclude,
+        query: enrichmentResult.query, // + '. And excluding: ' + enrichementResult.exclude,
         collection: paginatedPhotos.map((photo, idx) => ({
           id: idx,
-          description: photo.chunks.join('... '),
+          description: photo?.chunks?.map((chunk) => chunk.text_chunk).join('... '),
         })),
       }),
       'deepseek-chat',

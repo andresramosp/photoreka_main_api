@@ -319,9 +319,6 @@ export default class EmbeddingsService {
       const rawTagScore = photoMatchingTags.reduce((score, tag) => {
         const proximity = matchingTagMap.get(tag.name) || 0
         const weight = proximity > 0.5 ? 1 + (proximity - 0.6) / 0.4 : 1
-        if (tag.name.includes('rat')) {
-          console.log('aqui')
-        }
         if (weight > 1) {
           console.log(
             `Found tag ${tag.name} with weight ${weight} for ${description.split('or')[0]}`
@@ -341,31 +338,61 @@ export default class EmbeddingsService {
   }
 
   public async getScoredDescPhotos(
-    photos: Photo[], // Array de fotos a procesar
-    description: string // Descripción en lenguaje natural
-  ): Promise<{ id: string | number; descScore: number }[]> {
+    photos: Photo[],
+    description: string
+  ): Promise<
+    {
+      id: string | number
+      descScore: number
+      chunks: { proximity: number; text_chunk: string }[]
+    }[]
+  > {
     const modelsService = new ModelsService()
 
     if (photos.length === 0) {
       return []
     }
 
-    // Preparar los datos de entrada para semanticProximity
-    const inputs = photos.map((photo) => ({
-      id: photo.id,
-      text: photo.description || '',
-    }))
+    const results = await Promise.all(
+      photos.map(async (photo) => {
+        if (!photo.description) {
+          return { id: photo.id, descScore: 0, chunks: [] }
+        }
 
-    // Calcular proximidades semánticas
-    const proximities = await modelsService.semanticProximity(description, inputs)
+        // Obtener las proximidades por fragmentos de la descripción
+        const chunkProximities = await modelsService.semanticProximitChunks(
+          description,
+          photo.description,
+          description.length * 8
+        )
 
-    // Convertir el resultado en un array de { id, descScore }
-    const scoredDescPhotos = Object.entries(proximities).map(([id, similarity]) => ({
-      id,
-      descScore: (similarity as number) / 100, // Cast para asegurar el tipo
-    }))
+        // Filtrar los chunks relevantes con el umbral de 0.15
+        const relevantChunks = chunkProximities.filter((chunk) => chunk.proximity > 0.15)
 
-    return scoredDescPhotos
+        // Calcular el score acumulativo basado en proximidades y pesos
+        const rawDescScore = relevantChunks.reduce((score, chunk) => {
+          const flattenProx = Math.max(0, chunk.proximity)
+          const weight =
+            flattenProx > 0.5
+              ? 2 // Peso extra para proximidades altas
+              : Math.max(1, 1 + (flattenProx - 0.6) / 0.4) // Peso continuo >= 1
+          return score + flattenProx * weight
+        }, 0)
+
+        // Normalizar el score basado en el máximo posible
+        const maxPossibleScore = relevantChunks.length * 2 || 1 // Solo considera chunks relevantes
+        const descScore = rawDescScore / maxPossibleScore
+
+        // Retornar los resultados incluyendo los chunks relevantes
+        return {
+          id: photo.id,
+          descScore,
+          chunks: relevantChunks, // Solo chunks con proximity > 0.15
+        }
+      })
+    )
+
+    return results.filter((res) => res.chunks.length)
   }
 
   public async getSemanticNearPhotos(
@@ -379,50 +406,44 @@ export default class EmbeddingsService {
 
     const cacheKey = `getSemanticNearPhotos_${description}_${photos.length}`
 
-    // Verificar si existe un resultado en caché
     if (cache.has(cacheKey)) {
       console.log('Cache hit {getSemanticNearPhotos}: Returning cached result')
       return cache.get(cacheKey)
     }
 
-    const scoredTagsPhotos: { id: string | number; tagScore: number }[] =
-      await this.getScoredTagsPhotos(photos, description)
-    // TODO: seguir misma estrategia de comparar por cada tag individual, para evitar que se diluya la query, haciendolo con trozos de descripcion
-    const scoredDescPhotos: { id: string | number; descScore: number }[] =
-      await this.getScoredDescPhotos(photos, description)
+    // Ejecutar ambas promesas en paralelo
+    const [scoredTagsPhotos, scoredDescPhotosChunked] = await Promise.all([
+      this.getScoredTagsPhotos(photos, description),
+      this.getScoredDescPhotos(photos, description),
+    ])
 
     const tagScoresMap = new Map(scoredTagsPhotos.map((photo) => [photo.id, photo.tagScore]))
-    const descScoresMap = new Map(scoredDescPhotos.map((photo) => [photo.id, photo.descScore]))
+    const descScoresMap = new Map(
+      scoredDescPhotosChunked.map((photo) => [photo.id, photo.descScore])
+    )
+    const chunksMap = new Map(scoredDescPhotosChunked.map((photo) => [photo.id, photo.chunks]))
 
-    const scoredPhotos: ScoredPhoto[] = photos.map((photo) => {
-      const tagScore = tagScoresMap.get(photo.id) || 0 // Si no existe, asignar 0
-      const descScore = descScoresMap.get(photo.id) || 0 // Si no existe, asignar 0
+    const scoredPhotos: ChunkedPhoto[] = photos.map((photo) => {
+      const tagScore = tagScoresMap.get(photo.id) || 0
+      const descScore = descScoresMap.get(photo.id) || 0
+      const chunks = chunksMap.get(photo.id) || []
 
       return {
         ...photo.$attributes,
         tagScore,
         descScore,
-        totalScore: tagScore * weights.tags + descScore * weights.embeddings, // Calcular totalScore
+        chunks,
+        totalScore: tagScore * weights.tags + descScore * weights.embeddings,
       }
     })
 
-    const filteredAndSortedPhotos: ScoredPhoto[] = scoredPhotos.filter(
-      (photo) => photo.totalScore > 0.15
-    )
-
-    const results: ChunkedPhoto[] = await this.chunkDescriptions(
-      filteredAndSortedPhotos,
-      description
-    )
-
-    const finalResults = results
-      .filter((photo) => photo.chunks && photo.chunks.length)
+    const filteredAndSortedPhotos: ChunkedPhoto[] = scoredPhotos
+      .filter((photo) => photo.totalScore > 0.15)
       .sort((a, b) => b.totalScore - a.totalScore)
 
-    // Almacenar el resultado en la caché
-    cache.set(cacheKey, finalResults)
+    cache.set(cacheKey, filteredAndSortedPhotos)
 
-    return finalResults
+    return filteredAndSortedPhotos
   }
 
   private async chunkDescriptions(
