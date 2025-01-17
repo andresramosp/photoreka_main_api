@@ -5,6 +5,10 @@ export default class extends BaseSchema {
 
   async up() {
     this.schema.raw(`
+      CREATE EXTENSION IF NOT EXISTS vector;
+    `)
+
+    this.schema.raw(`
       CREATE TABLE ${this.tableName} (
         id SERIAL PRIMARY KEY,
         name VARCHAR(255) NOT NULL UNIQUE,
@@ -14,10 +18,6 @@ export default class extends BaseSchema {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
-    `)
-
-    this.schema.raw(`
-      CREATE EXTENSION IF NOT EXISTS vector;
     `)
 
     // Crear el índice en la columna embedding para búsquedas de similitud

@@ -145,7 +145,7 @@ export default class PhotosService {
             `Using stored expansors for ${term.tagName}: ${JSON.stringify(existingTag.children.tags.map((t: any) => t.tag))} `
           )
         } else {
-          const nearTags = await embeddingsService.findSimilarTagsToText(term.tagName, 0.4, 20)
+          const nearTags = await embeddingsService.findSimilarTagsToText(term.tagName, 0.4, 30)
           const { result, cost } = await modelsService.getDSResponse(
             term.isAction
               ? SYSTEM_MESSAGE_TERMS_ACTIONS_EXPANDER_V4
@@ -312,28 +312,25 @@ export default class PhotosService {
         query: query.description,
       })
     )
-
-    const nearPhotos = await embeddingsService.getSemanticNearPhotos(
-      photos,
-      enrichmentResult.query,
-      4000, // cambiar por ilimitado, solo con filtro por threshold, algo como 0.4,
-      15
-    )
+    // TODO: no se puede hacer asi, hay que ir cogiendo paginado, cada vez mas lejos semanticamente, hasta que un resultado dé vacio
+    const nearPhotos = await embeddingsService.getSemanticNearPhotos(photos, enrichmentResult.query)
 
     let pageSize = 10
     let photosResult: any[] = []
     let hasMore
     let costs2: any[] = []
-    let attemps = 0
-    const batchSize = 10
+    let attempts = 0
+    const batchSize = 5
+    const delayMs = 250 // Retraso entre cada llamada en ms
+
+    const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
     do {
       const offset = (query.iteration - 1) * pageSize
       let paginatedPhotos = nearPhotos.slice(offset, offset + pageSize)
       hasMore = offset + pageSize < nearPhotos.length
 
-      if (attemps > 5) {
-        // damos por hecho que en las fotos siguientes, ordenadas por prox semantica desc, no habrá ya...
+      if (attempts > 5) {
         return {
           results,
           hasMore: false,
@@ -342,37 +339,28 @@ export default class PhotosService {
         }
       }
 
-      // Dividir las fotos en batches para realizar llamadas paralelas
+      // Dividir las fotos en batches para realizar llamadas con retraso
       const photoBatches = []
       for (let i = 0; i < paginatedPhotos.length; i += batchSize) {
         photoBatches.push(paginatedPhotos.slice(i, i + batchSize))
       }
 
-      // Realizar llamadas paralelas con Promise.all
-      const batchResults = await Promise.all(
-        photoBatches.map((batch, batchIndex) =>
-          modelsService.getDSResponse(
-            SYSTEM_MESSAGE_SEARCH_MODEL_V3,
-            JSON.stringify({
-              query:
-                // 'Photos featuring: ' +
-                // enrichmentResult.query +
-                query.description +
-                '. And with no relevant presence of: ' +
-                enrichmentResult.exclude,
-              collection: batch.map((photo, idx) => ({
-                id: batchIndex * batchSize + idx,
-                description: photo.chunks.join('... '),
-              })),
-            }),
-            'deepseek-chat',
-            null
-          )
-        )
-      )
+      for (let batchIndex = 0; batchIndex < photoBatches.length; batchIndex++) {
+        const batch = photoBatches[batchIndex]
 
-      // Combinar resultados de los batches
-      batchResults.forEach(({ result: modelResult, cost: cost2 }, batchIndex) => {
+        const { result: modelResult, cost: cost2 } = await modelsService.getDSResponse(
+          SYSTEM_MESSAGE_SEARCH_MODEL_V3,
+          JSON.stringify({
+            query: query.description, //+ '. And with no relevant presence of: ' + enrichmentResult.exclude,
+            collection: batch.map((photo, idx) => ({
+              id: batchIndex * batchSize + idx,
+              description: photo.chunks.join('... '),
+            })),
+          }),
+          'deepseek-chat',
+          null
+        )
+
         costs2.push(cost2)
 
         paginatedPhotos = paginatedPhotos.map((photo, idx) => {
@@ -386,15 +374,17 @@ export default class PhotosService {
             modelResult.find((res: any) => res.id === idx && res.isIncluded)
           )
         )
-      })
+
+        // Introducir un retraso entre cada batch
+        await sleep(delayMs)
+      }
 
       query.iteration++
-      attemps++
-    } while (photosResult.length < 2)
+      attempts++
+    } while (!photosResult.length)
 
     results[query.iteration] = { photos: photosResult }
 
-    // Retornar la respuesta
     return {
       results,
       hasMore,
@@ -417,12 +407,14 @@ export default class PhotosService {
       })
     )
 
-    // TODO: añadir llamada LLM para adensar query si es demasiado sucinta ("photos of vegetation"), y quitar "fotos de..."
+    // TODO: busqueda por mezcla de tags y desc?
     const nearPhotos = await embeddingsService.getSemanticNearPhotos(
       photos,
       enrichementResult.query,
       100, // cambiar por ilimitado, solo con filtro por threshold
-      5
+      5,
+      null,
+      false
     )
     let pageSize = 5
     const offset = (query.iteration - 1) * pageSize

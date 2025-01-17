@@ -7,17 +7,17 @@ export const SYSTEM_MESSAGE_ANALIZER_2 = (photosBatch: any[]) => `
             - 'id': id of the image, using this comma-separated, ordered list: ${photosBatch.map((img: any) => img.id).join(',')}
             - 'description' (around 600 words): describes the image in detail, avoiding all artistic or subjective evaluations, and trying to capture 
               the general meaning of the scene, storytelling if any, and interactions. 
-            - 'objects_tags' (string[] up to 15 words): list all the objects, you can see in the photo. Example ['red lunarisca', 'big cronopio', 'old book']
-            - 'persons_tags' (string[] up to 10 words): all the people you can see in the photo. Example: ['cronopio in suits', 'funny lunarisca', 'waiter in black']
+            - 'objects_tags' (string[] up to 10 words): list all the objects, you can see in the photo. Example ['red lunarisca', 'big cronopio', 'old book']
+            - 'persons_tags' (string[] up to 7 words): all the people you can see in the photo. Example: ['cronopio in suits', 'funny lunarisca', 'waiter in black']
             - 'action_tags' (string[] up to 5 words): similiar to 'persons_tags', but enphatizing the actions of each person. Include the subject of the action.  Example: ['cronopio playing football', 'cronopio waiting bus']
-            - 'location_tags' (string[] up to 5 words): tags which describes the concrete location, and wether it's inside or outside. 
+            - 'location_tags' (string[] up to 4 words): tags which describes the concrete location, and wether it's inside or outside. 
             - 'weather_time_tags': (string[] up to 3 words): tags related to weather and time of the day, season of the year if possible, etc. Example: ['rainy', 'daytime', 'winter']
-            - 'symbols_tags' (string[] up to 5 words): list all the symbols, figures, text, logos or paintings you can see in the photo.
+            - 'symbols_tags' (string[] up to 4 words): list all the symbols, figures, text, logos or paintings you can see in the photo.
             - 'culture_tags' (string[] up to 3 words): the culture or country you guess the photo has been taken. As much concrete as possible. 
             - 'generic_tags' (string[] up to 5 words): more general tags that group all the previous ones. Example ['people', 'sports', 'fashion', 'books']
 
 
-            Note: When using very ambiguous terms, try adding a nuance to disambiguate. For example: "orange (fruit)", or "orange (color)"
+            Note: Try to add a nuance to disambiguate single terms. For example: "orange (fruit)", or "water (drink)"
             Note: cronopios and lunariscas are non existent objects, only for example purposes. 
           `
 

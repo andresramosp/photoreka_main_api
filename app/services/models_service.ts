@@ -317,11 +317,11 @@ export default class ModelsService {
       }
 
       // Check cache
-      const cachedResponse = cache.get(cacheKey)
-      if (cachedResponse) {
-        console.log('Cache hit for getGPTResponse')
-        return cachedResponse
-      }
+      // const cachedResponse = cache.get(cacheKey)
+      // if (cachedResponse) {
+      //   console.log('Cache hit for getGPTResponse')
+      //   return cachedResponse
+      // }
 
       const start = performance.now() // Marca el tiempo de inicio
 

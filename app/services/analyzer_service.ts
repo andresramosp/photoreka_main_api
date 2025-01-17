@@ -161,7 +161,7 @@ export default class AnalyzerService {
             type: 'image_url',
             image_url: {
               url: `data:image/jpeg;base64,${base64}`,
-              detail: 'low',
+              detail: 'high',
             },
           })),
         ],
@@ -245,12 +245,12 @@ export default class AnalyzerService {
           const updateData: any = {}
           const tagInstances: any[] = []
 
-          if (description) {
-            const descTags = await modelsService.textToTags(description)
-            await Promise.all(
-              descTags.map((tagName) => this.processTag(tagName, 'desc', tagMap, tagInstances))
-            )
-          }
+          // if (description) {
+          //   const descTags = await modelsService.textToTags(description)
+          //   await Promise.all(
+          //     descTags.map((tagName) => this.processTag(tagName, 'desc', tagMap, tagInstances))
+          //   )
+          // }
 
           await Promise.all(
             Object.keys(rest)
@@ -312,11 +312,7 @@ export default class AnalyzerService {
       if (!tag) {
         let similarTagsResult: any
         try {
-          // similarTagsResult = await modelsService.getSemanticSynonymTags(
-          //   tagName,
-          //   this.findTagsWithSimilarWords(lemmatizedTagName, Array.from(tagMap.keys()))
-          // )
-          similarTagsResult = await embedddingsService.findSimilarTagsToText(tagName, 0.9, 5)
+          similarTagsResult = await embedddingsService.findSimilarTagsToText(tagName, 0.89, 5)
         } catch (err) {
           console.log('Error in getSemanticSynonymTags')
         }

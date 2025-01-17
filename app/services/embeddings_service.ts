@@ -16,6 +16,16 @@ const partitions: any = {
   environment: ['tree', 'nature'],
 }
 
+interface ScoredPhoto {
+  tagScore: number // Puntuación por tags
+  descScore: number // Puntuación por embeddings
+  totalScore: number // Puntaje total calculado
+}
+
+interface ChunkedPhoto extends ScoredPhoto {
+  chunks?: { proximity: number; text_chunk: string }[] // Chunks asociados a la foto
+}
+
 export default class EmbeddingsService {
   public async findSimilarTagsToText(
     term: string,
@@ -285,48 +295,144 @@ export default class EmbeddingsService {
     return 1 - dotProduct / (magnitude1 * magnitude2) // Cosine distance
   }
 
-  public async getSemanticNearPhotos(
-    photos: any,
+  public async getScoredTagsPhotos(
+    photos: Photo[],
     description: string,
-    resultSetLength = 10,
-    similarityThresholdDesc = 25,
-    negativeDescription: string | null = null
-  ) {
+    similarityThreshold: number = 0.2 // Umbral bajo para relaciones más amplias
+  ): Promise<{ id: string | number; tagScore: number }[]> {
+    const matchingTags = await this.findSimilarTagsToText(
+      description.split('or')[0], // de momento filtramos usando el primer tag, porque la query enriquecida puede introducir ruido
+      similarityThreshold,
+      100, // Limitar la cantidad de tags considerados
+      'cosine_similarity'
+    )
+
+    const matchingTagMap: any = new Map(matchingTags.map((tag: any) => [tag.name, tag.proximity]))
+
+    const relevantPhotos = photos.filter((photo) =>
+      photo.tags?.some((tag) => matchingTagMap.has(tag.name))
+    )
+
+    const results = relevantPhotos.map((photo) => {
+      const photoMatchingTags = photo.tags?.filter((tag) => matchingTagMap.has(tag.name)) || []
+
+      const rawTagScore = photoMatchingTags.reduce((score, tag) => {
+        const proximity = matchingTagMap.get(tag.name) || 0
+        const weight = proximity > 0.5 ? 1 + (proximity - 0.6) / 0.4 : 1
+        if (tag.name.includes('rat')) {
+          console.log('aqui')
+        }
+        if (weight > 1) {
+          console.log(
+            `Found tag ${tag.name} with weight ${weight} for ${description.split('or')[0]}`
+          )
+        }
+        return score + proximity * weight
+      }, 0)
+
+      const maxPossibleScore = photoMatchingTags.length * 2 || 1
+
+      const tagScore = rawTagScore / maxPossibleScore // Normalizar entre 0 y 1
+
+      return { id: photo.id, tagScore }
+    })
+
+    return results
+  }
+
+  public async getScoredDescPhotos(
+    photos: Photo[], // Array de fotos a procesar
+    description: string // Descripción en lenguaje natural
+  ): Promise<{ id: string | number; descScore: number }[]> {
     const modelsService = new ModelsService()
 
-    // Generar una clave única para la caché basada en los parámetros de entrada
-    const cacheKey = `getSemanticNearPhotos_${description}_${resultSetLength}_${similarityThresholdDesc}_${negativeDescription}`
+    if (photos.length === 0) {
+      return []
+    }
+
+    // Preparar los datos de entrada para semanticProximity
+    const inputs = photos.map((photo) => ({
+      id: photo.id,
+      text: photo.description || '',
+    }))
+
+    // Calcular proximidades semánticas
+    const proximities = await modelsService.semanticProximity(description, inputs)
+
+    // Convertir el resultado en un array de { id, descScore }
+    const scoredDescPhotos = Object.entries(proximities).map(([id, similarity]) => ({
+      id,
+      descScore: (similarity as number) / 100, // Cast para asegurar el tipo
+    }))
+
+    return scoredDescPhotos
+  }
+
+  public async getSemanticNearPhotos(
+    photos: Photo[],
+    description: string
+  ): Promise<ChunkedPhoto[] | undefined> {
+    const weights = {
+      tags: 0.7,
+      embeddings: 0.3,
+    }
+
+    const cacheKey = `getSemanticNearPhotos_${description}_${photos.length}`
 
     // Verificar si existe un resultado en caché
     if (cache.has(cacheKey)) {
-      console.log('Cache hit: Returning cached result')
+      console.log('Cache hit {getSemanticNearPhotos}: Returning cached result')
       return cache.get(cacheKey)
     }
 
-    console.log('Cache miss: Computing result')
-    const start = performance.now()
+    const scoredTagsPhotos: { id: string | number; tagScore: number }[] =
+      await this.getScoredTagsPhotos(photos, description)
+    // TODO: seguir misma estrategia de comparar por cada tag individual, para evitar que se diluya la query, haciendolo con trozos de descripcion
+    const scoredDescPhotos: { id: string | number; descScore: number }[] =
+      await this.getScoredDescPhotos(photos, description)
 
-    // Obtener las proximidades semánticas iniciales (tags)
-    const semanticProximities = await modelsService.semanticProximity(
-      description,
-      photos.map((photo: any) => ({
-        id: photo.id,
-        text: photo.tags.map((tag: any) => tag.name).join(','),
-      }))
+    const tagScoresMap = new Map(scoredTagsPhotos.map((photo) => [photo.id, photo.tagScore]))
+    const descScoresMap = new Map(scoredDescPhotos.map((photo) => [photo.id, photo.descScore]))
+
+    const scoredPhotos: ScoredPhoto[] = photos.map((photo) => {
+      const tagScore = tagScoresMap.get(photo.id) || 0 // Si no existe, asignar 0
+      const descScore = descScoresMap.get(photo.id) || 0 // Si no existe, asignar 0
+
+      return {
+        ...photo.$attributes,
+        tagScore,
+        descScore,
+        totalScore: tagScore * weights.tags + descScore * weights.embeddings, // Calcular totalScore
+      }
+    })
+
+    const filteredAndSortedPhotos: ScoredPhoto[] = scoredPhotos.filter(
+      (photo) => photo.totalScore > 0.15
     )
 
-    const sortedProximities = Object.entries(semanticProximities).sort(([, a], [, b]) => b - a)
-    const topCount = Math.ceil(resultSetLength)
+    const results: ChunkedPhoto[] = await this.chunkDescriptions(
+      filteredAndSortedPhotos,
+      description
+    )
 
-    const topIds = sortedProximities.slice(0, topCount).map(([id]) => id)
+    const finalResults = results
+      .filter((photo) => photo.chunks && photo.chunks.length)
+      .sort((a, b) => b.totalScore - a.totalScore)
 
-    const filteredIds = Array.from(new Set([...topIds]))
+    // Almacenar el resultado en la caché
+    cache.set(cacheKey, finalResults)
 
-    // Filtrar las fotos seleccionadas
-    let filteredPhotos = photos.filter((photo: any) => filteredIds.includes(photo.id))
+    return finalResults
+  }
 
-    // Analizar las descriptions de las fotos seleccionadas
-    const promises = filteredPhotos.map(async (photo: Photo) => {
+  private async chunkDescriptions(
+    photos: any[],
+    description: string,
+    similarityThresholdDesc: number = 15
+  ): Promise<any[]> {
+    const modelsService = new ModelsService()
+
+    const promises = photos.map(async (photo: Photo) => {
       if (!photo.description) return null
 
       // Obtener proximidades de los chunks
@@ -342,38 +448,13 @@ export default class EmbeddingsService {
         .sort((a: any, b: any) => b.proximity - a.proximity)
 
       return {
-        ...photo.$attributes,
+        ...photo,
         chunks: selectedChunks.map(({ text_chunk }: any) => text_chunk),
       }
     })
 
     // Esperar a que todas las promesas se resuelvan
-    let results = (await Promise.all(promises)).filter(Boolean)
-
-    // Filtrar por negativeDescription
-    if (negativeDescription) {
-      const negativeProximities = await modelsService.semanticProximity(
-        negativeDescription,
-        results.map((photo: any) => ({
-          id: photo.id,
-          text: photo.description || photo.tags.map((tag: any) => tag.name).join(','),
-        }))
-      )
-
-      results = results.filter((photo: any) => (negativeProximities[photo.id] || 0) > 0.65)
-    }
-
-    const end = performance.now()
-    const executionTime = ((end - start) / 1000).toFixed(3) // Calcula el tiempo en segundos
-    console.log(`Execution time [getSemanticNearPhotos]: ${executionTime} seconds`)
-
-    // Devolver los resultados filtrados finales
-    const finalResults = results.filter((photo: any) => photo.chunks && photo.chunks.length)
-
-    // Almacenar el resultado en la caché
-    cache.set(cacheKey, finalResults)
-
-    return finalResults
+    return Promise.all(promises)
   }
 
   /////////////////////////////////
