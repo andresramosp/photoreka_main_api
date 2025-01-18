@@ -335,7 +335,7 @@ export default class PhotosService {
     let hasMore
     let costs2: any[] = []
     let attempts = 0
-    const batchSize = 4
+    const batchSize = 6
     const delayMs = 250 // Retraso entre lotes en ms
 
     do {
@@ -366,7 +366,7 @@ export default class PhotosService {
             item.photo.description,
             query.description.length * 4
           )
-          return chunkedDesc.filter((chunk) => chunk.proximity > 0.15)
+          return chunkedDesc.filter((chunk) => chunk.proximity > (type === 'creative' ? 0.1 : 0.17))
         })
 
         let chunkedBatch = await Promise.all(promises)

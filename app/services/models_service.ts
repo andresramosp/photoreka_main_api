@@ -25,7 +25,8 @@ const PRICES = {
     output: 1.2 / 1_000_000, // USD per output token
   },
   'deepseek-chat': {
-    input: 0.27 / 1_000_000, // USD per input token
+    input_cache_miss: 0.27 / 1_000_000, // USD per input token
+    input_cache_hit: 0.07 / 1_000_000, // USD per input token
     output: 1.1 / 1_000_000, // USD per output token
   },
 }
@@ -341,10 +342,19 @@ export default class ModelsService {
         }
       )
 
-      const { prompt_tokens: promptTokens, completion_tokens: completionTokens } = data.usage
+      const {
+        prompt_tokens: promptTokens,
+        completion_tokens: completionTokens,
+        prompt_cache_miss_tokens: promptCacheMissTokens,
+        prompt_cache_hit_tokens: promptCacheHitTokens,
+      } = data.usage
+
       const totalTokens = promptTokens + completionTokens
 
-      const inputCost = promptTokens * PRICES[model].input * USD_TO_EUR
+      const inputCostCacheMiss = promptCacheMissTokens * PRICES[model].input_cache_miss * USD_TO_EUR
+      const inputCostCacheHit = promptCacheHitTokens * PRICES[model].input_cache_hit * USD_TO_EUR
+      const inputCost = inputCostCacheMiss + inputCostCacheHit
+
       const outputCost = completionTokens * PRICES[model].output * USD_TO_EUR
       const totalCostInEur = inputCost + outputCost
 
@@ -373,10 +383,12 @@ export default class ModelsService {
             : parsedResult,
         cost: {
           totalCostInEur,
-          inputCost,
-          outputCost,
+          // inputCost,
+          // outputCost,
           totalTokens,
-          promptTokens,
+          // promptTokens,
+          promptCacheMissTokens,
+          promptCacheHitTokens,
           completionTokens,
         },
       }
