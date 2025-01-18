@@ -1,3 +1,5 @@
+// @ts-nocheck
+
 import Photo from '#models/photo'
 import Tag from '#models/tag'
 import fs from 'fs/promises'
@@ -19,6 +21,7 @@ import sharp from 'sharp'
 import EmbeddingsService from './embeddings_service.js'
 
 export default class PhotosService {
+  sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
   /**
    * Asociar tags a una foto
    */
@@ -298,8 +301,7 @@ export default class PhotosService {
     }
   }
 
-  // TODO: Cambiar a getGPTResponse de modelService, adaptando el regex de parseo
-  public async search_desc(query: any): Promise<any> {
+  public async search(query: any, type: 'semantic' | 'creative'): Promise<any> {
     let modelsService = new ModelsService()
     let embeddingsService = new EmbeddingsService()
 
@@ -307,40 +309,48 @@ export default class PhotosService {
 
     let photos: Photo[] = await Photo.query().preload('tags')
 
+    // Determinar el sistema de mensajes en función del tipo de búsqueda
+    const enrichmentMessage =
+      type === 'semantic'
+        ? SYSTEM_MESSAGE_QUERY_ENRICHMENT
+        : SYSTEM_MESSAGE_QUERY_ENRICHMENT_CREATIVE
+
+    const searchModelMessage =
+      type === 'semantic' ? SYSTEM_MESSAGE_SEARCH_MODEL_V3 : SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE
+
+    // Enriquecimiento de la consulta
     const { result: enrichmentResult, cost1 } = await modelsService.getDSResponse(
-      SYSTEM_MESSAGE_QUERY_ENRICHMENT,
+      enrichmentMessage,
       JSON.stringify({
         query: query.description,
       })
     )
-    // TODO: no se puede hacer asi, hay que ir cogiendo paginado, cada vez mas lejos semanticamente, hasta que un resultado dé vacio
+
+    // Obtener fotos cercanas semánticamente
     const nearPhotos = await embeddingsService.getSemanticNearPhotos(photos, enrichmentResult.query)
 
-    let pageSize = 10
+    // Parámetros de paginación y lotes
+    let pageSize = 12
     let photosResult: any[] = []
     let hasMore
     let costs2: any[] = []
     let attempts = 0
-    const batchSize = 5
-    const delayMs = 250 // Retraso entre cada llamada en ms
-
-    const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+    const batchSize = 4
+    const delayMs = 250 // Retraso entre lotes en ms
 
     do {
       const offset = (query.iteration - 1) * pageSize
       let paginatedPhotos = nearPhotos.slice(offset, offset + pageSize)
       hasMore = offset + pageSize < nearPhotos.length
 
-      if (attempts > 5) {
+      if (attempts > 5 || paginatedPhotos.length === 0) {
         return {
           results,
           hasMore: false,
-          cost: { cost1, costs2 },
-          iteration: query.iteration,
         }
       }
 
-      // Dividir las fotos en batches para realizar llamadas con retraso
+      // Dividir las fotos en lotes
       const photoBatches = []
       for (let i = 0; i < paginatedPhotos.length; i += batchSize) {
         photoBatches.push(paginatedPhotos.slice(i, i + batchSize))
@@ -349,35 +359,53 @@ export default class PhotosService {
       for (let batchIndex = 0; batchIndex < photoBatches.length; batchIndex++) {
         const batch = photoBatches[batchIndex]
 
+        // Procesar descripciones de fotos en paralelo
+        const promises = batch.map(async (item, idx) => {
+          const chunkedDesc = await modelsService.semanticProximitChunks(
+            query.description,
+            item.photo.description,
+            query.description.length * 4
+          )
+          return chunkedDesc.filter((chunk) => chunk.proximity > 0.15)
+        })
+
+        let chunkedBatch = await Promise.all(promises)
+        chunkedBatch = chunkedBatch.filter((cb) => cb.length)
+
+        // Llamada al modelo externo para procesar los lotes
         const { result: modelResult, cost: cost2 } = await modelsService.getDSResponse(
-          SYSTEM_MESSAGE_SEARCH_MODEL_V3,
+          searchModelMessage,
           JSON.stringify({
-            query: query.description, //+ '. And with no relevant presence of: ' + enrichmentResult.exclude,
-            collection: batch.map((photo, idx) => ({
+            query: enrichmentResult.query,
+            collection: chunkedBatch.map((chunkedDesc, idx) => ({
               id: batchIndex * batchSize + idx,
-              description: photo?.chunks?.map((chunk) => chunk.text_chunk).join('... '),
+              description: chunkedDesc.map((chunk) => chunk.text_chunk).join('... '),
             })),
           }),
           'deepseek-chat',
-          null
+          null,
+          type === 'creative' ? 1.2 : undefined // Ajustar parámetros específicos
         )
 
         costs2.push(cost2)
 
-        paginatedPhotos = paginatedPhotos.map((photo, idx) => {
+        // Filtrar y mapear resultados relevantes
+        let batchResult = paginatedPhotos.map((item, idx) => {
           const absoluteIndex = batchIndex * batchSize + idx
           const reasoning = modelResult.find((res: any) => res.id === absoluteIndex)?.reasoning
-          return reasoning ? { ...photo, reasoning } : photo
+          return reasoning
+            ? { ...item.photo.$attributes, score: item.tagScore, reasoning }
+            : { ...item.photo.$attributes, score: item.tagScore }
         })
 
         photosResult = photosResult.concat(
-          paginatedPhotos.filter((_, idx) =>
+          batchResult.filter((_, idx) =>
             modelResult.find((res: any) => res.id === idx && res.isIncluded)
           )
         )
 
-        // Introducir un retraso entre cada batch
-        await sleep(delayMs)
+        // Introducir un retraso entre lotes si es necesario
+        await this.sleep(delayMs)
       }
 
       query.iteration++
@@ -390,68 +418,6 @@ export default class PhotosService {
       results,
       hasMore,
       cost: { cost1, costs2 },
-      iteration: query.iteration,
-    }
-  }
-
-  public async search_creative(query: any): Promise<any> {
-    let modelsService = new ModelsService()
-    let embeddingsService = new EmbeddingsService()
-    let photos: Photo[] = await Photo.query().preload('tags')
-
-    let results: Record<number, any> = {}
-
-    const { result: enrichmentResult, cost1 } = await modelsService.getDSResponse(
-      SYSTEM_MESSAGE_QUERY_ENRICHMENT_CREATIVE,
-      JSON.stringify({
-        query: query.description,
-      })
-    )
-
-    // TODO: busqueda por mezcla de tags y desc?
-    const nearPhotos = await embeddingsService.getSemanticNearPhotos(photos, enrichmentResult.query)
-
-    let pageSize = 5
-    const offset = (query.iteration - 1) * pageSize
-    let paginatedPhotos = nearPhotos.slice(offset, offset + pageSize)
-    const hasMore = offset + pageSize < nearPhotos.length
-
-    if (paginatedPhotos.length === 0) {
-      return {
-        results: [],
-        hasMore,
-      }
-    }
-
-    const { result: modelResult, cost: cost2 } = await modelsService.getDSResponse(
-      SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE,
-      JSON.stringify({
-        query: enrichmentResult.query, // + '. And excluding: ' + enrichementResult.exclude,
-        collection: paginatedPhotos.map((photo, idx) => ({
-          id: idx,
-          description: photo?.chunks?.map((chunk) => chunk.text_chunk).join('... '),
-        })),
-      }),
-      'deepseek-chat',
-      null,
-      1.2
-    )
-
-    paginatedPhotos = paginatedPhotos.map((photo, idx) => {
-      return { ...photo, reasoning: modelResult.find((res: any) => res.id == idx).reasoning }
-    })
-
-    const photosResult = paginatedPhotos.filter((_, idx) =>
-      modelResult.find((res: any) => res.id == idx && res.isIncluded)
-    )
-
-    results[query.iteration] = { photos: photosResult }
-
-    // Retornar la respuesta
-    return {
-      results,
-      hasMore,
-      cost: { cost1, cost2 },
       iteration: query.iteration,
     }
   }

@@ -1,6 +1,9 @@
+// @ts-nocheck
+
 import env from '#start/env'
 import axios from 'axios'
 import NodeCache from 'node-cache'
+import MeasureExecutionTime from '../utils/measureExecutionTime.js'
 
 const cache = new NodeCache() // Simple in-memory cache
 
@@ -30,6 +33,7 @@ const PRICES = {
 const USD_TO_EUR = 0.92
 
 export default class ModelsService {
+  @MeasureExecutionTime
   public async semanticProximity(
     text: string,
     texts: any,
@@ -65,6 +69,7 @@ export default class ModelsService {
     }
   }
 
+  @MeasureExecutionTime
   public async semanticProximitChunks(
     text1: string,
     text2: any,
@@ -174,6 +179,7 @@ export default class ModelsService {
     }
   }
 
+  @MeasureExecutionTime
   public async getGPTResponse(
     systemContent: string | null,
     userContent: any,
@@ -278,6 +284,7 @@ export default class ModelsService {
     }
   }
 
+  @MeasureExecutionTime
   public async getDSResponse(
     systemContent: string | null,
     userContent: any,
@@ -322,8 +329,6 @@ export default class ModelsService {
         console.log('Cache hit for getGPTResponse')
         return cachedResponse
       }
-
-      const start = performance.now() // Marca el tiempo de inicio
 
       const { data } = await axios.post(
         `${env.get('DEEPSEEK_BASEURL')}/chat/completions`,
@@ -378,12 +383,6 @@ export default class ModelsService {
 
       // Cache the result
       cache.set(cacheKey, result, cacheDuration)
-
-      const end = performance.now()
-      const executionTime = ((end - start) / 1000).toFixed(3) // Calcula el tiempo en segundos
-      console.log(
-        `Execution time [getDSResponse]: ${executionTime} seconds, for ${JSON.stringify(payload).length}`
-      )
 
       return result
     } catch (error) {

@@ -86,7 +86,7 @@ export default class CatalogController {
 
       const query = request.body()
 
-      const result = await photosService.search_desc(query)
+      const result = await photosService.search(query, 'semantic')
 
       return response.ok(result)
     } catch (error) {
@@ -101,7 +101,7 @@ export default class CatalogController {
 
       const query = request.body()
 
-      const result = await photosService.search_creative(query)
+      const result = await photosService.search(query, 'creative')
 
       return response.ok(result)
     } catch (error) {

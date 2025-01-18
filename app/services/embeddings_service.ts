@@ -1,8 +1,11 @@
+// @ts-nocheck
+
 import Tag from '#models/tag'
 import db from '@adonisjs/lucid/services/db'
 import ModelsService from './models_service.js'
 import Photo from '#models/photo'
 import NodeCache from 'node-cache'
+import MeasureExecutionTime from '../utils/measureExecutionTime.js'
 
 const cache = new NodeCache({ stdTTL: 3600 })
 
@@ -18,7 +21,7 @@ const partitions: any = {
 
 interface ScoredPhoto {
   tagScore: number // Puntuación por tags
-  descScore: number // Puntuación por embeddings
+  // descScore: number // Puntuación por embeddings
   totalScore: number // Puntaje total calculado
 }
 
@@ -27,6 +30,7 @@ interface ChunkedPhoto extends ScoredPhoto {
 }
 
 export default class EmbeddingsService {
+  @MeasureExecutionTime
   public async findSimilarTagsToText(
     term: string,
     threshold: number = 0.3,
@@ -36,8 +40,6 @@ export default class EmbeddingsService {
     const modelsService = new ModelsService()
     let result = null
 
-    const start = performance.now()
-
     let existingTag = await Tag.query().where('name', term).andWhereNotNull('embedding').first()
     if (existingTag) {
       result = this.findSimilarTagsToTag(existingTag, threshold, limit, metric)
@@ -46,13 +48,10 @@ export default class EmbeddingsService {
       result = this.findSimilarTagToEmbedding(embeddings[0], threshold, limit, metric)
     }
 
-    const end = performance.now()
-    const executionTime = ((end - start) / 1000).toFixed(3) // Calcula el tiempo en segundos
-    console.log(`Execution time [findSimilarTagsToText]: ${executionTime} seconds`)
-
     return result
   }
 
+  @MeasureExecutionTime
   public async findSimilarTagsToTag(
     tag: Tag,
     threshold: number = 0.3,
@@ -100,6 +99,7 @@ export default class EmbeddingsService {
     return result.rows
   }
 
+  @MeasureExecutionTime
   public async findSimilarTagToEmbedding(
     embedding: number[],
     threshold: number = 0.3,
@@ -319,11 +319,6 @@ export default class EmbeddingsService {
       const rawTagScore = photoMatchingTags.reduce((score, tag) => {
         const proximity = matchingTagMap.get(tag.name) || 0
         const weight = proximity > 0.5 ? 1 + (proximity - 0.6) / 0.4 : 1
-        if (weight > 1) {
-          console.log(
-            `Found tag ${tag.name} with weight ${weight} for ${description.split('or')[0]}`
-          )
-        }
         return score + proximity * weight
       }, 0)
 
@@ -331,7 +326,7 @@ export default class EmbeddingsService {
 
       const tagScore = rawTagScore / maxPossibleScore // Normalizar entre 0 y 1
 
-      return { id: photo.id, tagScore }
+      return { photo, tagScore }
     })
 
     return results
@@ -395,7 +390,29 @@ export default class EmbeddingsService {
     return results.filter((res) => res.chunks.length)
   }
 
+  @MeasureExecutionTime
   public async getSemanticNearPhotos(
+    photos: Photo[],
+    description: string
+  ): Promise<ChunkedPhoto[] | undefined> {
+    const cacheKey = `getSemanticNearPhotos_${description}_${photos.length}`
+
+    // if (cache.has(cacheKey)) {
+    //   console.log('Cache hit {getSemanticNearPhotos}: Returning cached result')
+    //   return cache.get(cacheKey)
+    // }
+
+    const scoredTagsPhotos = await this.getScoredTagsPhotos(photos, description)
+    const filteredPhotos = scoredTagsPhotos
+      .filter((item) => item.tagScore > 0.15)
+      .sort((a, b) => b.tagScore - a.tagScore)
+
+    // cache.set(cacheKey, filteredPhotos)
+
+    return filteredPhotos
+  }
+
+  public async getSemanticNearPhotosWithDesc(
     photos: Photo[],
     description: string
   ): Promise<ChunkedPhoto[] | undefined> {
@@ -404,10 +421,10 @@ export default class EmbeddingsService {
       embeddings: 0.3,
     }
 
-    const cacheKey = `getSemanticNearPhotos_${description}_${photos.length}`
+    const cacheKey = `getSemanticNearPhotosWithDesc${description}_${photos.length}`
 
     if (cache.has(cacheKey)) {
-      console.log('Cache hit {getSemanticNearPhotos}: Returning cached result')
+      console.log('Cache hit {getSemanticNearPhotosWithDesc}: Returning cached result')
       return cache.get(cacheKey)
     }
 
