@@ -52,6 +52,21 @@ export default class EmbeddingsService {
   }
 
   @MeasureExecutionTime
+  public async findSimilarChunksToText(
+    term: string,
+    threshold: number = 0.3,
+    limit: number = 10,
+    metric: 'distance' | 'inner_product' | 'cosine_similarity' = 'cosine_similarity',
+    photo?: { id: number } // Parámetro opcional para filtrar por photo_id
+  ) {
+    const modelsService = new ModelsService()
+    let result = null
+
+    let { embeddings } = await modelsService.getEmbeddings([term])
+    return this.findSimilarChunkToEmbedding(embeddings[0], threshold, limit, metric, photo)
+  }
+
+  @MeasureExecutionTime
   public async findSimilarTagsToTag(
     tag: Tag,
     threshold: number = 0.3,
@@ -94,6 +109,68 @@ export default class EmbeddingsService {
         threshold,
         limit,
       }
+    )
+
+    return result.rows
+  }
+
+  @MeasureExecutionTime
+  public async findSimilarChunkToEmbedding(
+    embedding: number[],
+    threshold: number = 0.3,
+    limit: number = 10,
+    metric: 'distance' | 'inner_product' | 'cosine_similarity' = 'cosine_similarity',
+    photo?: { id: number } // Parámetro opcional para filtrar por photo_id
+  ) {
+    if (!embedding || embedding.length === 0) {
+      throw new Error('Embedding no proporcionado o vacío')
+    }
+
+    let metricQuery: string = ''
+    let whereCondition: string = ''
+    let orderBy: string = ''
+
+    if (metric === 'distance') {
+      metricQuery = 'embedding <-> :embedding AS proximity'
+      whereCondition = 'embedding <-> :embedding <= :threshold'
+      orderBy = 'proximity ASC'
+    } else if (metric === 'inner_product') {
+      metricQuery = '(embedding <#> :embedding) * -1 AS proximity'
+      whereCondition = '(embedding <#> :embedding) * -1 >= :threshold'
+      orderBy = 'proximity DESC'
+    } else if (metric === 'cosine_similarity') {
+      metricQuery = '1 - (embedding <=> :embedding) AS proximity'
+      whereCondition = '1 - (embedding <=> :embedding) >= :threshold'
+      orderBy = 'proximity DESC'
+    }
+
+    // Añadir filtro por photo_id si se proporciona
+    if (photo) {
+      whereCondition += ` AND photo_id = :photoId`
+    }
+
+    // Formatear el embedding para PostgreSQL (pgvector requiere formato de string: '[value1,value2,...]')
+    const embeddingString = `[${embedding.join(',')}]`
+
+    const queryParameters: any = {
+      embedding: embeddingString, // Embedding en formato pgvector
+      threshold, // Umbral de similitud
+      limit, // Número máximo de resultados
+    }
+
+    if (photo) {
+      queryParameters.photoId = photo.id // Añadir photoId si se proporciona
+    }
+
+    const result = await db.rawQuery(
+      `
+      SELECT id, photo_id, chunk, ${metricQuery}
+      FROM descriptions_chunks
+      WHERE ${whereCondition}
+      ORDER BY ${orderBy}
+      LIMIT :limit
+      `,
+      queryParameters
     )
 
     return result.rows
@@ -298,16 +375,18 @@ export default class EmbeddingsService {
   public async getScoredTagsPhotos(
     photos: Photo[],
     description: string,
-    similarityThreshold: number = 0.2 // Umbral bajo para relaciones más amplias
-  ): Promise<{ id: string | number; tagScore: number }[]> {
+    similarityThreshold: number = 0.2
+  ): Promise<{ photo: Photo; tagScore: number }[]> {
     const matchingTags = await this.findSimilarTagsToText(
-      description, //.split('or')[0], // de momento filtramos usando el primer tag, porque la query enriquecida puede introducir ruido
+      description,
       similarityThreshold,
       500, // Limitar la cantidad de tags considerados
       'cosine_similarity'
     )
 
-    const matchingTagMap: any = new Map(matchingTags.map((tag: any) => [tag.name, tag.proximity]))
+    const matchingTagMap: Map<string, number> = new Map(
+      matchingTags.map((tag: any) => [tag.name, tag.proximity])
+    )
 
     const relevantPhotos = photos.filter((photo) =>
       photo.tags?.some((tag) => matchingTagMap.has(tag.name))
@@ -316,78 +395,66 @@ export default class EmbeddingsService {
     const results = relevantPhotos.map((photo) => {
       const photoMatchingTags = photo.tags?.filter((tag) => matchingTagMap.has(tag.name)) || []
 
-      const rawTagScore = photoMatchingTags.reduce((score, tag) => {
-        const proximity = matchingTagMap.get(tag.name) || 0
-        const weight = proximity > 0.5 ? 1 + (proximity - 0.6) / 0.4 : 1
-        return score + proximity * weight
-      }, 0)
+      // Calcula proximidades relevantes con ponderación exponencial
+      const proximities = photoMatchingTags.map((tag) =>
+        Math.exp((matchingTagMap.get(tag.name) || 0) - 0.5)
+      )
 
-      const maxPossibleScore = photoMatchingTags.length * 2 || 1
+      // Máximo y media ponderada
+      const maxProximity = Math.max(...proximities, 0)
+      const averageProximity =
+        proximities.reduce((sum, proximity) => sum + proximity, 0) / (proximities.length || 1)
 
-      const tagScore = rawTagScore / maxPossibleScore // Normalizar entre 0 y 1
+      // Score combinado
+      const tagScore = 0.75 * maxProximity + 0.25 * averageProximity
 
       return { photo, tagScore }
     })
 
-    return results
+    return results.sort((a, b) => b.tagScore - a.tagScore)
   }
 
   public async getScoredDescPhotos(
     photos: Photo[],
-    description: string
-  ): Promise<
-    {
-      id: string | number
-      descScore: number
-      chunks: { proximity: number; text_chunk: string }[]
-    }[]
-  > {
-    const modelsService = new ModelsService()
-
-    if (photos.length === 0) {
-      return []
-    }
-
-    const results = await Promise.all(
-      photos.map(async (photo) => {
-        if (!photo.description) {
-          return { id: photo.id, descScore: 0, chunks: [] }
-        }
-
-        // Obtener las proximidades por fragmentos de la descripción
-        const chunkProximities = await modelsService.semanticProximitChunks(
-          description,
-          photo.description,
-          description.length * 8
-        )
-
-        // Filtrar los chunks relevantes con el umbral de 0.15
-        const relevantChunks = chunkProximities.filter((chunk) => chunk.proximity > 0.15)
-
-        // Calcular el score acumulativo basado en proximidades y pesos
-        const rawDescScore = relevantChunks.reduce((score, chunk) => {
-          const flattenProx = Math.max(0, chunk.proximity)
-          const weight =
-            flattenProx > 0.5
-              ? 2 // Peso extra para proximidades altas
-              : Math.max(1, 1 + (flattenProx - 0.6) / 0.4) // Peso continuo >= 1
-          return score + flattenProx * weight
-        }, 0)
-
-        // Normalizar el score basado en el máximo posible
-        const maxPossibleScore = relevantChunks.length * 2 || 1 // Solo considera chunks relevantes
-        const descScore = rawDescScore / maxPossibleScore
-
-        // Retornar los resultados incluyendo los chunks relevantes
-        return {
-          id: photo.id,
-          descScore,
-          chunks: relevantChunks, // Solo chunks con proximity > 0.15
-        }
-      })
+    description: string,
+    similarityThreshold: number = 0.12
+  ): Promise<{ photo: Photo; descScore: number }[]> {
+    const matchingChunks = await this.findSimilarChunksToText(
+      description,
+      similarityThreshold,
+      500, // Limitar la cantidad de chunks considerados
+      'cosine_similarity'
     )
 
-    return results.filter((res) => res.chunks.length)
+    const matchingChunkMap: Map<string | number, number> = new Map(
+      matchingChunks.map((chunk: any) => [chunk.id, chunk.proximity])
+    )
+
+    const relevantPhotos = photos.filter((photo) =>
+      photo.descriptionChunks?.some((chunk) => matchingChunkMap.has(chunk.id))
+    )
+
+    const results = relevantPhotos.map((photo) => {
+      const photoMatchingChunks =
+        photo.descriptionChunks?.filter((chunk) => matchingChunkMap.has(chunk.id)) || []
+
+      // Calcula proximidades relevantes con ponderación exponencial
+      const proximities = photoMatchingChunks.map((chunk) =>
+        Math.exp((matchingChunkMap.get(chunk.id) || 0) - 0.5)
+      )
+
+      // Máximo y media ponderada
+      const maxProximity = Math.max(...proximities, 0)
+      const averageProximity =
+        proximities.reduce((sum, proximity) => sum + proximity, 0) / (proximities.length || 1)
+
+      // Score combinado
+      const descScore = 0.75 * maxProximity + 0.25 * averageProximity
+
+      return { photo, descScore }
+    })
+
+    return results.sort((a, b) => b.descScore - a.descScore)
   }
 
   @MeasureExecutionTime
@@ -418,15 +485,10 @@ export default class EmbeddingsService {
   ): Promise<ChunkedPhoto[] | undefined> {
     const weights = {
       tags: 0.6,
-      embeddings: 0.5,
+      desc: 0.4,
     }
 
     const cacheKey = `getSemanticNearPhotosWithDesc${description}_${photos.length}`
-
-    if (cache.has(cacheKey)) {
-      console.log('Cache hit {getSemanticNearPhotosWithDesc}: Returning cached result')
-      return cache.get(cacheKey)
-    }
 
     // Ejecutar ambas promesas en paralelo
     const [scoredTagsPhotos, scoredDescPhotosChunked] = await Promise.all([
@@ -434,31 +496,29 @@ export default class EmbeddingsService {
       this.getScoredDescPhotos(photos, description),
     ])
 
-    const tagScoresMap = new Map(scoredTagsPhotos.map((photo) => [photo.id, photo.tagScore]))
+    const tagScoresMap = new Map(scoredTagsPhotos.map((item) => [item.photo.id, item.tagScore]))
     const descScoresMap = new Map(
-      scoredDescPhotosChunked.map((photo) => [photo.id, photo.descScore])
+      scoredDescPhotosChunked.map((item) => [item.photo.id, item.descScore])
     )
-    const chunksMap = new Map(scoredDescPhotosChunked.map((photo) => [photo.id, photo.chunks]))
+    // const chunksMap = new Map(scoredDescPhotosChunked.map((photo) => [photo.id, photo.chunks]))
 
     const scoredPhotos: ChunkedPhoto[] = photos.map((photo) => {
       const tagScore = tagScoresMap.get(photo.id) || 0
       const descScore = descScoresMap.get(photo.id) || 0
-      const chunks = chunksMap.get(photo.id) || []
+      // const chunks = chunksMap.get(photo.id) || []
 
       return {
         photo,
         tagScore,
         descScore,
-        chunks,
-        totalScore: tagScore * weights.tags + descScore * weights.embeddings,
+        // chunks,
+        totalScore: tagScore * weights.tags + descScore * weights.desc,
       }
     })
 
     const filteredAndSortedPhotos: ChunkedPhoto[] = scoredPhotos
       .filter((photo) => photo.totalScore > 0.05)
       .sort((a, b) => b.totalScore - a.totalScore)
-
-    cache.set(cacheKey, filteredAndSortedPhotos)
 
     return filteredAndSortedPhotos
   }

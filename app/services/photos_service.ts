@@ -7,6 +7,7 @@ import fs from 'fs/promises'
 import {
   SYSTEM_MESSAGE_QUERY_ENRICHMENT,
   SYSTEM_MESSAGE_QUERY_ENRICHMENT_CREATIVE,
+  SYSTEM_MESSAGE_QUERY_ENRICHMENT_V2,
   SYSTEM_MESSAGE_QUERY_TO_LOGIC_V2,
   SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE,
   SYSTEM_MESSAGE_SEARCH_MODEL_IMG,
@@ -307,12 +308,25 @@ export default class PhotosService {
 
     let results: Record<number, any> = {}
 
-    let photos: Photo[] = await Photo.query().preload('tags')
+    // Generar un ID temporal alfanumérico
+    function generateTempID(): string {
+      return Math.random().toString(36).substr(2, 4)
+    }
+
+    // Obtener fotos con IDs temporales
+    let photos = (await Photo.query().preload('tags').preload('descriptionChunks')).map(
+      (photo) => ({
+        ...photo.$attributes,
+        tags: photo.tags,
+        descriptionChunks: photo.descriptionChunks,
+        tempID: generateTempID(),
+      })
+    )
 
     // Determinar el sistema de mensajes en función del tipo de búsqueda
     const enrichmentMessage =
       type === 'semantic'
-        ? SYSTEM_MESSAGE_QUERY_ENRICHMENT
+        ? SYSTEM_MESSAGE_QUERY_ENRICHMENT_V2
         : SYSTEM_MESSAGE_QUERY_ENRICHMENT_CREATIVE
 
     const searchModelMessage =
@@ -324,28 +338,33 @@ export default class PhotosService {
       JSON.stringify({ query: query.description })
     )
 
-    enrichmentResult.query = query.description
-
     // Obtener fotos cercanas semánticamente
-    const nearPhotos = await embeddingsService.getSemanticNearPhotos(photos, enrichmentResult.query)
+    const nearPhotos = await embeddingsService.getSemanticNearPhotosWithDesc(
+      photos,
+      // query.description
+      enrichmentResult.query
+    )
+
+    // results[query.iteration] = { photos: nearPhotos?.slice(0, 100)?.map((item) => item.photo) }
+    // return { results, iteration: query.iteration, enrichmentQuery: enrichmentResult.query }
 
     // Parámetros de paginación y lotes
     const pageSize = 12
-    const batchSize = 6
-    const maxPageAttemps = 6
-    let attempts = 0
+    const batchSize = 4
+    const maxPageAttempts = 4
     const delayMs = 250 // Retraso entre lotes en ms
 
     let photosResult: any[] = []
     let hasMore: boolean
     let costs2: any[] = []
+    let attempts = 0
 
     do {
       const offset = (query.iteration - 1) * pageSize
       const paginatedPhotos = nearPhotos.slice(offset, offset + pageSize)
       hasMore = offset + pageSize < nearPhotos.length
 
-      if (attempts > maxPageAttemps || paginatedPhotos.length === 0) {
+      if (attempts > maxPageAttempts || paginatedPhotos.length === 0) {
         return {
           results: { 1: { photos: [] } },
           hasMore: false,
@@ -358,33 +377,28 @@ export default class PhotosService {
         photoBatches.push(paginatedPhotos.slice(i, i + batchSize))
       }
 
-      if (photoBatches.flat().find((p) => p.photo.id == 'e36fa1fb-fb90-473d-b845-87ab7fa83bf0')) {
-        console.log()
-      }
-
-      // Procesar los lotes en paralelo
-      const batchPromises = photoBatches.map(async (batch, batchIndex) => {
-        // Procesar descripciones de fotos en paralelo
+      const batchPromises = photoBatches.map(async (batch) => {
         const promises = batch.map(async (item) => {
-          const chunkedDesc = await modelsService.semanticProximitChunks(
-            query.description,
-            item.photo.description,
-            query.description.length * 4
-          )
-          return chunkedDesc.filter((chunk) => chunk.proximity > (type === 'creative' ? 0.1 : 0.17))
+          const nearChunks = await this.getNearChunksFromDesc(item.photo, enrichmentResult.query)
+          return {
+            tempID: item.photo.tempID,
+            nearChunks: nearChunks.filter(
+              (chunk) => chunk.proximity > (type === 'creative' ? 0.1 : 0.17)
+            ),
+          }
         })
 
-        let chunkedBatch = await Promise.all(promises)
-        chunkedBatch = chunkedBatch.filter((cb) => cb.length)
+        let chunkedPhotos = await Promise.all(promises)
+        chunkedPhotos = chunkedPhotos.filter((cb) => cb.nearChunks.length)
 
         // Llamada al modelo externo para procesar el lote
         const { result: modelResult, cost: cost2 } = await modelsService.getDSResponse(
           searchModelMessage,
           JSON.stringify({
             query: query.description,
-            collection: chunkedBatch.map((chunkedDesc, idx) => ({
-              id: batchIndex * batchSize + idx,
-              description: chunkedDesc.map((chunk) => chunk.text_chunk).join('... '),
+            collection: chunkedPhotos.map((cp) => ({
+              id: cp.tempID,
+              description: cp.nearChunks.map((chunk) => chunk.text_chunk).join('... '),
             })),
           }),
           'deepseek-chat',
@@ -395,15 +409,16 @@ export default class PhotosService {
         costs2.push(cost2)
 
         // Filtrar y mapear resultados relevantes
-        return paginatedPhotos
-          .map((item, idx) => {
-            const absoluteIndex = batchIndex * batchSize + idx
-            const reasoning = modelResult.find((res: any) => res.id === absoluteIndex)?.reasoning
+        return batch
+          .map((item) => {
+            const reasoning = modelResult.find((res: any) => res.id === item.tempID)?.reasoning
             return reasoning
-              ? { ...item.photo.$attributes, score: item.tagScore, reasoning }
-              : { ...item.photo.$attributes, score: item.tagScore }
+              ? { ...item.photo, score: item.tagScore, reasoning }
+              : { ...item.photo, score: item.tagScore }
           })
-          .filter((_, idx) => modelResult.find((res: any) => res.id === idx && res.isIncluded))
+          .filter((item) =>
+            modelResult.find((res: any) => res.id === item.tempID && res.isIncluded)
+          )
       })
 
       const batchResults = await Promise.all(batchPromises)
@@ -420,6 +435,27 @@ export default class PhotosService {
       hasMore,
       cost: { cost1, costs2 },
       iteration: query.iteration,
+      enrichmentQuery: enrichmentResult.query,
+    }
+  }
+
+  public async getNearChunksFromDesc(photo: Photo, query: string) {
+    let modelsService = new ModelsService()
+    let embeddingsService = new EmbeddingsService()
+
+    if (!photo.descriptionChunks.length) {
+      return modelsService.semanticProximitChunks(query, photo.description, query.length * 3)
+    } else {
+      const similarChunks = await embeddingsService.findSimilarChunksToText(
+        query,
+        0,
+        5,
+        'cosine_similarity',
+        photo
+      )
+      return similarChunks.map((ch) => {
+        return { proximity: ch.proximity, text_chunk: ch.chunk }
+      })
     }
   }
 

@@ -1,7 +1,8 @@
 import { DateTime } from 'luxon'
-import { BaseModel, column, manyToMany } from '@adonisjs/lucid/orm'
-import type { ManyToMany } from '@adonisjs/lucid/types/relations'
+import { BaseModel, column, hasMany, manyToMany } from '@adonisjs/lucid/orm'
+import type { HasMany, ManyToMany } from '@adonisjs/lucid/types/relations'
 import Tag from './tag.js'
+import DescriptionChunk from './descriptionChunk.js'
 
 export default class Photo extends BaseModel {
   @column({ isPrimary: true })
@@ -33,4 +34,9 @@ export default class Photo extends BaseModel {
     pivotRelatedForeignKey: 'tag_id',
   })
   declare tags: ManyToMany<typeof Tag>
+
+  @hasMany(() => DescriptionChunk, {
+    foreignKey: 'photoId',
+  })
+  declare descriptionChunks: HasMany<typeof DescriptionChunk>
 }

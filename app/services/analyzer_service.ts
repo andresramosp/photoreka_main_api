@@ -1,3 +1,5 @@
+// @ts-nocheck
+
 const STOPWORDS = [
   'Environment',
   'Activity',
@@ -104,6 +106,7 @@ import Tag from '#models/tag'
 import { SYSTEM_MESSAGE_ANALIZER_2 } from '../utils/GPTMessages.js'
 import { createRequire } from 'module'
 import EmbeddingsService from './embeddings_service.js'
+import DescriptionChunk from '#models/descriptionChunk'
 const require = createRequire(import.meta.url)
 const pluralize = require('pluralize')
 
@@ -165,12 +168,12 @@ export default class AnalyzerService {
             },
           })),
         ],
-        'gpt-4o'
+        'gpt-4o-mini'
       )
 
       batchPromises.push(batchPromise)
 
-      await new Promise((resolve) => setTimeout(resolve, 1000))
+      await new Promise((resolve) => setTimeout(resolve, 750))
     }
 
     const responses = await Promise.allSettled(batchPromises)
@@ -228,8 +231,6 @@ export default class AnalyzerService {
   }
 
   public async addMetadata(metadata: { id: string; [key: string]: any }[]) {
-    const modelsService = new ModelsService()
-
     const existingTags = await Tag.all()
     const tagMap = new Map(
       existingTags.map((tag) => [lemmatizer.stem(tag.name.toLowerCase()), tag])
@@ -244,16 +245,9 @@ export default class AnalyzerService {
         if (photo) {
           const updateData: any = {}
           const tagInstances: any[] = []
-
-          // if (description) {
-          //   const descTags = await modelsService.textToTags(description)
-          //   await Promise.all(
-          //     descTags.map((tagName) => this.processTag(tagName, 'desc', tagMap, tagInstances))
-          //   )
-          // }
-
-          await Promise.all(
-            Object.keys(rest)
+          await Promise.all([
+            await this.processDesc(description, photo.id),
+            ...Object.keys(rest)
               .filter((key) => key.endsWith('_tags'))
               .map(async (key) => {
                 const group = key.replace('_tags', '')
@@ -263,8 +257,8 @@ export default class AnalyzerService {
                     this.processTag(tagName, group, tagMap, tagInstances)
                   )
                 )
-              })
-          )
+              }),
+          ])
 
           const fields = Array.from(Photo.$columnsDefinitions.keys())
           fields.forEach((key) => {
@@ -291,6 +285,38 @@ export default class AnalyzerService {
         }
       })
     )
+  }
+
+  public async processDesc(desc: string, photoId: string) {
+    const modelsService = new ModelsService()
+
+    // Dividir el texto en 5 fragmentos de tamaño similar, terminando en puntos
+    const splitChunks = this.splitIntoChunks(desc, 5)
+
+    for (const chunk of splitChunks) {
+      const { embeddings } = await modelsService.getEmbeddings([chunk])
+
+      // Crear un registro en la BD con el texto y el embedding
+      await DescriptionChunk.create({
+        photoId,
+        chunk,
+        embedding: embeddings[0],
+      })
+    }
+  }
+
+  private splitIntoChunks(desc: string, numChunks: number): string[] {
+    const sentences = desc.split(/(?<=[.!?])\s+/) // Dividir por oraciones que terminan en punto, exclamación o interrogación
+    const totalSentences = sentences.length
+    const chunkSize = Math.ceil(totalSentences / numChunks) // Calcular cuántas oraciones por fragmento
+
+    const chunks: string[] = []
+    for (let i = 0; i < totalSentences; i += chunkSize) {
+      const chunk = sentences.slice(i, i + chunkSize).join(' ')
+      chunks.push(chunk)
+    }
+
+    return chunks
   }
 
   public async processTag(
