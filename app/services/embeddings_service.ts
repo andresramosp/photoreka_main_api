@@ -301,9 +301,9 @@ export default class EmbeddingsService {
     similarityThreshold: number = 0.2 // Umbral bajo para relaciones más amplias
   ): Promise<{ id: string | number; tagScore: number }[]> {
     const matchingTags = await this.findSimilarTagsToText(
-      description.split('or')[0], // de momento filtramos usando el primer tag, porque la query enriquecida puede introducir ruido
+      description, //.split('or')[0], // de momento filtramos usando el primer tag, porque la query enriquecida puede introducir ruido
       similarityThreshold,
-      100, // Limitar la cantidad de tags considerados
+      500, // Limitar la cantidad de tags considerados
       'cosine_similarity'
     )
 
@@ -404,7 +404,7 @@ export default class EmbeddingsService {
 
     const scoredTagsPhotos = await this.getScoredTagsPhotos(photos, description)
     const filteredPhotos = scoredTagsPhotos
-      .filter((item) => item.tagScore > 0.15)
+      .filter((item) => item.tagScore > 0.05)
       .sort((a, b) => b.tagScore - a.tagScore)
 
     // cache.set(cacheKey, filteredPhotos)
@@ -417,8 +417,8 @@ export default class EmbeddingsService {
     description: string
   ): Promise<ChunkedPhoto[] | undefined> {
     const weights = {
-      tags: 0.7,
-      embeddings: 0.3,
+      tags: 0.6,
+      embeddings: 0.5,
     }
 
     const cacheKey = `getSemanticNearPhotosWithDesc${description}_${photos.length}`
@@ -446,7 +446,7 @@ export default class EmbeddingsService {
       const chunks = chunksMap.get(photo.id) || []
 
       return {
-        ...photo.$attributes,
+        photo,
         tagScore,
         descScore,
         chunks,
@@ -455,7 +455,7 @@ export default class EmbeddingsService {
     })
 
     const filteredAndSortedPhotos: ChunkedPhoto[] = scoredPhotos
-      .filter((photo) => photo.totalScore > 0.15)
+      .filter((photo) => photo.totalScore > 0.05)
       .sort((a, b) => b.totalScore - a.totalScore)
 
     cache.set(cacheKey, filteredAndSortedPhotos)

@@ -9,11 +9,13 @@ const cache = new NodeCache() // Simple in-memory cache
 
 const PRICES = {
   'gpt-4o': {
-    input: 2.5 / 1_000_000, // USD per input token
+    input_cache_miss: 2.5 / 1_000_000, // USD per input token
+    input_cache_hit: 1.25 / 1_000_000,
     output: 10.0 / 1_000_000, // USD per output token
   },
   'gpt-4o-mini': {
-    input: 0.15 / 1_000_000, // USD per input token
+    input_cache_miss: 0.15 / 1_000_000, // USD per input token
+    input_cache_hit: 0.075 / 1_000_000,
     output: 0.6 / 1_000_000, // USD per output token
   },
   'ft:gpt-4o-mini-2024-07-18:personal:refine:AlpaXAxW': {
@@ -223,10 +225,10 @@ export default class ModelsService {
 
       // Check cache
       const cachedResponse = cache.get(cacheKey)
-      // if (cachedResponse) {
-      //   console.log('Cache hit for getGPTResponse')
-      //   return cachedResponse
-      // }
+      if (cachedResponse) {
+        console.log('Cache hit for getGPTResponse')
+        return cachedResponse
+      }
 
       const { data } = await axios.post(`${env.get('OPENAI_BASEURL')}/chat/completions`, payload, {
         headers: {
@@ -235,10 +237,22 @@ export default class ModelsService {
         },
       })
 
-      const { prompt_tokens: promptTokens, completion_tokens: completionTokens } = data.usage
+      const {
+        prompt_tokens: promptTokens,
+        completion_tokens: completionTokens,
+        prompt_tokens_details: promptTokensDetails,
+      } = data.usage
+
       const totalTokens = promptTokens + completionTokens
 
-      const inputCost = promptTokens * PRICES[model].input * USD_TO_EUR
+      const inputCostCacheMiss =
+        (promptTokens - promptTokensDetails.cached_tokens) *
+        PRICES[model].input_cache_miss *
+        USD_TO_EUR
+      const inputCostCacheHit =
+        promptTokensDetails.cached_tokens * PRICES[model].input_cache_hit * USD_TO_EUR
+      const inputCost = inputCostCacheMiss + inputCostCacheHit
+
       const outputCost = completionTokens * PRICES[model].output * USD_TO_EUR
       const totalCostInEur = inputCost + outputCost
 
@@ -267,10 +281,12 @@ export default class ModelsService {
             : parsedResult,
         cost: {
           totalCostInEur,
-          inputCost,
-          outputCost,
+          // inputCost,
+          // outputCost,
           totalTokens,
-          promptTokens,
+          // promptTokens,
+          promptCacheMissTokens: promptTokens - promptTokensDetails.cached_tokens,
+          promptCacheHitTokens: promptTokensDetails.cached_tokens,
           completionTokens,
         },
       }

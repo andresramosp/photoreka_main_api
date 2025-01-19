@@ -321,31 +321,33 @@ export default class PhotosService {
     // Enriquecimiento de la consulta
     const { result: enrichmentResult, cost1 } = await modelsService.getDSResponse(
       enrichmentMessage,
-      JSON.stringify({
-        query: query.description,
-      })
+      JSON.stringify({ query: query.description })
     )
+
+    enrichmentResult.query = query.description
 
     // Obtener fotos cercanas semánticamente
     const nearPhotos = await embeddingsService.getSemanticNearPhotos(photos, enrichmentResult.query)
 
     // Parámetros de paginación y lotes
-    let pageSize = 12
-    let photosResult: any[] = []
-    let hasMore
-    let costs2: any[] = []
-    let attempts = 0
+    const pageSize = 12
     const batchSize = 6
+    const maxPageAttemps = 6
+    let attempts = 0
     const delayMs = 250 // Retraso entre lotes en ms
+
+    let photosResult: any[] = []
+    let hasMore: boolean
+    let costs2: any[] = []
 
     do {
       const offset = (query.iteration - 1) * pageSize
-      let paginatedPhotos = nearPhotos.slice(offset, offset + pageSize)
+      const paginatedPhotos = nearPhotos.slice(offset, offset + pageSize)
       hasMore = offset + pageSize < nearPhotos.length
 
-      if (attempts > 5 || paginatedPhotos.length === 0) {
+      if (attempts > maxPageAttemps || paginatedPhotos.length === 0) {
         return {
-          results,
+          results: { 1: { photos: [] } },
           hasMore: false,
         }
       }
@@ -356,11 +358,14 @@ export default class PhotosService {
         photoBatches.push(paginatedPhotos.slice(i, i + batchSize))
       }
 
-      for (let batchIndex = 0; batchIndex < photoBatches.length; batchIndex++) {
-        const batch = photoBatches[batchIndex]
+      if (photoBatches.flat().find((p) => p.photo.id == 'e36fa1fb-fb90-473d-b845-87ab7fa83bf0')) {
+        console.log()
+      }
 
+      // Procesar los lotes en paralelo
+      const batchPromises = photoBatches.map(async (batch, batchIndex) => {
         // Procesar descripciones de fotos en paralelo
-        const promises = batch.map(async (item, idx) => {
+        const promises = batch.map(async (item) => {
           const chunkedDesc = await modelsService.semanticProximitChunks(
             query.description,
             item.photo.description,
@@ -372,11 +377,11 @@ export default class PhotosService {
         let chunkedBatch = await Promise.all(promises)
         chunkedBatch = chunkedBatch.filter((cb) => cb.length)
 
-        // Llamada al modelo externo para procesar los lotes
+        // Llamada al modelo externo para procesar el lote
         const { result: modelResult, cost: cost2 } = await modelsService.getDSResponse(
           searchModelMessage,
           JSON.stringify({
-            query: enrichmentResult.query,
+            query: query.description,
             collection: chunkedBatch.map((chunkedDesc, idx) => ({
               id: batchIndex * batchSize + idx,
               description: chunkedDesc.map((chunk) => chunk.text_chunk).join('... '),
@@ -384,29 +389,25 @@ export default class PhotosService {
           }),
           'deepseek-chat',
           null,
-          type === 'creative' ? 1.2 : undefined // Ajustar parámetros específicos
+          type === 'creative' ? 1.2 : undefined
         )
 
         costs2.push(cost2)
 
         // Filtrar y mapear resultados relevantes
-        let batchResult = paginatedPhotos.map((item, idx) => {
-          const absoluteIndex = batchIndex * batchSize + idx
-          const reasoning = modelResult.find((res: any) => res.id === absoluteIndex)?.reasoning
-          return reasoning
-            ? { ...item.photo.$attributes, score: item.tagScore, reasoning }
-            : { ...item.photo.$attributes, score: item.tagScore }
-        })
+        return paginatedPhotos
+          .map((item, idx) => {
+            const absoluteIndex = batchIndex * batchSize + idx
+            const reasoning = modelResult.find((res: any) => res.id === absoluteIndex)?.reasoning
+            return reasoning
+              ? { ...item.photo.$attributes, score: item.tagScore, reasoning }
+              : { ...item.photo.$attributes, score: item.tagScore }
+          })
+          .filter((_, idx) => modelResult.find((res: any) => res.id === idx && res.isIncluded))
+      })
 
-        photosResult = photosResult.concat(
-          batchResult.filter((_, idx) =>
-            modelResult.find((res: any) => res.id === idx && res.isIncluded)
-          )
-        )
-
-        // Introducir un retraso entre lotes si es necesario
-        await this.sleep(delayMs)
-      }
+      const batchResults = await Promise.all(batchPromises)
+      photosResult = photosResult.concat(...batchResults)
 
       query.iteration++
       attempts++

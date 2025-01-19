@@ -165,7 +165,7 @@ export default class AnalyzerService {
             },
           })),
         ],
-        'gpt-4o-mini'
+        'gpt-4o'
       )
 
       batchPromises.push(batchPromise)
