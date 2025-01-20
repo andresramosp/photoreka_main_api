@@ -10,7 +10,9 @@ import {
   SYSTEM_MESSAGE_QUERY_ENRICHMENT_V2,
   SYSTEM_MESSAGE_QUERY_TO_LOGIC_V2,
   SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE,
+  SYSTEM_MESSAGE_SEARCH_MODEL_DESC_IMAGE,
   SYSTEM_MESSAGE_SEARCH_MODEL_IMG,
+  SYSTEM_MESSAGE_SEARCH_MODEL_ONLY_IMAGE,
   SYSTEM_MESSAGE_SEARCH_MODEL_V2,
   SYSTEM_MESSAGE_SEARCH_MODEL_V3,
   SYSTEM_MESSAGE_TERMS_ACTIONS_EXPANDER_V4,
@@ -329,8 +331,16 @@ export default class PhotosService {
         ? SYSTEM_MESSAGE_QUERY_ENRICHMENT_V2
         : SYSTEM_MESSAGE_QUERY_ENRICHMENT_CREATIVE
 
+    const needImage = false
+
     const searchModelMessage =
-      type === 'semantic' ? SYSTEM_MESSAGE_SEARCH_MODEL_V3 : SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE
+      type === 'semantic'
+        ? !needImage
+          ? SYSTEM_MESSAGE_SEARCH_MODEL_V3
+          : SYSTEM_MESSAGE_SEARCH_MODEL_ONLY_IMAGE
+        : !needImage
+          ? SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE
+          : SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE // TODO
 
     // Enriquecimiento de la consulta
     const { result: enrichmentResult, cost1 } = await modelsService.getDSResponse(
@@ -346,7 +356,12 @@ export default class PhotosService {
     )
 
     // results[query.iteration] = { photos: nearPhotos?.slice(0, 100)?.map((item) => item.photo) }
-    // return { results, iteration: query.iteration, enrichmentQuery: enrichmentResult.query }
+    // return {
+    //   results,
+    //   iteration: query.iteration,
+    //   enrichmentQuery: enrichmentResult.query,
+    //   scores: nearPhotos?.slice(0, 100),
+    // }
 
     // Parámetros de paginación y lotes
     const pageSize = 12
@@ -381,6 +396,7 @@ export default class PhotosService {
         const promises = batch.map(async (item) => {
           const nearChunks = await this.getNearChunksFromDesc(item.photo, enrichmentResult.query)
           return {
+            id: item.photo.id,
             tempID: item.photo.tempID,
             nearChunks: nearChunks.filter(
               (chunk) => chunk.proximity > (type === 'creative' ? 0.1 : 0.17)
@@ -392,18 +408,34 @@ export default class PhotosService {
         chunkedPhotos = chunkedPhotos.filter((cb) => cb.nearChunks.length)
 
         // Llamada al modelo externo para procesar el lote
-        const { result: modelResult, cost: cost2 } = await modelsService.getDSResponse(
-          searchModelMessage,
-          JSON.stringify({
-            query: query.description,
-            collection: chunkedPhotos.map((cp) => ({
-              id: cp.tempID,
-              description: cp.nearChunks.map((chunk) => chunk.text_chunk).join('... '),
-            })),
-          }),
-          'deepseek-chat',
+        let method = !needImage ? 'getDSResponse' : 'getGPTResponse'
+        const { result: modelResult, cost: cost2 } = await modelsService[method](
+          !needImage
+            ? searchModelMessage
+            : searchModelMessage(chunkedPhotos.map((cp) => cp.tempID)),
+          !needImage
+            ? JSON.stringify({
+                query: query.description,
+                collection: chunkedPhotos.map((cp) => ({
+                  id: cp.tempID,
+                  description: cp.nearChunks.map((chunk) => chunk.text_chunk).join('... '),
+                })),
+              })
+            : [
+                {
+                  type: 'text',
+                  text: JSON.stringify({
+                    query: query.description,
+                  }),
+                },
+                ...(await this.generateImagesPayload(
+                  paginatedPhotos.map((pp) => pp.photo),
+                  chunkedPhotos.map((cp) => cp.id)
+                )),
+              ],
+          !needImage ? 'deepseek-chat' : 'gpt-4o-mini',
           null,
-          type === 'creative' ? 1.2 : undefined
+          type === 'creative' ? 1.3 : undefined
         )
 
         costs2.push(cost2)
@@ -411,7 +443,9 @@ export default class PhotosService {
         // Filtrar y mapear resultados relevantes
         return batch
           .map((item) => {
-            const reasoning = modelResult.find((res: any) => res.id === item.tempID)?.reasoning
+            const reasoning = modelResult.find(
+              (res: any) => res.id === item.photo.tempID
+            )?.reasoning
             return reasoning
               ? { ...item.photo, score: item.tagScore, reasoning }
               : { ...item.photo, score: item.tagScore }
@@ -457,6 +491,41 @@ export default class PhotosService {
         return { proximity: ch.proximity, text_chunk: ch.chunk }
       })
     }
+  }
+
+  public async generateImagesPayload(photos: Photo[], photoIds: string[]) {
+    const validImages: any[] = []
+    const uploadPath = path.join(process.cwd(), 'public/uploads/photos')
+
+    for (const id of photoIds) {
+      const photo = photos.find((photo) => photo.id == id)
+      if (!photo) continue
+
+      const filePath = path.join(uploadPath, `${photo.name}`)
+
+      try {
+        await fs.access(filePath)
+
+        const resizedBuffer = await sharp(filePath)
+          .resize({ width: 1012, fit: 'inside' })
+          .toBuffer()
+
+        validImages.push({
+          id: photo.id,
+          base64: resizedBuffer.toString('base64'),
+        })
+      } catch (error) {
+        console.warn(`No se pudo procesar la imagen con ID: ${photo.id}`, error)
+      }
+    }
+
+    return validImages.map(({ base64 }) => ({
+      type: 'image_url',
+      image_url: {
+        url: `data:image/jpeg;base64,${base64}`,
+        detail: 'low',
+      },
+    }))
   }
 
   public async search_gpt_img(query: any): Promise<any> {
