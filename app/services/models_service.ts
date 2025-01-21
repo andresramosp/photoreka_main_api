@@ -410,7 +410,7 @@ export default class ModelsService {
       }
 
       // Cache the result
-      cache.set(cacheKey, result, cacheDuration)
+      cache.set(cacheKey, { ...result, cost: '0 [cached]' }, cacheDuration)
 
       return result
     } catch (error) {

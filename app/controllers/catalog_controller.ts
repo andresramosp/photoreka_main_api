@@ -71,7 +71,7 @@ export default class CatalogController {
 
       const query = request.body()
 
-      const result = await photosService.search_gpt_to_tags_v2(query)
+      const result = await photosService.searchByTags(query)
 
       return response.ok(result)
     } catch (error) {
@@ -86,7 +86,9 @@ export default class CatalogController {
 
       const query = request.body()
 
-      const result = await photosService.search(query, 'semantic')
+      const result = await photosService.search(query, 'semantic', {
+        embeddingsOnly: query.useEmbeddings,
+      })
 
       return response.ok(result)
     } catch (error) {
@@ -101,7 +103,9 @@ export default class CatalogController {
 
       const query = request.body()
 
-      const result = await photosService.search(query, 'creative')
+      const result = await photosService.search(query, 'creative', {
+        embeddingsOnly: query.useEmbeddings,
+      })
 
       return response.ok(result)
     } catch (error) {

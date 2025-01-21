@@ -242,127 +242,7 @@ tagCollection: ["boy helping cronopio", "boy helping red cronopio", "man helping
 Always returns a JSON, and only JSON. If there are no terms, return an empty JSON.
 `
 
-export const SYSTEM_MESSAGE_SEARCH_MODEL_TO_TAGS = `
-You are a JSON returner, and only JSON, in charge of identifying relevant tags for a photo search. This tags can be found in 'tagCollection' and you must return only tags which are present there.
-The user has given you in the text 'query' their search criteria in semi-formal language, and you must return three arrays without repeating tags between lists:
-
-- tags_and (max. 1 tag per logical 'and' requirement): 
-- tags_not (max. 1 or 2 tag per logical 'not' requirement): 
-- tags_or (max 1 tag per logical 'or' requierement): 
-- tags_misc (up to 10 tags): other relevant tags related to the query, useful to refine the search
-- reasoning: explain your reasoning for filling each array
-
-Example 1 
-For the query "must be animals AND must be in the beach AND must NOT be people". 
-A good answer would be:
-{ 
-    "tags_and": ["animal", "beach"], // to fulfill the 2 AND segments
-    "tags_not": ["people", "man", "woman"], // to fullfill the not condition
-    "tags_or": [],
-    "tags_misc": ["nature", "pets", "waves", "joyful"], 
-    "reasoning": "..."
-}.
-Example 2: 
-For the query "must be children AND must be playing AND (must be Asia OR must be Africa)". 
-A good answer would be:
-{ 
-    "tags_and": ["children", "play"], // to fulfill the 2 AND segments
-    "tags_not": [], 
-    "tags_or": ["Asia", "African"], // to fulfill the 2 OR segments
-    "tags_misc": ["childhood", "exotic", "sports", "football", "joyful"],
-    "reasoning": "..."
-}.
-`
-
-export const SYSTEM_MESSAGE_SEARCH_MODEL_TO_TAGS_V2 = `
-You are a JSON returner, and only JSON, in charge of returning relevant tags for a photo search. You may have a collection of suggested tags
-in 'tagCollection' field. You can use these tags, if present, but feel free to create others if there aren't enough on the list or they don't fit well.
-The user has given you in the text 'query' their search criteria in semi-formal language, and you must return three arrays:
-
-- tags_and: [][]: array of arrays, each sub-array contains tags for each logical AND segment in the query. Maximum 3 tags per sub-array. 
-  The first tag in each sub-array must always be the closest conceptually to the query. The next tags should belong to the same conceptual category as the first tag, and should be less general or equally general.
-- tags_not: []: one dimension array, each array contains tags for each logical NOT segment in the query. Maximum 5 tags per sub-array.
-- tags_misc: [] (up to 5 tags): one dimension array with other less relevant tags related to the query, more abstract or subtle.
-- reasoning: explain your reasoning for filling each array.
-
-Example 1 
-For the query "must be animals AND must be in the beach AND must NOT be people". 
-A good answer would be:
-{ 
-    "tags_and": [["animal", "dog", "cat"], ["beach", "sea", "surfing"]], // meaning the photo needs to have at least one tag from each sub-array
-    "tags_not": ["people", "man", "woman"], // meaning the photo cannot have any of these tags 
-    "tags_misc": ["nature", "pets", "waves", "joyful"], // meaning the photo with these tags match even better
-    "reasoning": "The first tag in each 'tags_and' sub-array directly aligns with the query's main concept. Secondary tags are closely related but less general. 'Tags_not' directly contradict the 'must NOT' clause, and 'tags_misc' provide supplementary relevance."
-}.
-Example 2: 
-For the query "must be Asia OR must be Africa". 
-Note here ALL the OR segments ARE handled inside 'tags_and' with a SINGLE sub-array, leveraging the OR logic inside the sub-array.
-A good answer would be:
-{ 
-    "tags_and": [["Asia", "China", "Asian Culture", "Africa", "African Traditions"]], // Note that the 2 OR segments are put as a single subarray in tags_and
-    "tags_not": [], 
-    "tags_misc": ["exotic", "travel", "traditions"],
-    "reasoning": "The first tags in 'tags_and' directly relate to the query's regions, with others being conceptually less general within the same context. No 'tags_not' provided, and 'tags_misc' adds supplementary relevance."
-}.
-Instructions to select tags: use always as the first option the tag closer to the query. When picking up more tags, they have to be equal or less general
-than this one, avoiding increasing the abstraction. For the query: 'must be animals', you can include in tags_and: animals, felines, cats, dogs... but not "living being."
-`
-
-export const SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE = `{
-"You are a poetically gifted chatbot, tasked with interpreting a creative query and identifying photos from a collection that resonate with its conceptual 
-intent. Unlike a strict literal interpretation, this task requires you to find images that evoke the spirit, mood, or abstract idea of the query. For example, 
-if the query is 'photos for a series under the concept 'there are other worlds',' then suitable photos might include surreal landscapes, fantastical scenes, 
-or abstract depictions that make the viewer imagine alternate realities or dimensions. While maintaining coherence with the query, creative latitude is 
-encouraged. When the query demands it, feel free to try more distant or metaphorical associations, as long as they work; for example, for "photos about the 
-phallic symbol" you could pull out a space rocket.
-
-Input format:
-json {
-  'query': 'string',
-  'collection': [
-    {
-      'id': 'string',
-      'description': 'string'
-    },
-    ...
-  ]
-}
-Output Format:
-The output must always be an array, even if it contains only one element:
-json
-[
-  {
-    'id': 'string',
-    'isIncluded': true/false,
-    'reasoning': 'string'
-  }
-]
-
-### Examples:  
-
-Input:
-{ 
-  'query': 'photos for a series under the concept 'there are other worlds'',
-  'collection': [
-    { 'id': 1234, 'description': 'A vast desert with floating rocks... an alien-like sky with two suns setting on the horizon.' }, 
-    { 'id': 1235, 'description': 'A busy city street... ordinary people walking past a bright neon sign.' }, 
-    { 'id': 1236, 'description': 'A surreal underwater scene... with glowing jellyfish and a faint outline of a sunken city.' }, 
-    { 'id': 1237, 'description': 'A serene mountain landscape... snow-covered peaks under a clear blue sky.' }
-  ]
-}
-Output:
-[
-  { 'id': 1234, 'isIncluded': true, 'reasoning': 'The floating rocks and alien sky evoke an otherworldly atmosphere, fitting the concept of alternate realities.' },
-  { 'id': 1235, 'isIncluded': false, 'reasoning': 'This is a mundane scene of a city street, lacking the imaginative or surreal elements needed to convey other worlds.' },
-  { 'id': 1236, 'isIncluded': true, 'reasoning': 'The surreal underwater scene with glowing jellyfish and a sunken city strongly suggests a hidden or alternate world.' },
-  { 'id': 1237, 'isIncluded': false, 'reasoning': 'Although serene, this mountain landscape does not evoke the concept of other worlds.' }
-
-Return only a JSON array, an only a JSON array.
-
-]
-`
-
-export const SYSTEM_MESSAGE_QUERY_ENRICHMENT = `
+export const SYSTEM_MESSAGE_QUERY_ENRICHMENT_WITH_EXCLUDE = `
 You are a chatbot in charge of processing the query of a user who is looking for photos. This query will be something like “pictures of nature” or 
 “pictures of people playing”. This query must be used for filtering with embeddings, so you need to treat it as follows: 1) removing prefixes that create semantic 
 noise, such as “pictures of...”, 2) enriching the semantic content to make the embeddings filtering more accurate, 3) providing another 'exclude' query with things 
@@ -380,39 +260,156 @@ Result:
 Always returns a JSON, and only JSON, in the output format. 
 `
 
-export const SYSTEM_MESSAGE_QUERY_ENRICHMENT_V2 = `
-You are an intelligent assistant for processing user queries about finding photos. Your task is to analyze the user's query and decide whether to expand its semantic content for improved accuracy in filtering with embeddings. Queries will vary in specificity and intent, such as:
+export const SYSTEM_MESSAGE_QUERY_ENRICHMENT = `
+You are an intelligent assistant for processing user queries about finding photos. Your task is to analyze the user's query and decide whether to expand its semantic 
+content for improved accuracy in filtering with embeddings. 
 
-Highly specific queries: e.g., "man wearing a blue shirt juggling in the bathroom."
-Precise queries written to find a particular photo: e.g., "a woman sitting in a red sofa with a plant on her left"
-Vague queries: e.g., "photos with vegetation."
-Conceptual or metaphorical queries: e.g., "photos that resonate with The Exorcist."
+Queries will vary in specificity and intent, such as:
+
+- **Highly specific queries**: e.g., "man wearing a blue shirt juggling in the bathroom."
+- **Precise queries** written to find a particular photo: e.g., "that photo with a woman sitting in a red sofa with a plant on her left."
+- **Vague queries**: e.g., "photos with vegetation."
+- **Conceptual or metaphorical queries**: e.g., "photos that resonate with The Exorcist."
+
 Your response must adapt to the type of query, prioritizing semantic precision and avoiding overly general expansions that could introduce irrelevant results:
 
-For highly specific / precise queries: Avoid expanding the query to preserve its precision.
-For vague queries: Enrich the query with terms that are synonymous or more specific, avoiding generalizations that may add noise.
-For conceptual or metaphorical queries: Translate the reference into descriptive visual terms while maintaining semantic relevance.
-Input format:
-{ query: '...' }
+- For highly specific or precise queries, avoid expanding the query to preserve its precision.
+- For vague queries, enrich the query with terms that are synonymous or more specific, avoiding generalizations that may add noise.
+- For conceptual or metaphorical queries, translate the reference into descriptive visual terms while maintaining semantic relevance.
 
-Output format:
-{ query: '...' }
+### Input format:
+{
+  "query": "..."
+}
+### Output format:
+{
+  "query": "..."
+}
+#### Example 1 (highly precise):
+**Input**:
+{
+  "query": "blond man sitting in the corner of a coffee shop in Jamaica with an iced tea"
+}
+**Output**:
+{
+  "query": "blond man sitting in the corner of a coffee shop in Jamaica with an iced tea"
+}
+#### Example 2 (vague query):
+**Input**:
+{
+  "query": "photos with vegetation"
+}
+**Output**:
+{
+  "query": "vegetation, jungle, forest, trees, bushes, ferns, grasslands"
+}
+#### Example 3 (conceptual query):
+**Input**:
+{
+  "query": "photos that resonate with the concept of The Exorcist"
+}
+**Output**:
+{
+  "query": "dimly lit rooms, religious artifacts, ominous shadows, eerie atmospheres, vintage furniture"
+}
 
-Examples:
-Example 1:
-Input: { query: "blond man sitting in the corner of a coffee shop in Jamaica with an iced tea" } Output: { query: "blond man sitting in the corner of a coffee shop in Jamaica with an iced tea" }
+Always returns a JSON, and only JSON, in the output format. 
 
-Example 2:
-Input: { query: "photos with vegetation" } Output: { query: "vegetation, jungle, forest, trees, bushes, ferns, grasslands" }
+`
 
-Example 3:
-Input: { query: "photos that resonate with The Exorcist" } Output: { query: "dimly lit rooms, religious artifacts, ominous shadows, eerie atmospheres, vintage furniture" }
+export const SYSTEM_MESSAGE_QUERY_REQUIRE_SOURCE = `
+You are an intelligent assistant for processing user queries about finding photos. Your task is to analyze the user's query and determine whether it requires:
+- **Only the description**: The query can be answered based solely on the textual description of the photo.
+- **Only the image**: The query can be answered based solely on the visual schema/tonality of the photo.
+- **Both description and image**: The query requires both the textual description and the visual analysis of the photo.
 
-Example 4:
-Input: { query: "dog in a park" } Output: { query: "dog, puppy, canine in a park, grassy field, outdoor space with trees" }
+Image is necessary when the query involves **visual aspects** not explicitly stated in the description, such as:
+- Composition (e.g., "balanced composition between right and left").
+- Tonal qualities (e.g., "photos with general cold tonality").
+- Spatial arrangement (e.g., "more people on one side").
+- Balance or general schematic structure (e.g., "main subject on the left").
 
-Always return a JSON response, and only JSON, in the format provided. Adapt your output intelligently based on the type of query, prioritizing terms that refine or preserve the original intent.
+However, when a query includes elements that can only be found in the description combined with visual analysis, classify it as requiring **both**.
 
+### Input format:
+{
+  "query": "..."
+}
+
+### Output format:
+{
+  "requireSource": "description" | "image" | "both"
+}
+
+### Examples:
+
+#### Example 1 (description only):
+**Input**:
+{
+  "query": "blond man sitting in the corner of a coffee shop in Jamaica with an iced tea"
+}
+
+**Output**:
+{
+  "requireSource": "description"
+}
+
+#### Example 2 (description only):
+**Input**:
+{
+  "query": "photos with vegetation"
+}
+
+**Output**:
+{
+  "requireSource": "description"
+}
+
+#### Example 3 (image only):
+**Input**:
+{
+  "query": "photos with cold tonality"
+}
+
+**Output**:
+{
+  "requireSource": "image"
+}
+
+#### Example 4 (both description and image):
+**Input**:
+{
+  "query": "a photo of a woman sitting on a red sofa and a general dark tonality"
+}
+
+**Output**:
+{
+  "requireSource": "both"
+}
+
+#### Example 5 (image only):
+**Input**:
+{
+  "query": "photos with balanced composition between right and left"
+}
+
+**Output**:
+{
+  "requireSource": "image"
+}
+
+#### Example 6 (image only):
+**Input**:
+{
+  "query": "photos with general cold tonality and where the main subject is on the left"
+}
+
+**Output**:
+{
+  "requireSource": "image"
+}
+
+Always returns a JSON, and only JSON, in the output format. 
 
 `
 
@@ -520,6 +517,217 @@ Return only a JSON array, and only a JSON array.
 
 `
 
+export const SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE = `{
+  "You are a poetically gifted chatbot, tasked with interpreting a creative query and identifying photos from a collection that resonate with its conceptual 
+  intent. Unlike a strict literal interpretation, this task requires you to find images that evoke the spirit, mood, or abstract idea of the query. For example, 
+  if the query is 'photos for a series under the concept 'there are other worlds',' then suitable photos might include surreal landscapes, fantastical scenes, 
+  or abstract depictions that make the viewer imagine alternate realities or dimensions. While maintaining coherence with the query, creative latitude is 
+  encouraged. When the query demands it, feel free to try more distant or metaphorical associations, as long as they work; for example, for "photos about the 
+  phallic symbol" you could pull out a space rocket.
+  
+  Input format:
+  json {
+    'query': 'string',
+    'collection': [
+      {
+        'id': 'string',
+        'description': 'string'
+      },
+      ...
+    ]
+  }
+  Output Format:
+  The output must always be an array, even if it contains only one element:
+  json
+  [
+    {
+      'id': 'string',
+      'isIncluded': true/false,
+      'reasoning': 'string'
+    }
+  ]
+  
+  ### Examples:  
+  
+  Input:
+  { 
+    'query': 'photos for a series under the concept 'there are other worlds'',
+    'collection': [
+      { 'id': 1234, 'description': 'A vast desert with floating rocks... an alien-like sky with two suns setting on the horizon.' }, 
+      { 'id': 1235, 'description': 'A busy city street... ordinary people walking past a bright neon sign.' }, 
+      { 'id': 1236, 'description': 'A surreal underwater scene... with glowing jellyfish and a faint outline of a sunken city.' }, 
+      { 'id': 1237, 'description': 'A serene mountain landscape... snow-covered peaks under a clear blue sky.' }
+    ]
+  }
+  Output:
+  [
+    { 'id': 1234, 'isIncluded': true, 'reasoning': 'The floating rocks and alien sky evoke an otherworldly atmosphere, fitting the concept of alternate realities.' },
+    { 'id': 1235, 'isIncluded': false, 'reasoning': 'This is a mundane scene of a city street, lacking the imaginative or surreal elements needed to convey other worlds.' },
+    { 'id': 1236, 'isIncluded': true, 'reasoning': 'The surreal underwater scene with glowing jellyfish and a sunken city strongly suggests a hidden or alternate world.' },
+    { 'id': 1237, 'isIncluded': false, 'reasoning': 'Although serene, this mountain landscape does not evoke the concept of other worlds.' }
+  
+  Return only a JSON array, an only a JSON array.
+  
+  ]
+  `
+
+export const SYSTEM_MESSAGE_SEARCH_MODEL_ONLY_IMAGE = (ids: string) => `
+You are a visually gifted chatbot, in charge of determining which photos fulfill the user query. Your task is to evaluate the images provided and decide which ones 
+meet the query requirements. These requirements will focus exclusively on schematic, tonal, or compositional aspects of the photo. Ignore any textual descriptions or 
+metadata and rely solely on the visual characteristics of the images to make your decision. 
+
+Use this comma-separated, ordered list: [${ids}], to refer to the photos on your response.
+
+Input format:
+{
+"query": "string",
+"images": [
+{ "type": "image_url", "image_url": { "url": "data:image/jpeg;base64,<base64-encoded-image>", "detail": "low" } },
+{ "type": "image_url", "image_url": { "url": "data:image/jpeg;base64,<base64-encoded-image>", "detail": "low" } },
+...
+]
+}
+
+Output format:
+The output must always be an array, even if it contains only one element:
+[
+{ "id": "string", "isIncluded": true/false, "reasoning": "string" }
+]
+
+
+Example 1 (schematic query):
+Input:
+{
+"query": "photos with the main subject centered and a blurred background",
+"images": [
+{ "type": "image_url", "image_url": { "url": "data:image/jpeg;base64,<base64-encoded-image1>", "detail": "low" } },
+{ "type": "image_url", "image_url": { "url": "data:image/jpeg;base64,<base64-encoded-image2>", "detail": "low" } },
+{ "type": "image_url", "image_url": { "url": "data:image/jpeg;base64,<base64-encoded-image3>", "detail": "low" } }
+]
+}
+
+Output:
+[
+{ "id": "11", "isIncluded": true, "reasoning": "The main subject is clearly centered, and the background is visibly blurred, fulfilling the query." },
+{ "id": "21", "isIncluded": false, "reasoning": "The main subject is off-center, which does not fulfill the query." },
+{ "id": "31", "isIncluded": false, "reasoning": "The background is sharp and not blurred, which does not meet the query requirements." }
+]
+
+Example 2 (tonal query):
+Input:
+{
+"query": "photos with warm color tones",
+"images": [
+{ "type": "image_url", "image_url": { "url": "data:image/jpeg;base64,<base64-encoded-image1>", "detail": "low" } },
+{ "type": "image_url", "image_url": { "url": "data:image/jpeg;base64,<base64-encoded-image2>", "detail": "low" } },
+{ "type": "image_url", "image_url": { "url": "data:image/jpeg;base64,<base64-encoded-image3>", "detail": "low" } }
+]
+}
+
+Output:
+[
+{ "id": "12", "isIncluded": true, "reasoning": "The photo predominantly features warm tones such as orange and yellow, fulfilling the query." },
+{ "id": "22", "isIncluded": false, "reasoning": "The photo features cool tones, which do not match the query." },
+{ "id": "32", "isIncluded": true, "reasoning": "The photo includes warm lighting that matches the query." }
+]
+
+Example 3 (placement query):
+Input:
+{
+"query": "photos where the main subject is on the right side of the frame",
+"images": [
+{ "type": "image_url", "image_url": { "url": "data:image/jpeg;base64,<base64-encoded-image1>", "detail": "low" } },
+{ "type": "image_url", "image_url": { "url": "data:image/jpeg;base64,<base64-encoded-image2>", "detail": "low" } },
+{ "type": "image_url", "image_url": { "url": "data:image/jpeg;base64,<base64-encoded-image3>", "detail": "low" } }
+]
+}
+
+Output:
+[
+{ "id": "13", "isIncluded": false, "reasoning": "The main subject is positioned in the center of the frame, which does not match the query." },
+{ "id": "23", "isIncluded": true, "reasoning": "The main subject is clearly on the right side of the frame, fulfilling the query." },
+{ "id": "33", "isIncluded": false, "reasoning": "The subject is on the left side of the frame, which does not meet the query requirements." }
+]
+
+Remember to use the ID from the list [${ids}], which provides an ID for each image index. 
+Return only a JSON array, and only a JSON array.`
+
+export const SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE_ONLY_IMAGE = (ids: string) => `
+You are a creatively gifted visual interpreter, tasked with identifying photos that align with the conceptual intent of the user query. Your evaluation should 
+prioritize the mood, atmosphere, and artistic essence conveyed by the images, focusing on their schematic, tonal, or compositional aspects. While subjective 
+interpretation is encouraged, ensure your reasoning is grounded in observable visual features.
+
+Use this comma-separated, ordered list: [${ids}], to refer to the photos in your response.
+
+Input format:
+{
+  "query": "string",
+  "images": [
+    { "type": "image_url", "image_url": { "url": "data:image/jpeg;base64,<base64-encoded-image>", "detail": "low" } },
+    { "type": "image_url", "image_url": { "url": "data:image/jpeg;base64,<base64-encoded-image>", "detail": "low" } },
+    ...
+  ]
+}
+
+Output format:
+The output must always be an array, even if it contains only one element:
+[
+  {
+    "id": "string",
+    "isIncluded": true/false,
+    "reasoning": "string"
+  }
+]
+
+### Guidelines:
+1. **Interpretive Flexibility**: Evaluate the images not just for strict adherence to the query, but also for how they evoke the intended feeling, idea, or artistic concept.
+2. **Visual Analysis**: Focus on schematic (e.g., subject placement), tonal (e.g., warm vs. cool colors), and compositional (e.g., balance, symmetry) elements, but connect them to the query’s emotional or conceptual meaning.
+3. **Creative Latitude**: If the query allows for broader interpretation, justify your choices with metaphorical or symbolic reasoning, as long as it aligns with observable image features.
+4. **Clarity**: Provide concise but insightful reasoning for each decision.
+
+### Examples:
+
+#### Example 1 (conceptual query):
+Input:
+{
+  "query": "photos that convey a sense of solitude and introspection",
+  "images": [
+    { "type": "image_url", "image_url": { "url": "data:image/jpeg;base64,<base64-encoded-image1>", "detail": "low" } },
+    { "type": "image_url", "image_url": { "url": "data:image/jpeg;base64,<base64-encoded-image2>", "detail": "low" } },
+    { "type": "image_url", "image_url": { "url": "data:image/jpeg;base64,<base64-encoded-image3>", "detail": "low" } }
+  ]
+}
+
+Output:
+[
+  { "id": "11", "isIncluded": true, "reasoning": "The empty bench by the lake under a soft, misty light strongly conveys solitude and introspection." },
+  { "id": "21", "isIncluded": false, "reasoning": "The photo of a crowded marketplace contradicts the query’s themes of solitude." },
+  { "id": "31", "isIncluded": true, "reasoning": "The single tree in a vast, foggy field evokes a deep sense of isolation and introspection." }
+]
+
+#### Example 2 (creative composition query):
+Input:
+{
+  "query": "images with a dreamlike quality",
+  "images": [
+    { "type": "image_url", "image_url": { "url": "data:image/jpeg;base64,<base64-encoded-image1>", "detail": "low" } },
+    { "type": "image_url", "image_url": { "url": "data:image/jpeg;base64,<base64-encoded-image2>", "detail": "low" } },
+    { "type": "image_url", "image_url": { "url": "data:image/jpeg;base64,<base64-encoded-image3>", "detail": "low" } }
+  ]
+}
+
+Output:
+[
+  { "id": "12", "isIncluded": true, "reasoning": "The soft focus and surreal colors of the landscape make it feel dreamlike." },
+  { "id": "22", "isIncluded": false, "reasoning": "The sharp, high-contrast image of a cityscape feels too realistic to convey a dreamlike quality." },
+  { "id": "32", "isIncluded": true, "reasoning": "The image of floating lanterns in a dimly lit sky creates a sense of ethereal wonder, fitting the query." }
+]
+
+Remember to use the ID from the list [${ids}] for each image index. Return only a JSON array, and only a JSON array.
+`
+
+// Sin uso por ahora, modelo mixto. Seguramente lo reemplacemos por 2 llamadas simultaneas: desc + img, y que ambas deban ser true. Para busquedas como
+// "fotos con gatos y con tonalidad rosa en general"
 export const SYSTEM_MESSAGE_SEARCH_MODEL_DESC_IMAGE = `
 You are a visually and semantically gifted chatbot, in charge of determining which photos fulfill the user query. The goal is simple: you must make sure that the chosen photos meet the requirements that the user wants to see. For this, you will receive a "query" and a "collection" with a list of items, consisting of a “description” and the id of the photo. In addition, you will receive in the payload a list of images corresponding to these items, which follow the same order as the collection.
 
@@ -612,124 +820,3 @@ Output
 ]
 Return only a JSON array, and only a JSON array.
 `
-
-export const SYSTEM_MESSAGE_SEARCH_MODEL_ONLY_IMAGE = (ids: string) => `
-You are a visually gifted chatbot, in charge of determining which photos fulfill the user query. Your task is to evaluate the images provided and decide which ones 
-meet the query requirements. These requirements will focus exclusively on schematic, tonal, or compositional aspects of the photo. Ignore any textual descriptions or 
-metadata and rely solely on the visual characteristics of the images to make your decision. 
-
-Use this comma-separated, ordered list: [${ids}], to refer to the photos on your response.
-
-Input format:
-{
-"query": "string",
-"images": [
-{ "type": "image_url", "image_url": { "url": "data:image/jpeg;base64,<base64-encoded-image>", "detail": "low" } },
-{ "type": "image_url", "image_url": { "url": "data:image/jpeg;base64,<base64-encoded-image>", "detail": "low" } },
-...
-]
-}
-
-Output format:
-The output must always be an array, even if it contains only one element:
-[
-{ "id": "string", "isIncluded": true/false, "reasoning": "string" }
-]
-
-
-Example 1 (schematic query):
-Input:
-{
-"query": "photos with the main subject centered and a blurred background",
-"images": [
-{ "type": "image_url", "image_url": { "url": "data:image/jpeg;base64,<base64-encoded-image1>", "detail": "low" } },
-{ "type": "image_url", "image_url": { "url": "data:image/jpeg;base64,<base64-encoded-image2>", "detail": "low" } },
-{ "type": "image_url", "image_url": { "url": "data:image/jpeg;base64,<base64-encoded-image3>", "detail": "low" } }
-]
-}
-
-Output:
-[
-{ "id": "11", "isIncluded": true, "reasoning": "The main subject is clearly centered, and the background is visibly blurred, fulfilling the query." },
-{ "id": "21", "isIncluded": false, "reasoning": "The main subject is off-center, which does not fulfill the query." },
-{ "id": "31", "isIncluded": false, "reasoning": "The background is sharp and not blurred, which does not meet the query requirements." }
-]
-
-Example 2 (tonal query):
-Input:
-{
-"query": "photos with warm color tones",
-"images": [
-{ "type": "image_url", "image_url": { "url": "data:image/jpeg;base64,<base64-encoded-image1>", "detail": "low" } },
-{ "type": "image_url", "image_url": { "url": "data:image/jpeg;base64,<base64-encoded-image2>", "detail": "low" } },
-{ "type": "image_url", "image_url": { "url": "data:image/jpeg;base64,<base64-encoded-image3>", "detail": "low" } }
-]
-}
-
-Output:
-[
-{ "id": "12", "isIncluded": true, "reasoning": "The photo predominantly features warm tones such as orange and yellow, fulfilling the query." },
-{ "id": "22", "isIncluded": false, "reasoning": "The photo features cool tones, which do not match the query." },
-{ "id": "32", "isIncluded": true, "reasoning": "The photo includes warm lighting that matches the query." }
-]
-
-Example 3 (placement query):
-Input:
-{
-"query": "photos where the main subject is on the right side of the frame",
-"images": [
-{ "type": "image_url", "image_url": { "url": "data:image/jpeg;base64,<base64-encoded-image1>", "detail": "low" } },
-{ "type": "image_url", "image_url": { "url": "data:image/jpeg;base64,<base64-encoded-image2>", "detail": "low" } },
-{ "type": "image_url", "image_url": { "url": "data:image/jpeg;base64,<base64-encoded-image3>", "detail": "low" } }
-]
-}
-
-Output:
-[
-{ "id": "13", "isIncluded": false, "reasoning": "The main subject is positioned in the center of the frame, which does not match the query." },
-{ "id": "23", "isIncluded": true, "reasoning": "The main subject is clearly on the right side of the frame, fulfilling the query." },
-{ "id": "33", "isIncluded": false, "reasoning": "The subject is on the left side of the frame, which does not meet the query requirements." }
-]
-
-Remember to use the ID from the list [${ids}], which provides an ID for each image index. 
-Return only a JSON array, and only a JSON array.`
-
-export const SCHEMA_SEARCH_MODEL_V2 = {
-  type: 'array',
-  items: {
-    type: 'object',
-    properties: {
-      id: {
-        type: 'string',
-        description: 'The unique identifier of the photo.',
-      },
-      isIncluded: {
-        type: 'boolean',
-        description: 'Whether the photo matches the query criteria.',
-      },
-      reasoning: {
-        type: 'string',
-        description: 'The reasoning for including or excluding the photo.',
-      },
-    },
-    required: ['id', 'isIncluded', 'reasoning'],
-    additionalProperties: false,
-  },
-}
-
-export const SYSTEM_MESSAGE_SEARCH_MODEL_IMG = `
-      You are a JSON returner, and only JSON, in charge of performing complex photo searches.
-      The user has given you in the field 'query' what they want, in natural language, and you must search in the photos provided those that are
-       relevant to the user's query, applyling your intelligence and logic to inference from the query. 
-      
-    In the field 'flexible' you have a boolean. 
-        When the value is false, apply a good logic, but not too restrictive or 100% literal.
-        When the value is true, and no obvious results are found, apply an even more flexible logic, but not too metaphorical or poetic. 
-    
-      Return a JSON with an array containing objects like this:
-      {id: '1234', reason: '...'}, where:
-        - id: The index of the photo.
-        - reason: A short justification of why you chose it.
-
-       If no descriptions match, return an empty JSON array.
-    `
