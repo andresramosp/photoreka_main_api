@@ -107,6 +107,8 @@ import { SYSTEM_MESSAGE_ANALIZER_2 } from '../utils/GPTMessages.js'
 import { createRequire } from 'module'
 import EmbeddingsService from './embeddings_service.js'
 import DescriptionChunk from '#models/descriptionChunk'
+import MeasureExecutionTime from '../decorators/measureExecutionTime.js'
+import withCost from '../decorators/withCost.js'
 const require = createRequire(import.meta.url)
 const pluralize = require('pluralize')
 
@@ -118,6 +120,8 @@ export default class AnalyzerService {
   /**
    * Asociar tags a una foto con soporte por lotes
    */
+  @withCost
+  // @MeasureExecutionTime
   public async analyze(photosIds: string[], maxImagesPerBatch = 3) {
     const photosService = new PhotosService()
     const modelsService = new ModelsService()
@@ -230,6 +234,7 @@ export default class AnalyzerService {
     })
   }
 
+  @MeasureExecutionTime
   public async addMetadata(metadata: { id: string; [key: string]: any }[]) {
     const existingTags = await Tag.all()
     const tagMap = new Map(
@@ -287,6 +292,7 @@ export default class AnalyzerService {
     )
   }
 
+  @MeasureExecutionTime
   public async processDesc(desc: string, photoId: string) {
     const modelsService = new ModelsService()
 

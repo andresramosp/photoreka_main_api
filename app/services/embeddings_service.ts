@@ -5,7 +5,7 @@ import db from '@adonisjs/lucid/services/db'
 import ModelsService from './models_service.js'
 import Photo from '#models/photo'
 import NodeCache from 'node-cache'
-import MeasureExecutionTime from '../utils/measureExecutionTime.js'
+import MeasureExecutionTime from '../decorators/measureExecutionTime.js'
 
 const cache = new NodeCache({ stdTTL: 3600 })
 
@@ -114,13 +114,15 @@ export default class EmbeddingsService {
     return result.rows
   }
 
+  // Con photo, saca las proximidades de sus chunks con el termino,
+  // sin foto, busca en todos los chunks de descripciones
   @MeasureExecutionTime
   public async findSimilarChunkToEmbedding(
     embedding: number[],
     threshold: number = 0.3,
     limit: number = 10,
     metric: 'distance' | 'inner_product' | 'cosine_similarity' = 'cosine_similarity',
-    photo?: { id: number } // Parámetro opcional para filtrar por photo_id
+    photo?: { id: number }
   ) {
     if (!embedding || embedding.length === 0) {
       throw new Error('Embedding no proporcionado o vacío')
@@ -458,28 +460,7 @@ export default class EmbeddingsService {
   }
 
   @MeasureExecutionTime
-  public async getSemanticNearPhotos(
-    photos: Photo[],
-    description: string
-  ): Promise<ChunkedPhoto[] | undefined> {
-    const cacheKey = `getSemanticNearPhotos_${description}_${photos.length}`
-
-    // if (cache.has(cacheKey)) {
-    //   console.log('Cache hit {getSemanticNearPhotos}: Returning cached result')
-    //   return cache.get(cacheKey)
-    // }
-
-    const scoredTagsPhotos = await this.getScoredTagsPhotos(photos, description)
-    const filteredPhotos = scoredTagsPhotos
-      .filter((item) => item.tagScore > 0.05)
-      .sort((a, b) => b.tagScore - a.tagScore)
-
-    // cache.set(cacheKey, filteredPhotos)
-
-    return filteredPhotos
-  }
-
-  public async getSemanticNearPhotosWithDesc(
+  public async getSemanticScoredPhotos(
     photos: Photo[],
     description: string
   ): Promise<ChunkedPhoto[] | undefined> {
@@ -488,9 +469,6 @@ export default class EmbeddingsService {
       desc: 0.4,
     }
 
-    const cacheKey = `getSemanticNearPhotosWithDesc${description}_${photos.length}`
-
-    // Ejecutar ambas promesas en paralelo
     const [scoredTagsPhotos, scoredDescPhotosChunked] = await Promise.all([
       this.getScoredTagsPhotos(photos, description),
       this.getScoredDescPhotos(photos, description),
@@ -500,18 +478,15 @@ export default class EmbeddingsService {
     const descScoresMap = new Map(
       scoredDescPhotosChunked.map((item) => [item.photo.id, item.descScore])
     )
-    // const chunksMap = new Map(scoredDescPhotosChunked.map((photo) => [photo.id, photo.chunks]))
 
     const scoredPhotos: ChunkedPhoto[] = photos.map((photo) => {
       const tagScore = tagScoresMap.get(photo.id) || 0
       const descScore = descScoresMap.get(photo.id) || 0
-      // const chunks = chunksMap.get(photo.id) || []
 
       return {
         photo,
         tagScore,
         descScore,
-        // chunks,
         totalScore: tagScore * weights.tags + descScore * weights.desc,
       }
     })

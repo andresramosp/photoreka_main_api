@@ -3,7 +3,7 @@
 import env from '#start/env'
 import axios from 'axios'
 import NodeCache from 'node-cache'
-import MeasureExecutionTime from '../utils/measureExecutionTime.js'
+import MeasureExecutionTime from '../decorators/measureExecutionTime.js'
 
 const cache = new NodeCache() // Simple in-memory cache
 
@@ -307,7 +307,8 @@ export default class ModelsService {
     userContent: any,
     model: 'deepseek-chat' = 'deepseek-chat',
     responseFormat: any = { type: 'json_object' },
-    temperature: number = 0.1
+    temperature: number = 0.1,
+    useCache: boolean = true
   ): Promise<any> {
     let cacheDuration = 60 * 30
     try {
@@ -342,7 +343,7 @@ export default class ModelsService {
 
       // Check cache
       const cachedResponse = cache.get(cacheKey)
-      if (cachedResponse) {
+      if (useCache && cachedResponse) {
         console.log('Cache hit for getGPTResponse')
         return cachedResponse
       }
@@ -410,7 +411,7 @@ export default class ModelsService {
       }
 
       // Cache the result
-      cache.set(cacheKey, { ...result, cost: '0 [cached]' }, cacheDuration)
+      if (useCache) cache.set(cacheKey, { ...result, cost: '0 [cached]' }, cacheDuration)
 
       return result
     } catch (error) {

@@ -273,9 +273,10 @@ Queries will vary in specificity and intent, such as:
 
 Your response must adapt to the type of query, prioritizing semantic precision and avoiding overly general expansions that could introduce irrelevant results:
 
-- For highly specific or precise queries, avoid expanding the query to preserve its precision.
+- For highly specific and precise queries, avoid expanding the query to preserve its precision.
 - For vague queries, enrich the query with terms that are synonymous or more specific, avoiding generalizations that may add noise.
 - For conceptual or metaphorical queries, translate the reference into descriptive visual terms while maintaining semantic relevance.
+- For all cases, remove prefixes that create semantic noise, such as “pictures of...” or “photos of...”.
 
 ### Input format:
 {
@@ -288,7 +289,7 @@ Your response must adapt to the type of query, prioritizing semantic precision a
 #### Example 1 (highly precise):
 **Input**:
 {
-  "query": "blond man sitting in the corner of a coffee shop in Jamaica with an iced tea"
+  "query": "photo of blond man sitting in the corner of a coffee shop in Jamaica with an iced tea"
 }
 **Output**:
 {
@@ -297,11 +298,11 @@ Your response must adapt to the type of query, prioritizing semantic precision a
 #### Example 2 (vague query):
 **Input**:
 {
-  "query": "photos with vegetation"
+  "query": "photos with children playing"
 }
 **Output**:
 {
-  "query": "vegetation, jungle, forest, trees, bushes, ferns, grasslands"
+  "query": "children playing, kids enjoying, children having fun, children playing sports"
 }
 #### Example 3 (conceptual query):
 **Input**:
@@ -412,7 +413,7 @@ However, when a query includes elements that can only be found in the descriptio
 Always returns a JSON, and only JSON, in the output format. 
 
 `
-
+// De momento en desuso, usamos la misma para semantic y creative
 export const SYSTEM_MESSAGE_QUERY_ENRICHMENT_CREATIVE = `
 You are a creative chatbot in charge of processing the query of a user who is looking for photos. This query will be something like “pictures of nature” or 
 “pictures of people playing.” Your task is to prepare the query for filtering with embeddings, using a creative and flexible approach that enables finding visually 
@@ -517,7 +518,8 @@ Return only a JSON array, and only a JSON array.
 
 `
 
-export const SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE = `{
+export const SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE = (includeReasoning: boolean) => `
+{
   "You are a poetically gifted chatbot, tasked with interpreting a creative query and identifying photos from a collection that resonate with its conceptual 
   intent. Unlike a strict literal interpretation, this task requires you to find images that evoke the spirit, mood, or abstract idea of the query. For example, 
   if the query is 'photos for a series under the concept 'there are other worlds',' then suitable photos might include surreal landscapes, fantastical scenes, 
@@ -543,7 +545,7 @@ export const SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE = `{
     {
       'id': 'string',
       'isIncluded': true/false,
-      'reasoning': 'string'
+      ${includeReasoning ? "'reasoning': 'string'" : ''}
     }
   ]
   
@@ -561,15 +563,13 @@ export const SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE = `{
   }
   Output:
   [
-    { 'id': 1234, 'isIncluded': true, 'reasoning': 'The floating rocks and alien sky evoke an otherworldly atmosphere, fitting the concept of alternate realities.' },
-    { 'id': 1235, 'isIncluded': false, 'reasoning': 'This is a mundane scene of a city street, lacking the imaginative or surreal elements needed to convey other worlds.' },
-    { 'id': 1236, 'isIncluded': true, 'reasoning': 'The surreal underwater scene with glowing jellyfish and a sunken city strongly suggests a hidden or alternate world.' },
-    { 'id': 1237, 'isIncluded': false, 'reasoning': 'Although serene, this mountain landscape does not evoke the concept of other worlds.' }
-  
-  Return only a JSON array, an only a JSON array.
-  
+    { 'id': 1234, 'isIncluded': true${includeReasoning ? ", 'reasoning': 'The floating rocks and alien sky evoke an otherworldly atmosphere.'" : ''} },
+    { 'id': 1235, 'isIncluded': false${includeReasoning ? ", 'reasoning': 'This is a mundane scene of a city street, lacking surreal elements needed to convey other worlds.'" : ''} },
+    { 'id': 1236, 'isIncluded': true${includeReasoning ? ", 'reasoning': 'The surreal underwater scene with glowing jellyfish and a sunken city strongly suggests a hidden world.'" : ''} },
+    { 'id': 1237, 'isIncluded': false${includeReasoning ? ", 'reasoning': 'Although serene, this mountain landscape does not evoke the concept of other worlds.'" : ''} }
   ]
-  `
+}
+`
 
 export const SYSTEM_MESSAGE_SEARCH_MODEL_ONLY_IMAGE = (ids: string) => `
 You are a visually gifted chatbot, in charge of determining which photos fulfill the user query. Your task is to evaluate the images provided and decide which ones 
