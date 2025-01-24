@@ -344,7 +344,7 @@ export default class PhotosService {
     const { result: enrichmentResult, cost: cost1 } = enrichmentResponse
     const { result: sourceResult, cost: cost2 } = sourceResponse
 
-    let useImage = false // sourceResult.requireSource == 'image'
+    let useImage = sourceResult.requireSource == 'image'
     if (useImage) {
       console.log()
     }
@@ -502,8 +502,8 @@ export default class PhotosService {
         : 'getSemanticScoredPhotos'
     const nearPhotos = await this.embeddingsService[method](
       photos,
-      // enrichmentResult
-      query.description
+      enrichmentResult
+      // query.description
     )
 
     if (embeddingsOnly) {

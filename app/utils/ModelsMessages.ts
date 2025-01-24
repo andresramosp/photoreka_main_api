@@ -508,8 +508,8 @@ json
 [
   {
     "id": "string",
-    "isIncluded": true/false,
     ${includeReasoning ? '"reasoning": "string",' : ''}
+    "isIncluded": true/false
   }
 ]
 
@@ -526,10 +526,10 @@ Input:
 }
 Output
 [
-  { "id": 1234, "isIncluded": false${includeReasoning ? ', "reasoning": "Although the description mentions the lunarisca and the sky, the setting is unclear and doesn’t guarantee they are flying at night."' : ''} },
-  { "id": 1235, "isIncluded": true${includeReasoning ? ', "reasoning": "The description explicitly states that a lunarisca is flying at night under a starry sky."' : ''} },
-  { "id": 1236, "isIncluded": false${includeReasoning ? ', "reasoning": "The setting is at dusk, not night, and there is no mention of lunariscas flying."' : ''} },
-  { "id": 1237, "isIncluded": false${includeReasoning ? ', "reasoning": "No mention of lunariscas or them flying; the description only sets the ambiance."' : ''} }
+  { "id": 1234, ${includeReasoning ? '"reasoning": "Although the description mentions the lunarisca and the sky, the setting is unclear and doesn’t guarantee they are flying at night.",' : ''} "isIncluded": false },
+  { "id": 1235, ${includeReasoning ? '"reasoning": "The description explicitly states that a lunarisca is flying at night under a starry sky.",' : ''} "isIncluded": true },
+  { "id": 1236, ${includeReasoning ? '"reasoning": "The setting is at dusk, not night, and there is no mention of lunariscas flying.",' : ''} "isIncluded": false },
+  { "id": 1237, ${includeReasoning ? '"reasoning": "No mention of lunariscas or them flying; the description only sets the ambiance.",' : ''} "isIncluded": false }
 ]
 
 Input:
@@ -544,96 +544,12 @@ Input:
 }
 Output:
 [
-  { "id": 4567, "isIncluded": true${includeReasoning ? ', "reasoning": "The description subtly suggests an unusual scene, with the cat wearing sunglasses, evoking a sense of irony or quiet humor."' : ''} },
-  { "id": 4568, "isIncluded": true${includeReasoning ? ', "reasoning": "The frozen moment of laughter at the formal dinner table conveys a natural and hilarious spontaneity."' : ''} },
-  { "id": 4569, "isIncluded": false${includeReasoning ? ', "reasoning": "The description paints a lively but ordinary scene without any humorous or standout elements."' : ''} },
-  { "id": 4570, "isIncluded": true${includeReasoning ? ', "reasoning": "The small accessory on the dog’s head, paired with its calm pose, creates an amusing and understated moment."' : ''} }
+  { "id": 4567, ${includeReasoning ? '"reasoning": "The description subtly suggests an unusual scene, with the cat wearing sunglasses, evoking a sense of irony or quiet humor.",' : ''} "isIncluded": true },
+  { "id": 4568, ${includeReasoning ? '"reasoning": "The frozen moment of laughter at the formal dinner table conveys a natural and hilarious spontaneity.",' : ''} "isIncluded": true },
+  { "id": 4569, ${includeReasoning ? '"reasoning": "The description paints a lively but ordinary scene without any humorous or standout elements.",' : ''} "isIncluded": false },
+  { "id": 4570, ${includeReasoning ? '"reasoning": "The small accessory on the dog’s head, paired with its calm pose, creates an amusing and understated moment.",' : ''} "isIncluded": true }
 ]
 
-
-Return only a JSON array, and only a JSON array.
-`
-
-export const SYSTEM_MESSAGE_SEARCH_SEMANTIC_LOGICAL = (includeReasoning: boolean) => `
-You are a logically gifted chatbot, in charge of determining which photos fulfill the user query. For this, you will receive a "query" and a collection 
-of photo's relevant tags. Review carefully these tags in order to determine which photo fulfills the query using 
-pure logic.
-
-*Guidelines*
-
-The query will always be a statement that can be logically structured (... AND ..., OR ..., AND NOT ...). You must stick to pure logic, strictly applying 
-each AND, OR, NOT segment to the tags and descriptions. All the segments must be fullfilled, otherwise the photo is excluded. 
-
-Input format:
-json {
-  "query": "string",
-  "collection": [
-    {
-      "id": "string",
-      "tags": ["string", "string", ...]
-    },
-    ...
-  ]
-}
-Output Format:
-The output must always be an array, even if it contains only one element:
-json
-[
-  {
-    "id": "string",
-    "isIncluded": true/false,
-    ${includeReasoning ? '"reasoning": "string",' : ''}
-  }
-]
-
-Examples:
-Input:
-{
-"query": "photos with birds and cows",
-"collection": [
-  { "id": "1001", "tags": ["ducks", "pond", "cow", "grassy shore"] },
-  { "id": "1002", "tags": ["bats", "wetland", "evening"] },
-  { "id": "1003", "tags": ["cows", "seagulls", "stream", "rural"] }
-]
-}
-Output:
-[
-  { "id": "1001", "isIncluded": true${includeReasoning ? ', "reasoning": "The tags include ducks (birds) and cow."' : ''} },
-  { "id": "1002", "isIncluded": false${includeReasoning ? ', "reasoning": "The tags include bats, which are not birds, and there are no cows."' : ''} },
-  { "id": "1003", "isIncluded": true${includeReasoning ? ', "reasoning": "The tags include cows and seagulls (birds)."' : ''} }
-]
-
-Input:
-{
-"query": "photos with tables, cats and forks, but not sharp instruments",
-"collection": [
-  { "id": "2001", "tags": ["table", "forks", "cat", "dinner setup"] },
-  { "id": "2002", "tags": ["table", "fork", "cat", "cutting board", "knife"] },
-  { "id": "2003", "tags": ["picnic table", "forks", "dog", "outdoor"] }
-]
-}
-Output:
-[
-  { "id": "2001", "isIncluded": true${includeReasoning ? ', "reasoning": "The tags include table, forks, and cat, with no mention of knives."' : ''} },
-  { "id": "2002", "isIncluded": false${includeReasoning ? ', "reasoning": "The tags include a knife (sharp instrument), which violates the exclusion in the query."' : ''} },
-  { "id": "2003", "isIncluded": false${includeReasoning ? ', "reasoning": "The tags include table and forks but do not mention cats, only a dog."' : ''} }
-]
-
-Input:
-{
-"query": "photos featuring spiders or rats, and some vehicle",
-"collection": [
-  { "id": "3001",  "tags": ["spider", "web", "mirror", "motorbike"] },
-  { "id": "3002", "tags": ["rats", "garbage", "urban", "night"] },
-  { "id": "3003", "tags": ["rat", "bicycle", "wall", "hole"] }
-]
-}
-Output:
-[
-  { "id": "3001", "isIncluded": true${includeReasoning ? ', "reasoning": "The tags include spider and motorbike (vehicle), fulfilling the query."' : ''} },
-  { "id": "3002", "isIncluded": false${includeReasoning ? ', "reasoning": "The tags include rats but do not mention any vehicle."' : ''} },
-  { "id": "3003", "isIncluded": true${includeReasoning ? ', "reasoning": "The tags include rat and bicycle (vehicle), fulfilling the query."' : ''} }
-]
 
 Return only a JSON array, and only a JSON array.
 `
@@ -680,8 +596,8 @@ json
 [
   {
     "id": "string",
-    "isIncluded": true | false,
     ${includeReasoning ? '"reasoning": "string",' : ''}
+    "isIncluded": true | false
   }
 ]
 
@@ -700,9 +616,9 @@ Input:
 }
 Output:
 [
-  { "id": "3001", "isIncluded": true${includeReasoning ? ', "reasoning": "Sofa belongs to furniture by inheritance (OK) | Grandmother belongs to old people by inheritance (OK) -> Query is fullfilled"' : ''} },
-  { "id": "3002", "isIncluded": false${includeReasoning ? ', "reasoning": "Dinning table belongs to furniture by inheritance (OK) | No tags belonging to old people (!) -> Query is not full filled"' : ''} },
-  { "id": "3003", "isIncluded": 'false'${includeReasoning ? ', "reasoning": "No tags belonging to furniture (!) | Old woman, old man, belong to old people by inheritance (OK) -> Query is not fullfilled"' : ''} }
+  { "id": "3001", ${includeReasoning ? '"reasoning": "Sofa belongs to furniture by inheritance (OK) | Grandmother belongs to old people by inheritance (OK) -> Query is fulfilled",' : ''} "isIncluded": true },
+  { "id": "3002", ${includeReasoning ? '"reasoning": "Dinning table belongs to furniture by inheritance (OK) | No tags belonging to old people (!) -> Query is not fulfilled",' : ''} "isIncluded": false },
+  { "id": "3003", ${includeReasoning ? '"reasoning": "No tags belonging to furniture (!) | Old woman, old man, belong to old people by inheritance (OK) -> Query is not fulfilled",' : ''} "isIncluded": false }
 ]
 
 *Example 2*
@@ -718,9 +634,9 @@ Input:
 }
 Output:
 [
-  { "id": "4001", "isIncluded": false${includeReasoning ? ', "reasoning": "No tags belonging to Kids playing (!) | No tags belonging to woman reading (!) | No presence of umbrellas (OK) -> Query is not fullfilled"' : ''} },
-  { "id": "4002", "isIncluded": false${includeReasoning ? ', "reasoning": "Boy playing tennis belongs to Kids playing by inheritance (OK) | No tags belonging to woman reading (!) -> Query is not fullfilled"' : ''} },
-  { "id": "4003", "isIncluded": false${includeReasoning ? ', "reasoning": "Children playing is synonym/belongs of Kids playing (OK) | Old woman reading belongs to woman reading by inheritance (OK) | Girl with umbrella belongs to umbrella (!), which violates NOT clausule -> Query is not fullfilled"' : ''} }
+  { "id": "4001", ${includeReasoning ? '"reasoning": "No tags belonging to Kids playing (!) | No tags belonging to woman reading (!) | No presence of umbrellas (OK) -> Query is not fulfilled",' : ''} "isIncluded": false },
+  { "id": "4002", ${includeReasoning ? '"reasoning": "Boy playing tennis belongs to Kids playing by inheritance (OK) | No tags belonging to woman reading (!) -> Query is not fulfilled",' : ''} "isIncluded": false },
+  { "id": "4003", ${includeReasoning ? '"reasoning": "Children playing is synonym/belongs of Kids playing (OK) | Old woman reading belongs to woman reading by inheritance (OK) | Girl with umbrella belongs to umbrella (!), which violates NOT clause -> Query is not fulfilled",' : ''} "isIncluded": false }
 ]
 
 Return only a JSON array, and only a JSON array.

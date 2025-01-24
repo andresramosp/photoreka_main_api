@@ -513,7 +513,7 @@ export default class EmbeddingsService {
     photo,
     query,
     similarityThreshold: number = 0.2,
-    limit: number = 6
+    limitPerSegment: number = 8
   ) {
     // Dividir la consulta en segmentos separados por operadores
     const segments = query.split(/\b(AND|OR|NOT)\b/).map((s) => s.trim())
@@ -533,7 +533,7 @@ export default class EmbeddingsService {
           const similarTags = await this.findSimilarTagToEmbedding(
             embeddings[0],
             similarityThreshold,
-            limit,
+            limitPerSegment,
             'cosine_similarity',
             photo.tags.map((tag) => tag.id)
           )
