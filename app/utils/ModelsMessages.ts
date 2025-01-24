@@ -5,8 +5,8 @@ export const SYSTEM_MESSAGE_ANALIZER_2 = (photosBatch: any[]) => `
             For each image, include following lists:
 
             - 'id': id of the image, using this comma-separated, ordered list: ${photosBatch.map((img: any) => img.id).join(',')}
-            - 'description' (minimum 700 words): describes the image in detail, avoiding all artistic or subjective evaluations, and trying to capture 
-              the general meaning of the scene, storytelling if any, and interactions. 
+            - 'description' (minimum 700 words): describes the image in detail, and trying to capture 
+              the general meaning of the scene, storytelling if any, and interactions. Pay attention to bonus like: reflections, juxtapositions, optical illusions or potential methaphoric meanings.
             - 'objects_tags' (string[] up to 10 words): list all the objects, you can see in the photo. Example ['red lunarisca', 'big cronopio', 'old book']
             - 'persons_tags' (string[] up to 7 words): all the people you can see in the photo, trying to specify gender and age. Example: ['cronopio in suits', 'funny lunarisca', 'waiter in black']
             - 'action_tags' (string[] up to 5 words): similiar to 'persons_tags', but enphatizing the actions of each person. Include the subject of the action.  Example: ['cronopio playing football', 'cronopio waiting bus']
@@ -15,7 +15,7 @@ export const SYSTEM_MESSAGE_ANALIZER_2 = (photosBatch: any[]) => `
             - 'symbols_tags' (string[] up to 4 words): list all the symbols, figures, text, logos or paintings you can see in the photo.
             - 'culture_tags' (string[] up to 3 words): the culture or country you guess the photo has been taken. As much concrete as possible. 
             - 'generic_tags' (string[] up to 5 words): more general tags that group all the previous ones. Example ['people', 'sports', 'fashion', 'books']
-
+            - 'bonus_tags' (string[] up to 4 words): dedicated to special bonus which make the photo special. Example: ['boy reflected', 'guide lines', 'optical illusion', 'funny juxtaposition']
 
             Note: Try to add a nuance to disambiguate single terms. For example: "orange (fruit)", or "water (drink)"
             Note: cronopios and lunariscas are non existent objects, only for example purposes. 

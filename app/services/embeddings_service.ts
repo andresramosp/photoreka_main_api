@@ -430,7 +430,7 @@ export default class EmbeddingsService {
   public async getScoredTagsPhotosLogical(
     photos: Photo[],
     description: string,
-    similarityThreshold: number = 0.2
+    similarityThreshold: number = 0.3
   ): Promise<{ photo: Photo; tagScore: number }[]> {
     const segments = description.split(/\b(AND|OR|NOT)\b/).map((s) => s.trim())
     const results: Record<string, any[]> = { AND: [], OR: [], NOT: [] }
@@ -451,7 +451,7 @@ export default class EmbeddingsService {
           const similarTags = await this.findSimilarTagToEmbedding(
             embeddings[0],
             similarityThreshold,
-            500,
+            100,
             'cosine_similarity'
           )
           results[operator].push(...similarTags)
@@ -476,10 +476,10 @@ export default class EmbeddingsService {
       tagScoresMap.set(tag.name, tag.proximity) // Puntaje positivo
     })
 
-    notResults.forEach((tag: any) => {
-      // Aplicar penalización a los términos NOT
-      tagScoresMap.set(tag.name, -Math.abs(tag.proximity) * 5)
-    })
+    // notResults.forEach((tag: any) => {
+    //   // Aplicar penalización a los términos NOT
+    //   tagScoresMap.set(tag.name, -Math.abs(tag.proximity) * 5)
+    // })
 
     // Filtrar fotos relevantes y calcular puntajes
     const relevantPhotos = photos.filter((photo) =>
@@ -489,14 +489,17 @@ export default class EmbeddingsService {
     const resultsWithScores = relevantPhotos.map((photo) => {
       const photoMatchingTags = photo.tags?.filter((tag) => tagScoresMap.has(tag.name)) || []
 
-      const proximities = photoMatchingTags.map((tag) => tagScoresMap.get(tag.name) || 0)
+      const proximities = photoMatchingTags.map((tag) => {
+        const proximity = tagScoresMap.get(tag.name) || 0
+        return proximity > 0 ? Math.exp(proximity - 0.6) : proximity // Exponencial para positivos
+      })
 
       // Calcular el puntaje ponderado
       const maxProximity = Math.max(...proximities, 0)
       const averageProximity =
         proximities.reduce((sum, proximity) => sum + proximity, 0) / (proximities.length || 1)
 
-      const tagScore = 0.6 * maxProximity + 0.4 * averageProximity
+      const tagScore = 0.8 * maxProximity + 0.2 * averageProximity
 
       return { photo, tagScore }
     })
@@ -509,7 +512,7 @@ export default class EmbeddingsService {
   public async getTagsForLogicalQuery(
     photo,
     query,
-    similarityThreshold: number = 0.1,
+    similarityThreshold: number = 0.2,
     limit: number = 6
   ) {
     // Dividir la consulta en segmentos separados por operadores
