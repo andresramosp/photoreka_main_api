@@ -7,17 +7,18 @@ import fs from 'fs/promises'
 import {
   SYSTEM_MESSAGE_QUERY_ENRICHMENT,
   SYSTEM_MESSAGE_QUERY_ENRICHMENT_CREATIVE,
-  SYSTEM_MESSAGE_QUERY_ENRICHMENT_V2,
   SYSTEM_MESSAGE_QUERY_REQUIRE_SOURCE,
   SYSTEM_MESSAGE_QUERY_TO_LOGIC_V2,
   SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE,
   SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE_ONLY_IMAGE,
   SYSTEM_MESSAGE_SEARCH_MODEL_IMG,
   SYSTEM_MESSAGE_SEARCH_MODEL_ONLY_IMAGE,
-  SYSTEM_MESSAGE_SEARCH_MODEL_V3,
+  SYSTEM_MESSAGE_SEARCH_SEMANTIC,
+  SYSTEM_MESSAGE_SEARCH_SEMANTIC_LOGICAL,
+  SYSTEM_MESSAGE_SEARCH_SEMANTIC_LOGICAL_v2,
   SYSTEM_MESSAGE_TERMS_ACTIONS_EXPANDER_V4,
   SYSTEM_MESSAGE_TERMS_EXPANDER_V4,
-} from '../utils/GPTMessages.js'
+} from '../utils/ModelsMessages.js'
 import ModelsService from './models_service.js'
 import path from 'path'
 import sharp from 'sharp'
@@ -134,7 +135,7 @@ export default class PhotosService {
     }
   }
 
-  public async performTagsExpansion(terms: any[], allTags: any[]) {
+  public async performTagsExpansion(terms: any[], allTags: any[], useModel: boolean = true) {
     let expansionResults: any = {}
     const expansionCosts: any[] = []
 
@@ -154,38 +155,45 @@ export default class PhotosService {
           existingTag = semanticallyCloseTags[0]
         }
 
-        if (existingTag && existingTag.children?.tags.length) {
+        if (false) {
+          // (existingTag && existingTag.children?.tags.length) {
           expansionResults[term.tagName] = existingTag.children.tags || []
           console.log(
             `Using stored expansors for ${term.tagName}: ${JSON.stringify(existingTag.children.tags.map((t: any) => t.tag))} `
           )
         } else {
           const nearTags = await this.embeddingsService.findSimilarTagsToText(term.tagName, 0.4, 30)
-          const { result, cost } = await this.modelsService.getDSResponse(
-            term.isAction
-              ? SYSTEM_MESSAGE_TERMS_ACTIONS_EXPANDER_V4
-              : SYSTEM_MESSAGE_TERMS_EXPANDER_V4,
-            JSON.stringify({
-              // operation: 'semanticSubExpansion',
-              term: term.tagName,
-              tagCollection: nearTags.map((tag: any) => tag.name),
-            }),
-            'deepseek-chat',
-            null
-          )
+          if (useModel) {
+            const { result, cost } = await this.modelsService.getDSResponse(
+              term.isAction
+                ? SYSTEM_MESSAGE_TERMS_ACTIONS_EXPANDER_V4
+                : SYSTEM_MESSAGE_TERMS_EXPANDER_V4,
+              JSON.stringify({
+                // operation: 'semanticSubExpansion',
+                term: term.tagName,
+                tagCollection: nearTags.map((tag: any) => tag.name),
+              }),
+              'deepseek-chat',
+              null
+            )
 
-          // Recuperamos la proximidad semántica
-          if (result.length) {
-            for (let tag of result) {
-              tag.proximity = nearTags.find((nearTag: any) => nearTag.name == tag.tag)?.proximity
+            // Recuperamos la proximidad semántica
+            if (result.length) {
+              for (let tag of result) {
+                tag.proximity = nearTags.find((nearTag: any) => nearTag.name == tag.tag)?.proximity
+              }
+              expansionResults[term.tagName] = result.filter((tag: any) => tag.isSubclass)
+            } else {
+              expansionResults[term.tagName] = []
             }
-            expansionResults[term.tagName] = result.filter((tag: any) => tag.isSubclass)
-          } else {
-            expansionResults[term.tagName] = []
-          }
 
-          expansionCosts.push(cost)
-          this.saveExpandedTags(term, allTags, expansionResults)
+            expansionCosts.push(cost)
+            this.saveExpandedTags(term, allTags, expansionResults)
+          } else {
+            expansionResults[term.tagName] = nearTags.map((tag) => {
+              return { tag: tag.name }
+            })
+          }
         }
       })
     )
@@ -220,7 +228,11 @@ export default class PhotosService {
       ...queryLogicResult.tags_or,
     ]
 
-    const { expansionResults, expansionCosts } = await this.performTagsExpansion(terms, allTags)
+    const { expansionResults, expansionCosts } = await this.performTagsExpansion(
+      terms,
+      allTags,
+      false
+    )
 
     // Step 3: Precompute all expansions and initialize tracking
     const precomputedIterations: Record<string, any[]> = {}
@@ -314,11 +326,10 @@ export default class PhotosService {
   public generateTempID(): string {
     return Math.random().toString(36).substr(2, 4)
   }
-
   public async processQuery(type: 'semantic' | 'creative', query) {
-    const enrichmentMessage =
-      type === 'semantic' ? SYSTEM_MESSAGE_QUERY_ENRICHMENT : SYSTEM_MESSAGE_QUERY_ENRICHMENT
+    let queryForModel = query.description
 
+    const enrichmentMessage = SYSTEM_MESSAGE_QUERY_ENRICHMENT
     const sourceMessage = SYSTEM_MESSAGE_QUERY_REQUIRE_SOURCE
 
     // Ejecutamos las llamadas en paralelo
@@ -333,18 +344,40 @@ export default class PhotosService {
     const { result: enrichmentResult, cost: cost1 } = enrichmentResponse
     const { result: sourceResult, cost: cost2 } = sourceResponse
 
-    let useImage = sourceResult.requireSource !== 'description' // de momento both usa solo imagen, parece que tiene en cuenta la parte descriptiva
+    let useImage = sourceResult.requireSource == 'image'
+    if (useImage) {
+      console.log()
+    }
+    let searchModelMessage
 
-    const searchModelMessage =
-      type === 'semantic'
-        ? !useImage
-          ? SYSTEM_MESSAGE_SEARCH_MODEL_V3
-          : SYSTEM_MESSAGE_SEARCH_MODEL_ONLY_IMAGE
-        : !useImage
-          ? SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE(true)
-          : SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE_ONLY_IMAGE
+    if (type === 'semantic') {
+      if (!useImage) {
+        if (enrichmentResult.type === 'logical') {
+          searchModelMessage = SYSTEM_MESSAGE_SEARCH_SEMANTIC_LOGICAL_v2(true)
+          // queryForModel = enrichmentResult.query
+        } else {
+          searchModelMessage = SYSTEM_MESSAGE_SEARCH_SEMANTIC(true)
+        }
+      } else {
+        searchModelMessage = SYSTEM_MESSAGE_SEARCH_MODEL_ONLY_IMAGE
+      }
+    } else if (type === 'creative') {
+      if (!useImage) {
+        searchModelMessage = SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE(true)
+      } else {
+        searchModelMessage = SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE_ONLY_IMAGE
+      }
+    }
 
-    return { searchModelMessage, sourceResult, useImage, enrichmentResult, cost1, cost2 }
+    return {
+      searchModelMessage,
+      queryForModel,
+      sourceResult,
+      useImage,
+      enrichmentResult,
+      cost1,
+      cost2,
+    }
   }
 
   public async handleEmbeddingsOnly(query: any, enrichmentResult: any, nearPhotos: any[]) {
@@ -363,31 +396,56 @@ export default class PhotosService {
   public async processBatch(
     batch: any[],
     enrichmentQuery: string,
-    originalQuery: string,
+    queryForModel: string,
     searchModelMessage: any,
     needImage: boolean,
     type: 'semantic' | 'creative',
+    queryType: 'logical' | 'vague' | 'enriched' = 'vague',
     paginatedPhotos: any[]
   ) {
     const method = !needImage ? 'getDSResponse' : 'getGPTResponse'
+    let chunkPromises = batch.map(async (batchedPhoto) => {
+      if (queryType == 'logical') {
+        const similarTags = await this.embeddingsService.getTagsForLogicalQuery(
+          batchedPhoto.photo,
+          enrichmentQuery
+        )
+        return {
+          tempID: batchedPhoto.photo.tempID,
+          tags: similarTags.map((nt) => nt.name),
+        }
+      } else {
+        const descChunks = await this.getNearChunksFromDesc(
+          batchedPhoto.photo,
+          enrichmentQuery,
+          0.1
+        )
+        return {
+          tempID: batchedPhoto.photo.tempID,
+          chunkedDesc: descChunks.map((dc) => dc.text_chunk).join(' ... '),
+        }
+      }
+    })
+    let chunkResults = await Promise.all(chunkPromises)
     const { result: modelResult, cost: modelCost } = await this.modelsService[method](
-      !needImage ? searchModelMessage : searchModelMessage(batch.map((cp) => cp.tempID)),
+      !needImage ? searchModelMessage : searchModelMessage(chunkResults.map((cp) => cp.tempID)),
       !needImage
         ? JSON.stringify({
-            query: originalQuery,
-            collection: batch.map((item) => ({
-              id: item.photo.tempID,
-              description: item.photo.description,
+            query: queryForModel,
+            collection: chunkResults.map((chunkedPhoto) => ({
+              id: chunkedPhoto.tempID,
+              description: queryType != 'logical' ? chunkedPhoto.chunkedDesc : undefined,
+              tags: queryType == 'logical' ? chunkedPhoto.tags : undefined,
             })),
           })
         : [
             {
               type: 'text',
-              text: JSON.stringify({ query: originalQuery }),
+              text: JSON.stringify({ query: queryForModel }),
             },
             ...(await this.generateImagesPayload(
               paginatedPhotos.map((pp) => pp.photo),
-              batch.map((cp) => cp.id)
+              batch.map((cp) => cp.photo.id)
             )),
           ],
       !needImage ? 'deepseek-chat' : 'gpt-4o-mini',
@@ -408,15 +466,6 @@ export default class PhotosService {
     type: 'semantic' | 'creative',
     options = { embeddingsOnly: false }
   ) {
-    const pageSize = 8
-    const batchSize = 4
-    const maxPageAttempts = 3
-
-    let photosResult = []
-    let modelCosts = []
-    let attempts = 0
-    let hasMore
-
     const { embeddingsOnly } = options
     const photos = (await Photo.query().preload('tags').preload('descriptionChunks')).map(
       (photo) => ({
@@ -428,6 +477,7 @@ export default class PhotosService {
     )
 
     const {
+      queryForModel,
       enrichmentResult,
       sourceResult,
       useImage,
@@ -436,9 +486,23 @@ export default class PhotosService {
       cost2: sourceCost,
     } = await this.processQuery(type, query)
 
-    const nearPhotos = await this.embeddingsService.getSemanticScoredPhotos(
+    const pageSize = 8
+    // En logical, se da el problema de aguja en el pajar si enviamos mucho payload
+    const batchSize = enrichmentResult.type == 'logical' ? 2 : 4
+    const maxPageAttempts = 3
+
+    let photosResult = []
+    let modelCosts = []
+    let attempts = 0
+    let hasMore
+
+    let method =
+      enrichmentResult.type == 'logical'
+        ? 'getSemanticScoredPhotosLogical'
+        : 'getSemanticScoredPhotos'
+    const nearPhotos = await this.embeddingsService[method](
       photos,
-      enrichmentResult.query
+      enrichmentResult
       // query.description
     )
 
@@ -450,6 +514,10 @@ export default class PhotosService {
       const offset = (query.iteration - 1) * pageSize
       const paginatedPhotos = nearPhotos.slice(offset, offset + pageSize)
       hasMore = offset + pageSize < nearPhotos.length
+
+      console.log(
+        `Iteration ${query.iteration}. Cogiendo fotos desde ${offset} hasta ${offset + pageSize}`
+      )
 
       if (attempts >= maxPageAttempts || paginatedPhotos.length === 0) {
         break
@@ -464,10 +532,11 @@ export default class PhotosService {
         const { modelResult, modelCost } = await this.processBatch(
           batch,
           enrichmentResult.query,
-          query.description,
+          queryForModel,
           searchModelMessage,
           useImage,
           type,
+          enrichmentResult.type,
           paginatedPhotos
         )
 
@@ -475,10 +544,14 @@ export default class PhotosService {
 
         return batch
           .map((item) => {
-            const reasoning = modelResult.find((res) => res.id === item.photo.tempID)?.reasoning
+            const result = modelResult.find((res) => res.id === item.photo.tempID)
+            const reasoning = result?.reasoning || ''
+            const isIncluded =
+              result?.isIncluded == true || result?.isIncluded == 'true' ? true : false
+
             return reasoning
-              ? { ...item.photo, score: item.tagScore, reasoning }
-              : { ...item.photo, score: item.tagScore }
+              ? { ...item.photo, score: item.tagScore, isIncluded, reasoning }
+              : { ...item.photo, score: item.tagScore, isIncluded }
           })
           .filter((item) => modelResult.find((res) => res.id === item.tempID)) // && res.isIncluded))
       })
@@ -500,13 +573,13 @@ export default class PhotosService {
     }
   }
 
-  public async getNearChunksFromDesc(photo: Photo, query: string) {
+  public async getNearChunksFromDesc(photo: Photo, query: string, threshold: number = 0.1) {
     if (!photo.descriptionChunks.length) {
       await this.analyzerService.processDesc(photo.description, photo.id)
     }
     const similarChunks = await this.embeddingsService.findSimilarChunksToText(
       query,
-      0,
+      threshold,
       5,
       'cosine_similarity',
       photo

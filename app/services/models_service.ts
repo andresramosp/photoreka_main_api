@@ -190,13 +190,15 @@ export default class ModelsService {
       | 'gpt-4o'
       | 'gpt-4o-mini'
       | 'ft:gpt-4o-mini-2024-07-18:personal:refine:AlpaXAxW' = 'gpt-4o-mini',
-    responseFormat: any = { type: 'json_object' }
+    responseFormat: any = { type: 'json_object' },
+    temperature: number = 0.1,
+    useCache: boolean = true
   ): Promise<any> {
     let cacheDuration = 60 * 5
     try {
       let payload: any = {
         model,
-        temperature: 0.1,
+        temperature,
         messages: systemContent
           ? [
               {
@@ -225,7 +227,7 @@ export default class ModelsService {
 
       // Check cache
       const cachedResponse = cache.get(cacheKey)
-      if (cachedResponse) {
+      if (useCache && cachedResponse) {
         console.log('Cache hit for getGPTResponse')
         return cachedResponse
       }
@@ -292,7 +294,7 @@ export default class ModelsService {
       }
 
       // Cache the result
-      cache.set(cacheKey, result, cacheDuration)
+      if (useCache) cache.set(cacheKey, result, cacheDuration)
 
       return result
     } catch (error) {

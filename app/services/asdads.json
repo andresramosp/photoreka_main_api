@@ -1,0 +1,53 @@
+{
+  "query": "cats, felines, kittens OR birds, avian, sparrows AND NOT people, humans, individuals",
+  "collection": [
+    {
+      "id": "dir7",
+      "description": "The image captures a vibrant street scene in a bustling market. In the foreground, a man dressed in a light-colored traditional outfit holds a bird in his right hand. The bird has a striking appearance, with a dark head and a bright orange-brown body. The man is also holding a small bag filled with seeds, likely meant for feeding the bird. His left hand is raised, holding a smartphone, possibly taking a picture of the bird or recording a video. The background is filled with various people engaged in different activities, creating a lively atmosphere. The overall environment is bustling, with people interacting and enjoying the market's offerings. The scene is rich in cultural elements, showcasing a typical day in a busy marketplace where people gather to socialize, shop, and enjoy local delicacies. The presence of the bird adds a unique touch to the scene, highlighting the interaction between humans and animals in this lively setting. The market is likely filled with various aromas from the food being prepared, and the sounds of chatter and laughter can be imagined, contributing to the vibrant atmosphere. The image encapsulates a moment of connection between the man and the bird, as well as the communal spirit of the market, where people come together to share experiences and enjoy the simple pleasures of life.",
+      "tags": [
+        "birds",
+        "non-domestic animals",
+        "domestic animals",
+        "individuals",
+        "animals",
+        "mammals"
+      ]
+    },
+    {
+      "id": "yg0w",
+      "description": "The image depicts a vibrant urban scene featuring a large, cartoonish yellow rubber duck positioned in a window-like opening on a bright green wall. The duck has a cheerful expression, with large black eyes and an orange beak, and is branded with the name 'LINLEE' printed on its side. Below the duck, there is a black pigeon standing on a pile of debris, which includes a wooden pallet and some scattered materials. The pigeon appears calm and is looking towards the camera, contrasting with the playful nature of the rubber duck. The background shows a blurred view of a city street, with buildings and signs that suggest a bustling urban environment. The overall composition combines elements of whimsy and everyday city life, highlighting the juxtaposition of the playful rubber duck and the ordinary presence of the pigeon.",
+      "tags": [
+        "birds",
+        "non-domestic animals",
+        "domestic animals",
+        "individuals",
+        "animals",
+        "mammals"
+      ]
+    },
+    {
+      "id": "gzyg",
+      "description": "The fabrics are neatly stacked and include a variety of colors, indicating a diverse selection available for sale. In the foreground, a gray cat is sitting on the ground, looking up at the butcher, seemingly waiting for scraps or attention. The cat adds a touch of life to the scene, highlighting the everyday interactions that occur in such marketplaces. The presence of the cat, the butcher, and the woman illustrates the blend of human and animal life that often characterizes such spaces, making it a rich tapestry of daily activities.",
+      "tags": [
+        "birds",
+        "non-domestic animals",
+        "domestic animals",
+        "individuals",
+        "animals",
+        "mammals"
+      ]
+    },
+    {
+      "id": "bohl",
+      "description": "The sky above is clear with a few scattered clouds, and numerous birds can be seen flying overhead, adding a sense of liveliness to the scene. The ground is paved with cobblestones, and there are several white and red barriers lining the pathway, likely to prevent vehicles from entering the pedestrian area. A bicycle is parked against a railing, indicating that this area is accessible for both pedestrians and cyclists.",
+      "tags": [
+        "birds",
+        "non-domestic animals",
+        "domestic animals",
+        "individuals",
+        "animals",
+        "mammals"
+      ]
+    }
+  ]
+}

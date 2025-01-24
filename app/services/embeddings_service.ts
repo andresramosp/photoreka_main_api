@@ -30,6 +30,12 @@ interface ChunkedPhoto extends ScoredPhoto {
 }
 
 export default class EmbeddingsService {
+  public modelsService: ModelsService = null
+
+  constructor() {
+    this.modelsService = new ModelsService()
+  }
+
   @MeasureExecutionTime
   public async findSimilarTagsToText(
     term: string,
@@ -169,7 +175,6 @@ export default class EmbeddingsService {
       SELECT id, photo_id, chunk, ${metricQuery}
       FROM descriptions_chunks
       WHERE ${whereCondition}
-      ORDER BY ${orderBy}
       LIMIT :limit
       `,
       queryParameters
@@ -183,7 +188,8 @@ export default class EmbeddingsService {
     embedding: number[],
     threshold: number = 0.3,
     limit: number = 10,
-    metric: 'distance' | 'inner_product' | 'cosine_similarity' = 'cosine_similarity'
+    metric: 'distance' | 'inner_product' | 'cosine_similarity' = 'cosine_similarity',
+    tagIds?: number[] // IDs opcionales para filtrar la búsqueda
   ) {
     if (!embedding || embedding.length === 0) {
       throw new Error('Embedding no proporcionado o vacío')
@@ -210,11 +216,14 @@ export default class EmbeddingsService {
     // Formatear el embedding para PostgreSQL (pgvector requiere formato de string: '[value1,value2,...]')
     const embeddingString = `[${embedding.join(',')}]`
 
+    // Agregar condición adicional si `tagIds` está presente
+    const tagFilterCondition = tagIds && tagIds.length > 0 ? 'AND id = ANY(:tagIds)' : ''
+
     const result = await db.rawQuery(
       `
       SELECT id, name, "group", created_at, updated_at, ${metricQuery}
       FROM tags
-      WHERE ${whereCondition}
+      WHERE ${whereCondition} ${tagFilterCondition}
       ORDER BY ${orderBy}
       LIMIT :limit
       `,
@@ -222,6 +231,7 @@ export default class EmbeddingsService {
         embedding: embeddingString, // Embedding en formato pgvector
         threshold, // Umbral de similitud
         limit, // Número máximo de resultados
+        tagIds: tagIds || [], // IDs de tags opcionales
       }
     )
 
@@ -416,6 +426,126 @@ export default class EmbeddingsService {
     return results.sort((a, b) => b.tagScore - a.tagScore)
   }
 
+  // A partir de una partición de la query logica saca los tags relevantes y ordena todas las fotos
+  public async getScoredTagsPhotosLogical(
+    photos: Photo[],
+    description: string,
+    similarityThreshold: number = 0.2
+  ): Promise<{ photo: Photo; tagScore: number }[]> {
+    const segments = description.split(/\b(AND|OR|NOT)\b/).map((s) => s.trim())
+    const results: Record<string, any[]> = { AND: [], OR: [], NOT: [] }
+    const promises: Promise<any>[] = []
+
+    for (let i = 0; i < segments.length; i++) {
+      const segment = segments[i]
+      if (['AND', 'OR', 'NOT'].includes(segment)) {
+        continue
+      }
+
+      const operator =
+        segments[i - 1] && ['AND', 'OR', 'NOT'].includes(segments[i - 1]) ? segments[i - 1] : 'AND' // Asume AND como predeterminado.
+
+      promises.push(
+        (async () => {
+          const { embeddings } = await this.modelsService.getEmbeddings([segment])
+          const similarTags = await this.findSimilarTagToEmbedding(
+            embeddings[0],
+            similarityThreshold,
+            500,
+            'cosine_similarity'
+          )
+          results[operator].push(...similarTags)
+        })()
+      )
+    }
+
+    await Promise.all(promises)
+
+    // Obtener sets para operadores lógicos
+    const andResults = new Set(results.AND.flat())
+    const orResults = new Set(results.OR.flat())
+    const notResults = new Set(results.NOT.flat())
+
+    // Intersección lógica AND-OR
+    const intersection = [...andResults].filter((tag) => orResults.has(tag) || orResults.size === 0)
+
+    // Generar un mapa de puntajes para las etiquetas
+    const tagScoresMap = new Map<string, number>()
+
+    intersection.forEach((tag: any) => {
+      tagScoresMap.set(tag.name, tag.proximity) // Puntaje positivo
+    })
+
+    notResults.forEach((tag: any) => {
+      // Aplicar penalización a los términos NOT
+      tagScoresMap.set(tag.name, -Math.abs(tag.proximity) * 5)
+    })
+
+    // Filtrar fotos relevantes y calcular puntajes
+    const relevantPhotos = photos.filter((photo) =>
+      photo.tags?.some((tag) => tagScoresMap.has(tag.name))
+    )
+
+    const resultsWithScores = relevantPhotos.map((photo) => {
+      const photoMatchingTags = photo.tags?.filter((tag) => tagScoresMap.has(tag.name)) || []
+
+      const proximities = photoMatchingTags.map((tag) => tagScoresMap.get(tag.name) || 0)
+
+      // Calcular el puntaje ponderado
+      const maxProximity = Math.max(...proximities, 0)
+      const averageProximity =
+        proximities.reduce((sum, proximity) => sum + proximity, 0) / (proximities.length || 1)
+
+      const tagScore = 0.6 * maxProximity + 0.4 * averageProximity
+
+      return { photo, tagScore }
+    })
+
+    // Ordenar por puntaje en orden descendente
+    return resultsWithScores.sort((a, b) => b.tagScore - a.tagScore)
+  }
+
+  // Dada una foto saca sus tags relevantes a partir de una partición de la query lógica
+  public async getTagsForLogicalQuery(
+    photo,
+    query,
+    similarityThreshold: number = 0.1,
+    limit: number = 6
+  ) {
+    // Dividir la consulta en segmentos separados por operadores
+    const segments = query.split(/\b(AND|OR|NOT)\b/).map((s) => s.trim())
+    const tagsSet = new Set<any>() // Usar un Set para evitar duplicados
+    const promises: Promise<any>[] = []
+
+    for (const segment of segments) {
+      // Ignorar los operadores
+      if (['AND', 'OR', 'NOT'].includes(segment)) {
+        continue
+      }
+
+      // Procesar el segmento completo (incluyendo términos separados por comas)
+      promises.push(
+        (async () => {
+          const { embeddings } = await this.modelsService.getEmbeddings([segment])
+          const similarTags = await this.findSimilarTagToEmbedding(
+            embeddings[0],
+            similarityThreshold,
+            limit,
+            'cosine_similarity',
+            photo.tags.map((tag) => tag.id)
+          )
+          similarTags.forEach((tag) => tagsSet.add(tag)) // Agregar tags al Set
+          console.log(`Similar tags to ${segment}: ${similarTags.map((t) => t.name)}`)
+        })()
+      )
+    }
+
+    // Esperar a que se completen todas las promesas
+    await Promise.all(promises)
+
+    return [...tagsSet] // Devolver el Set como un array
+  }
+
   public async getScoredDescPhotos(
     photos: Photo[],
     description: string,
@@ -488,6 +618,37 @@ export default class EmbeddingsService {
         tagScore,
         descScore,
         totalScore: tagScore * weights.tags + descScore * weights.desc,
+      }
+    })
+
+    const filteredAndSortedPhotos: ChunkedPhoto[] = scoredPhotos
+      .filter((photo) => photo.totalScore > 0.05)
+      .sort((a, b) => b.totalScore - a.totalScore)
+
+    return filteredAndSortedPhotos
+  }
+
+  @MeasureExecutionTime
+  public async getSemanticScoredPhotosLogical(
+    photos: Photo[],
+    enrichmentQuery: { query: string }
+  ): Promise<ChunkedPhoto[] | undefined> {
+    const weights = {
+      tags: 1.0,
+    }
+
+    const scoredTagsPhotos = await this.getScoredTagsPhotosLogical(photos, enrichmentQuery.query)
+
+    const tagScoresMap = new Map(scoredTagsPhotos.map((item) => [item.photo.id, item.tagScore]))
+
+    const scoredPhotos: ChunkedPhoto[] = photos.map((photo) => {
+      const tagScore = tagScoresMap.get(photo.id) || 0
+
+      return {
+        photo,
+        tagScore,
+        descScore: 0,
+        totalScore: tagScore * weights.tags,
       }
     })
 

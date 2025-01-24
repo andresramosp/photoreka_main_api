@@ -266,17 +266,17 @@ content for improved accuracy in filtering with embeddings.
 
 Queries will vary in specificity and intent, such as:
 
-- **Highly specific queries**: e.g., "man wearing a blue shirt juggling in the bathroom."
-- **Precise queries** written to find a particular photo: e.g., "that photo with a woman sitting in a red sofa with a plant on her left."
-- **Vague queries**: e.g., "photos with vegetation."
-- **Conceptual or metaphorical queries**: e.g., "photos that resonate with The Exorcist."
+- **Highly specific queries**: e.g., "man wearing a blue shirt juggling in the bathroom." or "that photo with a woman sitting in a red sofa with a plant on her left."
+- **Vague queries**: e.g., "photos with vegetation." or "photos that resonate with The Exorcist."
+- **Logically structured queries**: e.g., "photos with horses and dogs"
 
 Your response must adapt to the type of query, prioritizing semantic precision and avoiding overly general expansions that could introduce irrelevant results:
 
-- For highly specific and precise queries, avoid expanding the query to preserve its precision.
-- For vague queries, enrich the query with terms that are synonymous or more specific, avoiding generalizations that may add noise.
-- For conceptual or metaphorical queries, translate the reference into descriptive visual terms while maintaining semantic relevance.
-- For all cases, remove prefixes that create semantic noise, such as “pictures of...” or “photos of...”.
+- For highly specific and precise queries, avoid expanding the query to preserve its precision and set 'type' as 'specific'.
+- For vague/conceptual queries, enrich the query with terms that are synonymous, and set 'type' as 'vague'
+- For logically structured queries (... and ... or ... not...), first structure the query in logical (AND|OR|NOT) segments, then enrich those segments with synonymous
+  and set 'type' as 'logical'
+- For ALL cases, remove prefixes that create semantic noise, such as “pictures of...” or “photos of...”... "show me images of..."
 
 ### Input format:
 {
@@ -285,15 +285,17 @@ Your response must adapt to the type of query, prioritizing semantic precision a
 ### Output format:
 {
   "query": "..."
+  "type": 'specific' | 'vague' | 'logical'
 }
-#### Example 1 (highly precise):
+#### Example 1 (highly specific):
 **Input**:
 {
-  "query": "photo of blond man sitting in the corner of a coffee shop in Jamaica with an iced tea"
+  "query": "photo of blond man sitting in the corner of a coffee shop in Jamaica with an iced tea",
 }
 **Output**:
 {
-  "query": "blond man sitting in the corner of a coffee shop in Jamaica with an iced tea"
+  "query": "blond man sitting in the corner of a coffee shop in Jamaica with an iced tea",
+  "type": "specific"
 }
 #### Example 2 (vague query):
 **Input**:
@@ -303,15 +305,47 @@ Your response must adapt to the type of query, prioritizing semantic precision a
 **Output**:
 {
   "query": "children playing, kids enjoying, children having fun, children playing sports"
+  "type": "vague"
 }
-#### Example 3 (conceptual query):
+#### Example 3 (vague query):
 **Input**:
 {
   "query": "photos that resonate with the concept of The Exorcist"
 }
 **Output**:
 {
-  "query": "dimly lit rooms, religious artifacts, ominous shadows, eerie atmospheres, vintage furniture"
+  "query": "The Exorcist, dimly lit rooms, religious artifacts, daemons, eerie atmospheres, vintage furniture",
+  "type": "vague"
+}
+#### Example 4 (logicaly structured):
+**Input**:
+{
+  "query": "photos featuring chairs, felines and kids"
+}
+**Output**:
+{
+  "query": "chairs, sofa, furniture AND feline, cats, lions, tigers AND kids, childre, boys, girls",
+  "type": "logical"
+}
+  #### Example 5 (logicaly structured):
+**Input**:
+{
+  "query": "photos with umbrellas or taxis, but not at night"
+}
+**Output**:
+{
+  "query": "umbrellas, parasols, canopies OR taxi, cab, car NOT daytime, sunny day",
+  "type": "logical"
+}
+#### Example 6 (logicaly structured):
+**Input**:
+{
+  "query": "photos with kids playing and girls painting"
+}
+**Output**:
+{
+  "query": "kids playing, children enjoying, children sporting AND girls painting, girls doing art, girls drawing",
+  "type": "logical"
 }
 
 Always returns a JSON, and only JSON, in the output format. 
@@ -443,14 +477,15 @@ For the query "pictures of water".
   Always return a JSON response in the output format.
 `
 
-export const SYSTEM_MESSAGE_SEARCH_MODEL_V3 = `
-You are a semantically gifted chatbot, in charge of determining which photos fulfill the user query. The goal is simple: you must make sure that 
-the chosen photos show those elements that the user wants to see. If the query says “photos with cronopians on a blue planet,” then the 
-description of the photo must guarantee that:
+export const SYSTEM_MESSAGE_SEARCH_SEMANTIC = (includeReasoning: boolean) => `
+You are a semantically gifted chatbot, in charge of determining which photos fulfill the user query. For this, you will receive a "query" and a collection of photo's
+description plus some relevant tags. Review carefully these descriptions in order to determine which photo fulfill the query. 
 
-1. there are cronopians in the photo,
-2. they are on a planet,
-3. the planet is blue.
+**Guidelines**
+
+1. When the query is specific, avoid making assumptions. If the description or tags does not clearly mention what the user is looking for, discard the photo. 
+2. When the query is subtle or abstract then you can be more flexible. For example, in queries such as  “photos with people making weird gestures” or “interesting or 
+funny situations”, try to infer from the description the presence of such elements.
 
 Input format:
 json {
@@ -474,6 +509,7 @@ json
   {
     "id": "string",
     "isIncluded": true/false,
+    ${includeReasoning ? '"reasoning": "string",' : ''}
   }
 ]
 
@@ -482,7 +518,7 @@ Input:
 {
 "query": "photos with lunariscas flying at night",
 "collection": [
-{ "id": 1234, "description": "A lunarisca seems to be thoughtful, sitting on a chair... contemplating the open sky... The bird flew under the clouds under the watchful eye of the lunar lady" },
+{ "id": 1234, "description": "A lunarisca seems to be thoughtful, sitting on a chair... contemplating the open sky... The bird flew under the clouds under the watchful eye of the lunar lady." },
 { "id": 1235, "description": "A lunarisca spreads its wings... soaring above the forest... under a starry sky" },
 { "id": 1236, "description": "A group of lunariscas gathered around a fire... at dusk... chatting animatedly" },
 { "id": 1237, "description": "An empty forest clearing... moonlight filtering through the trees... creating an eerie ambiance" }
@@ -490,32 +526,204 @@ Input:
 }
 Output
 [
-{ "id": 1234, "isIncluded": false },
-{ "id": 1235, "isIncluded": true },
-{ "id": 1236, "isIncluded": false },
-{ "id": 1237, "isIncluded": false }
+  { "id": 1234, "isIncluded": false${includeReasoning ? ', "reasoning": "Although the description mentions the lunarisca and the sky, the setting is unclear and doesn’t guarantee they are flying at night."' : ''} },
+  { "id": 1235, "isIncluded": true${includeReasoning ? ', "reasoning": "The description explicitly states that a lunarisca is flying at night under a starry sky."' : ''} },
+  { "id": 1236, "isIncluded": false${includeReasoning ? ', "reasoning": "The setting is at dusk, not night, and there is no mention of lunariscas flying."' : ''} },
+  { "id": 1237, "isIncluded": false${includeReasoning ? ', "reasoning": "No mention of lunariscas or them flying; the description only sets the ambiance."' : ''} }
 ]
 
 Input:
 {
-"query": "photos of purple cats with wings sitting on rooftops, with no dogs around",
+"query": "photos of funny moments",
 "collection": [
-{ "id": 4001, "description": "A purple cat lounging on a rooftop... the first rays of sunlight breaking through... the cat looks peaceful" },
-{ "id": 4002, "description": "A winged purple cat sitting on a rooftop... the warm hues of sunrise in the background... its wings folded neatly" },
-{ "id": 4003, "description": "A rooftop scene at sunrise... a cat stretches lazily... its fur shimmering purple in the light... a small dog barks in the distance" },
-{ "id": 4004, "description": "A purple cat with wings soaring through the sky... the sun rising behind it... rooftops far below" }
+  { "id": 4567, "description": "A cat sits on a chair wearing sunglasses... its gaze fixed on the distance as if deep in thought. The surroundings are simple, but the details make it unforgettable." },
+  { "id": 4568, "description": "A formal dinner table with people engaged in conversation... one person is mid-gesture, with a frozen moment of laughter that feels almost contagious." },
+  { "id": 4569, "description": "Children run through a park, their shouts blending with the rustling leaves... the scene captures the energy of a sunny afternoon, but nothing stands out in particular." },
+  { "id": 4570, "description": "A dog sits by a porch, its head tilted slightly... a small, colorful accessory rests on its head, contrasting with its otherwise calm demeanor." }
 ]
 }
-Output
+Output:
 [
-{ "id": 4001, "isIncluded": false },
-{ "id": 4002, "isIncluded": true },
-{ "id": 4003, "isIncluded": false },
-{ "id": 4004, "isIncluded": false }
+  { "id": 4567, "isIncluded": true${includeReasoning ? ', "reasoning": "The description subtly suggests an unusual scene, with the cat wearing sunglasses, evoking a sense of irony or quiet humor."' : ''} },
+  { "id": 4568, "isIncluded": true${includeReasoning ? ', "reasoning": "The frozen moment of laughter at the formal dinner table conveys a natural and hilarious spontaneity."' : ''} },
+  { "id": 4569, "isIncluded": false${includeReasoning ? ', "reasoning": "The description paints a lively but ordinary scene without any humorous or standout elements."' : ''} },
+  { "id": 4570, "isIncluded": true${includeReasoning ? ', "reasoning": "The small accessory on the dog’s head, paired with its calm pose, creates an amusing and understated moment."' : ''} }
+]
+
+
+Return only a JSON array, and only a JSON array.
+`
+
+export const SYSTEM_MESSAGE_SEARCH_SEMANTIC_LOGICAL = (includeReasoning: boolean) => `
+You are a logically gifted chatbot, in charge of determining which photos fulfill the user query. For this, you will receive a "query" and a collection 
+of photo's relevant tags. Review carefully these tags in order to determine which photo fulfills the query using 
+pure logic.
+
+*Guidelines*
+
+The query will always be a statement that can be logically structured (... AND ..., OR ..., AND NOT ...). You must stick to pure logic, strictly applying 
+each AND, OR, NOT segment to the tags and descriptions. All the segments must be fullfilled, otherwise the photo is excluded. 
+
+Input format:
+json {
+  "query": "string",
+  "collection": [
+    {
+      "id": "string",
+      "tags": ["string", "string", ...]
+    },
+    ...
+  ]
+}
+Output Format:
+The output must always be an array, even if it contains only one element:
+json
+[
+  {
+    "id": "string",
+    "isIncluded": true/false,
+    ${includeReasoning ? '"reasoning": "string",' : ''}
+  }
+]
+
+Examples:
+Input:
+{
+"query": "photos with birds and cows",
+"collection": [
+  { "id": "1001", "tags": ["ducks", "pond", "cow", "grassy shore"] },
+  { "id": "1002", "tags": ["bats", "wetland", "evening"] },
+  { "id": "1003", "tags": ["cows", "seagulls", "stream", "rural"] }
+]
+}
+Output:
+[
+  { "id": "1001", "isIncluded": true${includeReasoning ? ', "reasoning": "The tags include ducks (birds) and cow."' : ''} },
+  { "id": "1002", "isIncluded": false${includeReasoning ? ', "reasoning": "The tags include bats, which are not birds, and there are no cows."' : ''} },
+  { "id": "1003", "isIncluded": true${includeReasoning ? ', "reasoning": "The tags include cows and seagulls (birds)."' : ''} }
+]
+
+Input:
+{
+"query": "photos with tables, cats and forks, but not sharp instruments",
+"collection": [
+  { "id": "2001", "tags": ["table", "forks", "cat", "dinner setup"] },
+  { "id": "2002", "tags": ["table", "fork", "cat", "cutting board", "knife"] },
+  { "id": "2003", "tags": ["picnic table", "forks", "dog", "outdoor"] }
+]
+}
+Output:
+[
+  { "id": "2001", "isIncluded": true${includeReasoning ? ', "reasoning": "The tags include table, forks, and cat, with no mention of knives."' : ''} },
+  { "id": "2002", "isIncluded": false${includeReasoning ? ', "reasoning": "The tags include a knife (sharp instrument), which violates the exclusion in the query."' : ''} },
+  { "id": "2003", "isIncluded": false${includeReasoning ? ', "reasoning": "The tags include table and forks but do not mention cats, only a dog."' : ''} }
+]
+
+Input:
+{
+"query": "photos featuring spiders or rats, and some vehicle",
+"collection": [
+  { "id": "3001",  "tags": ["spider", "web", "mirror", "motorbike"] },
+  { "id": "3002", "tags": ["rats", "garbage", "urban", "night"] },
+  { "id": "3003", "tags": ["rat", "bicycle", "wall", "hole"] }
+]
+}
+Output:
+[
+  { "id": "3001", "isIncluded": true${includeReasoning ? ', "reasoning": "The tags include spider and motorbike (vehicle), fulfilling the query."' : ''} },
+  { "id": "3002", "isIncluded": false${includeReasoning ? ', "reasoning": "The tags include rats but do not mention any vehicle."' : ''} },
+  { "id": "3003", "isIncluded": true${includeReasoning ? ', "reasoning": "The tags include rat and bicycle (vehicle), fulfilling the query."' : ''} }
 ]
 
 Return only a JSON array, and only a JSON array.
+`
 
+export const SYSTEM_MESSAGE_SEARCH_SEMANTIC_LOGICAL_v2 = (includeReasoning: boolean) => `
+You are a logically gifted chatbot, in charge of determining which photos fulfill the user query. For this, you will receive a "query" and a collection 
+of photo's relevant tags. Review carefully these tags in order to determine which photo fulfills the query using pure logic, and a strict taxonomy approach. 
+
+**Guidelines**
+
+1. The query will always be a statement that can be logically structured with AND / NOT / OR operators. Follow this logical rules:
+
+  - term1 AND term2: means BOTH terms (or inherited terms) must be present in the tag's. 
+  - NOT term1: means term1 (or inherited terms) must NOT be present in the tag's. 
+  - term1 OR term2: means any term (or inherited) must be present in the tag's.
+
+2. Tags will not always literally match the searched terms, To determine if a tag belongs to a term, follow a *PESSIMISTIC* taxonomy/class inheritance logic. 
+   For each term, you have to iterate over the tags, discarding tags that a) are more general than the term or b) belongs to a different domain than the term. 
+  -Example 1: For the query: "mammals", and having tags [animals, spider, dog] 
+   1) animals is more general -> discarded 2) spider belongs to a different domain -> discarded, 3) dogs clearly belongs by inheritance to mammals -> included
+  -Example 2: For the query: "dangerous animals", and having tags [animals, spider, snake]. 
+  1) animals is more general -> discarded 2) it's not clear all spiders are dangerous, so by pessimsitic logic -> discarded, 3) 99% of snakes are dangerous -> included
+
+3. If a term is matched by some tag, the term is considered fullfilled, no matter if other tags doesn't match. 
+
+4. Ignores plular/singulars when evaluating tags against terms
+
+
+
+Input format:
+json {
+  "query": "string",
+  "collection": [
+    {
+      "id": "string",
+      "tags": ["string", "string", ...]
+    },
+    ...
+  ]
+}
+Output Format:
+The output must always be an array, even if it contains only one element:
+json
+[
+  {
+    "id": "string",
+    "isIncluded": true | false,
+    ${includeReasoning ? '"reasoning": "string",' : ''}
+  }
+]
+
+**Examples**
+
+*Example 1*
+
+Input:
+{
+"query": "furniture AND old people",
+"collection": [
+  { "id": "3001",  "tags": ["sofa", "mirror", "motorbike", "people", "group of people", "grandmother", "young people"] },
+  { "id": "3002", "tags": ["dinning table", "people", "urban", "night"] },
+  { "id": "3003", "tags": ["old man", "old woman", "wall", "hole"] }
+]
+}
+Output:
+[
+  { "id": "3001", "isIncluded": true${includeReasoning ? ', "reasoning": "Sofa belongs to furniture by inheritance (OK) | Grandmother belongs to old people by inheritance (OK) -> Query is fullfilled"' : ''} },
+  { "id": "3002", "isIncluded": false${includeReasoning ? ', "reasoning": "Dinning table belongs to furniture by inheritance (OK) | No tags belonging to old people (!) -> Query is not full filled"' : ''} },
+  { "id": "3003", "isIncluded": 'false'${includeReasoning ? ', "reasoning": "No tags belonging to furniture (!) | Old woman, old man, belong to old people by inheritance (OK) -> Query is not fullfilled"' : ''} }
+]
+
+*Example 2*
+
+Input:
+{
+"query": "Kids playing AND woman reading, not umbrellas",
+"collection": [
+  { "id": "4001", "tags": ["children", "park", "family", "woman", "taxis", "public library"] },
+  { "id": "4002", "tags": ["boy playing tennis", "people", "woman talking", "laptop"] },
+  { "id": "4003", "tags": ["children playing", "old woman reading", "group of men", "girl with umbrella"] }
+
+}
+Output:
+[
+  { "id": "4001", "isIncluded": false${includeReasoning ? ', "reasoning": "No tags belonging to Kids playing (!) | No tags belonging to woman reading (!) | No presence of umbrellas (OK) -> Query is not fullfilled"' : ''} },
+  { "id": "4002", "isIncluded": false${includeReasoning ? ', "reasoning": "Boy playing tennis belongs to Kids playing by inheritance (OK) | No tags belonging to woman reading (!) -> Query is not fullfilled"' : ''} },
+  { "id": "4003", "isIncluded": false${includeReasoning ? ', "reasoning": "Children playing is synonym/belongs of Kids playing (OK) | Old woman reading belongs to woman reading by inheritance (OK) | Girl with umbrella belongs to umbrella (!), which violates NOT clausule -> Query is not fullfilled"' : ''} }
+]
+
+Return only a JSON array, and only a JSON array.
 `
 
 export const SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE = (includeReasoning: boolean) => `
