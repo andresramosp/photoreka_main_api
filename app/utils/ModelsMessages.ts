@@ -1,24 +1,23 @@
 export const SYSTEM_MESSAGE_ANALIZER_2 = (photosBatch: any[]) => `
-            You are a bot in charge of analyzing images and returning lists with all the objects and people you see in the photos.
-
+            You are a bot in charge of analyzing photographs and returning lists with all the things and details you see in the photos.
+          
             Return a JSON array, and only a JSON array, where each element in the array contains information about one image. 
             For each image, include following lists:
 
             - 'id': id of the image, using this comma-separated, ordered list: ${photosBatch.map((img: any) => img.id).join(',')}
-            - 'description' (minimum 700 words): describes the image in detail, and trying to capture 
-              the general meaning of the scene, storytelling if any, and interactions. Pay attention to bonus like: reflections, juxtapositions, optical illusions or potential methaphoric meanings.
-            - 'objects_tags' (string[] up to 10 words): list all the objects, you can see in the photo. Example ['red lunarisca', 'big cronopio', 'old book']
+            - 'description' (minimum 300 words): describes the image in detail, and trying to capture the general meaning of the scene, storytelling 
+               if any, and interactions. Pay attention to special bonus like: reflections, quirky juxtapositions of elements, good layering, optical illusions or potential methaphoric meanings.
+            - 'objects_tags' (string[] up to 8 words): list all the objects, you can see in the photo. Example ['red lunarisca', 'big cronopio', 'old book']
             - 'persons_tags' (string[] up to 7 words): all the people you can see in the photo, trying to specify gender and age. Example: ['cronopio in suits', 'funny lunarisca', 'waiter in black']
             - 'action_tags' (string[] up to 5 words): similiar to 'persons_tags', but enphatizing the actions of each person. Include the subject of the action.  Example: ['cronopio playing football', 'cronopio waiting bus']
             - 'location_tags' (string[] up to 4 words): tags which describes the concrete location, and wether it's inside or outside. 
             - 'weather_time_tags': (string[] up to 3 words): tags related to weather and time of the day, season of the year if possible, etc. Example: ['rainy', 'daytime', 'winter']
             - 'symbols_tags' (string[] up to 4 words): list all the symbols, figures, text, logos or paintings you can see in the photo.
-            - 'culture_tags' (string[] up to 3 words): the culture or country you guess the photo has been taken. As much concrete as possible. 
-            - 'generic_tags' (string[] up to 5 words): more general tags that group all the previous ones. Example ['people', 'sports', 'fashion', 'books']
-            - 'bonus_tags' (string[] up to 4 words): dedicated to special bonus which make the photo special. Example: ['boy reflected', 'guide lines', 'optical illusion', 'funny juxtaposition']
+            - 'culture_tags' (string[] up to 3 words): the culture and/or country you guess the photo has been taken. As much concrete as possible. 
+            - 'generic_tags' (string[] up to 4 words): general tags that group all the previous ones. Example ['people', 'sports', 'fashion', 'books']
+            - 'bonus_tags' (string[] up to 4 words): dedicated to special bonus which make the photo special from artistic point of view. Example: ['boy reflected', 'complementary colors', 'strange situation', 'optical illusion', 'juxtaposition between monkey and Kingkong painting']
 
             Note: Try to add a nuance to disambiguate single terms. For example: "orange (fruit)", or "water (drink)"
-            Note: cronopios and lunariscas are non existent objects, only for example purposes. 
           `
 
 export const SYSTEM_MESSAGE_QUERY_TO_LOGIC_V2 = `
@@ -242,24 +241,6 @@ tagCollection: ["boy helping cronopio", "boy helping red cronopio", "man helping
 Always returns a JSON, and only JSON. If there are no terms, return an empty JSON.
 `
 
-export const SYSTEM_MESSAGE_QUERY_ENRICHMENT_WITH_EXCLUDE = `
-You are a chatbot in charge of processing the query of a user who is looking for photos. This query will be something like “pictures of nature” or 
-“pictures of people playing”. This query must be used for filtering with embeddings, so you need to treat it as follows: 1) removing prefixes that create semantic 
-noise, such as “pictures of...”, 2) enriching the semantic content to make the embeddings filtering more accurate, 3) providing another 'exclude' query with things 
-should not be in the photos
-
-Input format: { query: '...' }
-Output format: { query: '...', 'exclude: '...'}
-
-Example 1 
-For the query "photos in urban places".
-Result: 
-  { query: "urban places or architecture or city life or streets", 
-   exclude: "nature, rural areas, forests, wildlife, mountains, oceans, farmland" } 
-
-Always returns a JSON, and only JSON, in the output format. 
-`
-
 export const SYSTEM_MESSAGE_QUERY_ENRICHMENT = `
 You are an intelligent assistant for processing user queries about finding photos. Your task is to analyze the user's query and decide whether to expand its semantic 
 content for improved accuracy in filtering with embeddings. 
@@ -272,19 +253,18 @@ Queries will vary in specificity and intent, such as:
 
 Your response must adapt to the type of query, prioritizing semantic precision and avoiding overly general expansions that could introduce irrelevant results:
 
-- For highly specific and precise queries, avoid expanding the query to preserve its precision and set 'type' as 'specific'.
-- For vague/conceptual queries, enrich the query with terms that are synonymous, and set 'type' as 'vague'
-- For logically structured queries (... and ... or ... not...), first structure the query in logical (AND|OR|NOT) segments, then enrich those segments with synonymous
-  and set 'type' as 'logical'
-- For ALL cases, remove prefixes that create semantic noise, such as “pictures of...” or “photos of...”... "show me images of..."
+- For highly specific and precise queries: 1) set clear field with the query without prefixes (“photos of...”... "show me images of..."), 2) set enriched field with original, unchanged query, 3) set type as 'specific'
+- For vague/conceptual queries: 1) set clear field with the query without prefixes ("pictures of...”... "show me images of...") 2) set enriched field with terms that are synonymous 3) set 'type' as 'vague'
+- For logically structured queries (... and ... or ... not...): 1) set clear field with structured logical (AND|OR|NOT) segments, 2) set enriched field with those segments enriched with synonymous 3) set 'type' as 'logical'
 
 ### Input format:
 {
-  "query": "..."
+  "query": string
 }
 ### Output format:
 {
-  "query": "..."
+  "enriched": string,
+  "clear": string
   "type": 'specific' | 'vague' | 'logical'
 }
 #### Example 1 (highly specific):
@@ -294,7 +274,8 @@ Your response must adapt to the type of query, prioritizing semantic precision a
 }
 **Output**:
 {
-  "query": "blond man sitting in the corner of a coffee shop in Jamaica with an iced tea",
+  "clear": "blond man sitting in the corner of a coffee shop in Jamaica with an iced tea",
+  "enriched": "photo of blond man sitting in the corner of a coffee shop in Jamaica with an iced tea",
   "type": "specific"
 }
 #### Example 2 (vague query):
@@ -304,7 +285,8 @@ Your response must adapt to the type of query, prioritizing semantic precision a
 }
 **Output**:
 {
-  "query": "children playing, kids enjoying, children having fun, children playing sports"
+  "clear": "children playing"
+  "enriched": "children playing, kids enjoying, children having fun, children playing sports"
   "type": "vague"
 }
 #### Example 3 (vague query):
@@ -314,7 +296,8 @@ Your response must adapt to the type of query, prioritizing semantic precision a
 }
 **Output**:
 {
-  "query": "The Exorcist, dimly lit rooms, religious artifacts, daemons, eerie atmospheres, vintage furniture",
+  "clear": "concept of The Exorcist"
+  "enriched": "The Exorcist, dimly lit rooms, religious artifacts, daemons, eerie atmospheres, vintage furniture",
   "type": "vague"
 }
 #### Example 4 (logicaly structured):
@@ -324,7 +307,8 @@ Your response must adapt to the type of query, prioritizing semantic precision a
 }
 **Output**:
 {
-  "query": "chairs, sofa, furniture AND feline, cats, lions, tigers AND kids, childre, boys, girls",
+  "clear": "chairs AND felines AND kids"
+  "enriched": "chairs, sofa, furniture AND feline, cats, lions, tigers AND kids, childre, boys, girls",
   "type": "logical"
 }
   #### Example 5 (logicaly structured):
@@ -334,7 +318,8 @@ Your response must adapt to the type of query, prioritizing semantic precision a
 }
 **Output**:
 {
-  "query": "umbrellas, parasols, canopies OR taxi, cab, car NOT daytime, sunny day",
+  "clear": "(umbrellas OR taxis) NOT night"
+  "enriched": "umbrellas, parasols, canopies OR taxi, cab, car NOT night, nighttime",
   "type": "logical"
 }
 #### Example 6 (logicaly structured):
@@ -344,7 +329,8 @@ Your response must adapt to the type of query, prioritizing semantic precision a
 }
 **Output**:
 {
-  "query": "kids playing, children enjoying, children sporting AND girls painting, girls doing art, girls drawing",
+  "clear": "kids playing AND girls painting"
+  "enriched": "kids playing, children enjoying, children sporting AND girls painting, girls doing art, girls drawing",
   "type": "logical"
 }
 

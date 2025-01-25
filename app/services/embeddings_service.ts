@@ -238,48 +238,6 @@ export default class EmbeddingsService {
     return result.rows
   }
 
-  public async compareGenerality(term: string, texts: string[]) {
-    const partitions: string[] = ['creatures', 'objects', 'events']
-
-    // Step 1: Get embedding for the term
-    const termEmbedding: any = await this.getEmbedding(term)
-
-    if (!termEmbedding) {
-      throw new Error(`Embedding not found for term: ${term}`)
-    }
-
-    // Step 2: Determine the closest partition
-    const closestPartition = await this.getClosestPartition(termEmbedding, partitions)
-
-    if (!closestPartition) {
-      throw new Error(`No suitable partition found for term: ${term}`)
-    }
-
-    // Step 3: Calculate the centroid for the closest partition
-    const centroid = await this.calculatePartitionCentroid(closestPartition)
-
-    if (!centroid) {
-      throw new Error(`Failed to calculate centroid for partition: ${closestPartition}`)
-    }
-
-    // Step 4: Compute distances
-    const termToCentroidDistance = this.calculateDistance(termEmbedding, centroid)
-
-    const results: any = {}
-    for (const text of texts) {
-      const textEmbedding = await this.getEmbedding(text)
-      if (!textEmbedding) {
-        throw new Error(`Embedding not found for text: ${text}`)
-      }
-
-      const textToCentroidDistance = this.calculateDistance(textEmbedding, centroid)
-      results[text] = textToCentroidDistance // - termToCentroidDistance
-      results[term] = termToCentroidDistance
-    }
-
-    return Object.fromEntries(Object.entries(results).sort(([, a], [, b]) => b - a))
-  }
-
   private async getEmbedding(name: string): Promise<number[] | string | null> {
     const modelsService = new ModelsService()
 
@@ -291,97 +249,6 @@ export default class EmbeddingsService {
     // Otherwise, fetch dynamically
     const { embeddings } = await modelsService.getEmbeddings([name])
     return embeddings[0] || null
-  }
-
-  private async getClosestPartition(
-    termEmbedding: number[],
-    partitions: string[]
-  ): Promise<string | null> {
-    const modelsService = new ModelsService()
-
-    let closestPartition = null
-    let smallestDistance = Infinity
-
-    for (const partition of partitions) {
-      const { embeddings: partitionEmbedding } = await modelsService.getEmbeddings([partition]) // Assume partition names are static
-      const distance = this.calculateDistance(termEmbedding, partitionEmbedding[0])
-      if (distance < smallestDistance) {
-        smallestDistance = distance
-        closestPartition = partition
-      }
-    }
-
-    return closestPartition
-  }
-
-  // private async calculatePartitionCentroid(partitionName: string): Promise<number[] | null> {
-  //   const result = await db.rawQuery(
-  //     `
-  //     SELECT vector_avg(embedding) AS centroid
-  //     FROM tags
-  //     WHERE "group" = :group
-  //     `,
-  //     { group: `centroid_${partitionName}` }
-  //   )
-
-  //   return result.rows[0]?.centroid || null
-  // }
-
-  private async calculatePartitionCentroid(partitionName: string): Promise<number[]> {
-    // Obtener los embeddings de la partición seleccionada
-    const tags = await Tag.query().where('group', `centroid_${partitionName}`).select('embedding')
-
-    if (tags.length === 0) {
-      throw new Error(`No se encontraron embeddings para la partición: ${partitionName}`)
-    }
-
-    // Verificar que los embeddings sean arrays y convertir si son strings
-    const embeddings = tags.map((tag) => {
-      if (typeof tag.embedding === 'string') {
-        try {
-          const parsedEmbedding = JSON.parse(tag.embedding)
-          if (Array.isArray(parsedEmbedding)) {
-            return parsedEmbedding
-          } else {
-            throw new Error(`El embedding no es un array válido: ${tag.embedding}`)
-          }
-        } catch (error) {
-          throw new Error(`Error parseando embedding: ${tag.embedding}. ${error.message}`)
-        }
-      } else if (Array.isArray(tag.embedding)) {
-        return tag.embedding
-      } else {
-        throw new Error(`El formato del embedding no es válido: ${tag.embedding}`)
-      }
-    })
-
-    // Verificar dimensiones consistentes
-    const dimension = embeddings[0].length
-    if (!dimension || embeddings.some((emb) => emb.length !== dimension)) {
-      throw new Error('Los embeddings tienen dimensiones inconsistentes')
-    }
-
-    // Inicializar el centroide con ceros
-    const centroid = new Array(dimension).fill(0)
-
-    // Acumular los valores de cada dimensión
-    embeddings.forEach((embedding) => {
-      for (let i = 0; i < dimension; i++) {
-        centroid[i] += embedding[i]
-      }
-    })
-
-    // Calcular el promedio de cada dimensión
-    return centroid.map((sum) => sum / embeddings.length)
-  }
-
-  private calculateDistance(vec1: number[], vec2: number[]): number {
-    // Use cosine similarity as an example
-    const dotProduct = vec1.reduce((sum, val, i) => sum + val * vec2[i], 0)
-    const magnitude1 = Math.sqrt(vec1.reduce((sum, val) => sum + val ** 2, 0))
-    const magnitude2 = Math.sqrt(vec2.reduce((sum, val) => sum + val ** 2, 0))
-
-    return 1 - dotProduct / (magnitude1 * magnitude2) // Cosine distance
   }
 
   public async getScoredTagsPhotos(
@@ -436,14 +303,13 @@ export default class EmbeddingsService {
     const results: Record<string, any[]> = { AND: [], OR: [], NOT: [] }
     const promises: Promise<any>[] = []
 
+    // Procesar cada segmento lógico
     for (let i = 0; i < segments.length; i++) {
       const segment = segments[i]
-      if (['AND', 'OR', 'NOT'].includes(segment)) {
-        continue
-      }
+      if (['AND', 'OR', 'NOT'].includes(segment)) continue
 
       const operator =
-        segments[i - 1] && ['AND', 'OR', 'NOT'].includes(segments[i - 1]) ? segments[i - 1] : 'AND' // Asume AND como predeterminado.
+        segments[i - 1] && ['AND', 'OR', 'NOT'].includes(segments[i - 1]) ? segments[i - 1] : 'AND' // Asume AND como predeterminado
 
       promises.push(
         (async () => {
@@ -469,85 +335,96 @@ export default class EmbeddingsService {
     // Intersección lógica AND-OR
     const intersection = [...andResults].filter((tag) => orResults.has(tag) || orResults.size === 0)
 
-    // Generar un mapa de puntajes para las etiquetas
+    // Normalizar proximidades al rango [0, 1]
+    const proximities = intersection.map((tag) => tag.proximity)
+    const maxProximity = Math.max(...proximities, 1) // Evitar división por 0
     const tagScoresMap = new Map<string, number>()
 
     intersection.forEach((tag: any) => {
-      tagScoresMap.set(tag.name, tag.proximity) // Puntaje positivo
+      const normalizedProximity = tag.proximity / maxProximity // Normalización
+      tagScoresMap.set(tag.name, normalizedProximity)
     })
-
-    // notResults.forEach((tag: any) => {
-    //   // Aplicar penalización a los términos NOT
-    //   tagScoresMap.set(tag.name, -Math.abs(tag.proximity) * 5)
-    // })
 
     // Filtrar fotos relevantes y calcular puntajes
-    const relevantPhotos = photos.filter((photo) =>
-      photo.tags?.some((tag) => tagScoresMap.has(tag.name))
-    )
+    const resultsWithScores = photos.map((photo) => {
+      const segmentScores: number[] = [] // Almacena el puntaje por segmento lógico
+      let matchedSegments = 0 // Contador de segmentos matcheados lógicamente
+      const totalSegments = Object.keys(results).filter((key) => key !== 'NOT').length // Número de segmentos sin incluir NOT
+      let hasInvalidNotTag = false // Flag para detectar penalizaciones por NOT
 
-    const resultsWithScores = relevantPhotos.map((photo) => {
-      const photoMatchingTags = photo.tags?.filter((tag) => tagScoresMap.has(tag.name)) || []
+      // Iterar por segmentos lógicos y calcular el puntaje
+      for (const segment of Object.keys(results)) {
+        const matchingTags =
+          photo.tags?.filter((tag) =>
+            results[segment].some((resultTag) => resultTag.name === tag.name)
+          ) || []
 
-      const proximities = photoMatchingTags.map((tag) => {
-        const proximity = tagScoresMap.get(tag.name) || 0
-        return proximity > 0 ? Math.exp(proximity - 0.6) : proximity // Exponencial para positivos
-      })
+        if (segment === 'NOT') {
+          // Detectar si algún tag en NOT tiene proximidad >= 0.6
+          const maxProximity = Math.max(
+            ...matchingTags.map((tag) => tagScoresMap.get(tag.name) || 0)
+          )
+          if (maxProximity >= 0.6) {
+            hasInvalidNotTag = true // Penalizar la foto
+          }
+          continue // Saltar el resto de la lógica para NOT
+        }
 
-      // Calcular el puntaje ponderado
-      const maxProximity = Math.max(...proximities, 0)
-      const averageProximity =
-        proximities.reduce((sum, proximity) => sum + proximity, 0) / (proximities.length || 1)
+        if (matchingTags.length > 0) {
+          // Verificar si el segmento matchea lógicamente (proximidad >= 0.6)
+          const maxProximity = Math.max(
+            ...matchingTags.map((tag) => tagScoresMap.get(tag.name) || 0)
+          )
 
-      const tagScore = 0.8 * maxProximity + 0.2 * averageProximity
+          if (maxProximity >= 0.6) {
+            matchedSegments++ // Incrementar si el segmento matchea
+          }
 
-      return { photo, tagScore }
+          // Calcular el puntaje con atenuación
+          const segmentProximities = matchingTags.map((tag) => tagScoresMap.get(tag.name) || 0)
+
+          const segmentScore = Math.sqrt(
+            segmentProximities.reduce((sum, proximity) => sum + proximity, 0)
+          ) // Usar raíz cuadrada como atenuación
+          segmentScores.push(segmentScore)
+        }
+      }
+
+      // Calcular el puntaje total
+      const totalScore = segmentScores.reduce((sum, score) => sum + score, 0)
+
+      return {
+        photo,
+        tagScore: hasInvalidNotTag ? -1 : totalScore, // Penalización absoluta si hay tags en NOT
+        matchedSegments,
+        totalSegments,
+      }
     })
 
-    // Ordenar por puntaje en orden descendente
-    return resultsWithScores.sort((a, b) => b.tagScore - a.tagScore)
+    // Ordenar fotos priorizando cobertura lógica y luego puntaje
+    resultsWithScores.sort((a, b) => {
+      // Priorizar fotos que cumplen todos los segmentos
+      const aCompleteMatch = a.matchedSegments === a.totalSegments
+      const bCompleteMatch = b.matchedSegments === b.totalSegments
+
+      if (aCompleteMatch && !bCompleteMatch) return -1
+      if (!aCompleteMatch && bCompleteMatch) return 1
+
+      // Penalizar fotos con tags del segmento NOT
+      if (a.tagScore === -1 && b.tagScore !== -1) return 1
+      if (a.tagScore !== -1 && b.tagScore === -1) return -1
+
+      // Si ambos cumplen o no cumplen, ordenar por puntaje
+      return b.tagScore - a.tagScore
+    })
+
+    // Retornar las fotos con sus puntajes
+    return resultsWithScores
+      .filter(({ tagScore }) => tagScore !== -1) // Excluir fotos penalizadas por NOT
+      .map(({ photo, tagScore }) => ({ photo, tagScore }))
   }
 
   // Dada una foto saca sus tags relevantes a partir de una partición de la query lógica
-  public async getTagsForLogicalQuery(
-    photo,
-    query,
-    similarityThreshold: number = 0.2,
-    limitPerSegment: number = 8
-  ) {
-    // Dividir la consulta en segmentos separados por operadores
-    const segments = query.split(/\b(AND|OR|NOT)\b/).map((s) => s.trim())
-    const tagsSet = new Set<any>() // Usar un Set para evitar duplicados
-    const promises: Promise<any>[] = []
-
-    for (const segment of segments) {
-      // Ignorar los operadores
-      if (['AND', 'OR', 'NOT'].includes(segment)) {
-        continue
-      }
-
-      // Procesar el segmento completo (incluyendo términos separados por comas)
-      promises.push(
-        (async () => {
-          const { embeddings } = await this.modelsService.getEmbeddings([segment])
-          const similarTags = await this.findSimilarTagToEmbedding(
-            embeddings[0],
-            similarityThreshold,
-            limitPerSegment,
-            'cosine_similarity',
-            photo.tags.map((tag) => tag.id)
-          )
-          similarTags.forEach((tag) => tagsSet.add(tag)) // Agregar tags al Set
-          console.log(`Similar tags to ${segment}: ${similarTags.map((t) => t.name)}`)
-        })()
-      )
-    }
-
-    // Esperar a que se completen todas las promesas
-    await Promise.all(promises)
-
-    return [...tagsSet] // Devolver el Set como un array
-  }
 
   public async getScoredDescPhotos(
     photos: Photo[],
@@ -634,13 +511,13 @@ export default class EmbeddingsService {
   @MeasureExecutionTime
   public async getSemanticScoredPhotosLogical(
     photos: Photo[],
-    enrichmentQuery: { query: string }
+    enrichedQuery: string
   ): Promise<ChunkedPhoto[] | undefined> {
     const weights = {
       tags: 1.0,
     }
 
-    const scoredTagsPhotos = await this.getScoredTagsPhotosLogical(photos, enrichmentQuery.query)
+    const scoredTagsPhotos = await this.getScoredTagsPhotosLogical(photos, enrichedQuery)
 
     const tagScoresMap = new Map(scoredTagsPhotos.map((item) => [item.photo.id, item.tagScore]))
 
@@ -694,91 +571,19 @@ export default class EmbeddingsService {
     return Promise.all(promises)
   }
 
-  /////////////////////////////////
-
-  private projectOntoDirection(termEmbedding: number[], direction: number[]): number {
-    const dotProduct = termEmbedding.reduce((sum, val, i) => sum + val * direction[i], 0)
-    const directionMagnitude = Math.sqrt(direction.reduce((sum, val) => sum + val ** 2, 0))
-
-    return dotProduct / directionMagnitude // Proyección escalar
-  }
-
-  private async calculateGeneralityDirection(partitionTerms: string[]): Promise<number[]> {
-    const embeddings = await Promise.all(partitionTerms.map((term) => this.getEmbedding(term)))
-
-    // Asegurarnos de que no haya valores nulos
-    if (embeddings.some((e) => !e)) {
-      throw new Error('Error obteniendo embeddings para términos de la partición.')
+  public async getNearChunksFromDesc(photo: Photo, query: string, threshold: number = 0.1) {
+    if (!photo.descriptionChunks.length) {
+      await this.analyzerService.processDesc(photo.description, photo.id)
     }
-
-    // Dirección de generalidad: más general - más específico
-    const generalEmbedding = embeddings[embeddings.length - 1]
-    const specificEmbedding = embeddings[0]
-
-    return generalEmbedding.map((val, i) => val - specificEmbedding[i])
-  }
-
-  private async determinePartition(
-    term: string,
-    partitions: Record<string, string[]>
-  ): Promise<string> {
-    const termEmbedding = await this.getEmbedding(term)
-    if (!termEmbedding) {
-      throw new Error(`No se encontró embedding para el término: ${term}`)
-    }
-
-    let closestPartition = ''
-    let highestSimilarity = -Infinity
-
-    for (const [partitionKey, partitionTerms] of Object.entries(partitions)) {
-      const keyEmbedding = await this.getEmbedding(partitionKey)
-      if (!keyEmbedding) {
-        throw new Error(`No se encontró embedding para la clave de partición: ${partitionKey}`)
-      }
-
-      const similarity = this.projectOntoDirection(termEmbedding, keyEmbedding)
-      if (similarity > highestSimilarity) {
-        highestSimilarity = similarity
-        closestPartition = partitionKey
-      }
-    }
-
-    return closestPartition
-  }
-
-  public async compareGeneralityWithDirection(
-    term: string,
-    texts: string[]
-  ): Promise<Record<string, number>> {
-    // Determinar la partición más cercana
-    const closestPartition = await this.determinePartition(term, partitions)
-    const partitionTerms = partitions[closestPartition]
-
-    // Calcular la dirección de generalidad
-    const direction = await this.calculateGeneralityDirection(partitionTerms)
-
-    // Obtener embedding del término principal
-    const termEmbedding = await this.getEmbedding(term)
-    if (!termEmbedding) {
-      throw new Error(`No se encontró embedding para el término: ${term}`)
-    }
-
-    // Proyectar término principal en la dirección
-    const termProjection = this.projectOntoDirection(termEmbedding, direction)
-
-    // Evaluar cada texto
-    const results: Record<string, number> = {}
-    for (const text of texts) {
-      const textEmbedding = await this.getEmbedding(text)
-      if (!textEmbedding) {
-        throw new Error(`No se encontró embedding para el texto: ${text}`)
-      }
-
-      const textProjection = this.projectOntoDirection(textEmbedding, direction)
-      results[text] = textProjection
-      results[term] = termProjection
-    }
-
-    return Object.fromEntries(Object.entries(results).sort(([, a], [, b]) => b - a))
+    const similarChunks = await this.findSimilarChunksToText(
+      query,
+      threshold,
+      5,
+      'cosine_similarity',
+      photo
+    )
+    return similarChunks.map((ch) => {
+      return { proximity: ch.proximity, text_chunk: ch.chunk }
+    })
   }
 }

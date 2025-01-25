@@ -208,31 +208,31 @@ export default class AnalyzerService {
     }
   }
 
-  public findTagsWithSimilarWords(tag: string, tagList: string[]) {
-    const STOPWORDS = ['at', 'in', 'on', 'the', 'and', 'or', 'but', 'a', 'an', 'of', 'for', 'to']
+  // public findTagsWithSimilarWords(tag: string, tagList: string[]) {
+  //   const STOPWORDS = ['at', 'in', 'on', 'the', 'and', 'or', 'but', 'a', 'an', 'of', 'for', 'to']
 
-    // Helper function to lemmatize and filter words
-    function lemmatizeAndFilter(text: string) {
-      const words = text
-        .toLowerCase()
-        .split(/\W+/) // Split on non-word characters
-        .filter((word) => word && !STOPWORDS.includes(word)) // Remove stopwords
+  //   // Helper function to lemmatize and filter words
+  //   function lemmatizeAndFilter(text: string) {
+  //     const words = text
+  //       .toLowerCase()
+  //       .split(/\W+/) // Split on non-word characters
+  //       .filter((word) => word && !STOPWORDS.includes(word)) // Remove stopwords
 
-      return words.map((word) => lemmatizer.stem(word))
-    }
+  //     return words.map((word) => lemmatizer.stem(word))
+  //   }
 
-    // Lemmatize and filter the input tag
-    const lemmatizedTagWords = lemmatizeAndFilter(tag)
+  //   // Lemmatize and filter the input tag
+  //   const lemmatizedTagWords = lemmatizeAndFilter(tag)
 
-    // Find tags with at least 50% overlapping lemmatized words in both directions
-    return tagList.filter((candidateTag) => {
-      const candidateWords = lemmatizeAndFilter(candidateTag)
-      const matchCount = candidateWords.filter((word) => lemmatizedTagWords.includes(word)).length
-      const forwardMatch = matchCount / lemmatizedTagWords.length >= 0.5
-      const backwardMatch = matchCount / candidateWords.length >= 0.5
-      return forwardMatch && backwardMatch
-    })
-  }
+  //   // Find tags with at least 50% overlapping lemmatized words in both directions
+  //   return tagList.filter((candidateTag) => {
+  //     const candidateWords = lemmatizeAndFilter(candidateTag)
+  //     const matchCount = candidateWords.filter((word) => lemmatizedTagWords.includes(word)).length
+  //     const forwardMatch = matchCount / lemmatizedTagWords.length >= 0.5
+  //     const backwardMatch = matchCount / candidateWords.length >= 0.5
+  //     return forwardMatch && backwardMatch
+  //   })
+  // }
 
   @MeasureExecutionTime
   public async addMetadata(metadata: { id: string; [key: string]: any }[]) {
