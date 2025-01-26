@@ -326,7 +326,7 @@ Your response must adapt to the type of query, prioritizing semantic precision a
 #### Example 6 (logicaly structured):
 **Input**:
 {
-  "query": "photos with kids playing and girls painting"
+  "query": "photos with kids playing AND girls painting"
 }
 **Output**:
 {

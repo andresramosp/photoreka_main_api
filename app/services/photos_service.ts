@@ -430,7 +430,9 @@ export default class PhotosService {
       enrichmentResult.type == 'logical'
         ? 'getSemanticScoredPhotosLogical'
         : 'getSemanticScoredPhotos'
-    const nearPhotos = await this.embeddingsService[method](photos, enrichmentResult.enriched)
+    const nearPhotos = await this.embeddingsService[method](photos, enrichmentResult.clear)
+    //  enrichmentResult.enriched: TODO: ver si merece la pena pasar la enriched, y si se hace, como tratar las comas, porque
+    // no matchea igual de bien varios terminos que por separado
 
     if (embeddingsOnly) {
       return {

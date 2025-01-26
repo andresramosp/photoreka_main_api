@@ -6,6 +6,9 @@ import ModelsService from './models_service.js'
 import Photo from '#models/photo'
 import NodeCache from 'node-cache'
 import MeasureExecutionTime from '../decorators/measureExecutionTime.js'
+import { createRequire } from 'module'
+const require = createRequire(import.meta.url)
+const pluralize = require('pluralize')
 
 const cache = new NodeCache({ stdTTL: 3600 })
 
@@ -546,57 +549,51 @@ export default class EmbeddingsService {
     description: string,
     similarityThreshold: number = 0.3
   ): Promise<{ photo: Photo; tagScore: number }[]> {
-    // Detectar si es una descripción segmentada con '|'
     const isSimpleDescription = !description.includes('|')
     const segments = isSimpleDescription
-      ? description.split(/\b(AND|OR|NOT)\b/).map((s) => s.trim()) // Estructura lógica
-      : description.split('|').map((segment) => segment.trim()) // Todos en AND
+      ? description.split(/\b(AND|OR|NOT)\b/).map((s) => s.trim())
+      : description.split('|').map((segment) => segment.trim())
 
-    // Inicializar estructura lógica para operadores
-    const results: Record<'AND' | 'OR' | 'NOT', Map<string, number>> = {
-      AND: new Map(),
-      OR: new Map(),
-      NOT: new Map(),
-    }
+    const results: Record<String, Map<string, number>> = {}
 
-    // Lista de segmentos lógicos procesados
+    const allTags = await Tag.all() // TODO: solo los que contengan alguna palabra de los terms
+    let allRelevantTags: string[] = []
+
     const logicalSegments: Array<{ segment: string; operator: 'AND' | 'OR' | 'NOT' }> = []
 
-    // Procesar cada segmento para obtener tags similares
     await Promise.all(
       segments.map(async (segment, index) => {
-        if (['AND', 'OR', 'NOT'].includes(segment)) return // Saltar operadores
+        if (['AND', 'OR', 'NOT'].includes(segment)) return
 
         const operator =
           isSimpleDescription && index > 0 && ['AND', 'OR', 'NOT'].includes(segments[index - 1])
-            ? segments[index - 1] // Operador explícito
-            : 'AND' // Operador predeterminado para casos con '|'
+            ? segments[index - 1]
+            : 'AND'
 
-        logicalSegments.push({ segment, operator }) // Guardar segmento lógico
+        logicalSegments.push({ segment, operator })
 
-        const matchingTags = await this.findSimilarTagsToText(
+        const { matchingTags } = await this.findMatchingTagsForTerm(
           segment,
-          similarityThreshold,
+          allTags,
+          0.4,
           100,
-          'cosine_similarity'
+          true
         )
 
-        // Guardar los tags en el operador correspondiente
+        results[segment] = results[segment] || new Map<string, number>()
+
         matchingTags.forEach((tag: any) => {
-          results[operator].set(tag.name, tag.proximity)
+          results[segment].set(tag.name, tag.proximity)
         })
+        allRelevantTags = [...allRelevantTags, ...matchingTags.map((t) => t.name)]
       })
     )
 
-    // Calcular el total de segmentos relevantes (excluyendo NOT)
     const totalSegments = logicalSegments.filter(({ operator }) => operator !== 'NOT').length
 
-    // Filtrar fotos relevantes: deben cumplir al menos un segmento AND u OR
     const relevantPhotos = photos.filter((photo) => {
-      const hasValidTags = photo.tags?.some(
-        (tag) => results.AND.has(tag.name) || results.OR.has(tag.name)
-      )
-      return hasValidTags || results.AND.size === 0 // Si no hay AND, basta con OR
+      const hasValidTags = photo.tags?.some((tag) => allRelevantTags.includes(tag.name))
+      return hasValidTags
     })
 
     // Calcular puntajes para cada foto
@@ -605,33 +602,31 @@ export default class EmbeddingsService {
       let matchedSegments = 0
       let hasInvalidNotTag = false
 
+      if (photo.id == '51ab3269-93d9-4d08-bad0-82f6b0251f09') {
+        console.log()
+      }
+
       // Evaluar cada segmento lógico
       for (const { segment, operator } of logicalSegments) {
-        const tagMap = results[operator]
+        const tagMap = results[segment]
         const matchingTags = photo.tags?.filter((tag) => tagMap.has(tag.name)) || []
 
         if (matchingTags.length > 0) {
           const proximities = matchingTags.map((tag) => {
-            const proximity = tagMap.get(tag.name) || 0
-            return proximity >= 0.6 ? Math.exp(proximity - 0.5) : proximity // Exponencial si >= 0.6
+            return tagMap.get(tag.name) || 0
           })
+          // TODO: ver como bonificar un poco tener varios tags, y no solo mirar MAX
+          const maxProximity = Math.max(...proximities)
+          if (maxProximity > 0.8) matchedSegments++
 
-          // Sumar puntuación con atenuación (raíz cuadrada)
-          const segmentScore = Math.sqrt(proximities.reduce((sum, proximity) => sum + proximity, 0))
-
-          if (operator === 'NOT') {
-            hasInvalidNotTag = hasInvalidNotTag || segmentScore > 0 // Penalización
-          } else {
-            totalScore += segmentScore
-            if (operator === 'AND') matchedSegments++ // Contar segmentos AND
-          }
+          totalScore += maxProximity
         }
       }
 
+      // Si matchea n segmentos, le damos n de score. Si no, el totalScore, que será maximo 0.9 por segmento, siempre menos.
       return {
         photo,
-        tagScore: hasInvalidNotTag ? -1 : totalScore,
-        matchedSegments, // Solo útil para priorización interna
+        tagScore: matchedSegments == totalSegments ? totalSegments : totalScore,
       }
     })
 
@@ -643,24 +638,77 @@ export default class EmbeddingsService {
 
     // Normalizar los puntajes y ordenar
     return scoredPhotos
-      .map(({ photo, tagScore, matchedSegments }) => ({
+      .map(({ photo, tagScore }) => ({
         photo,
         tagScore: tagScore > 0 ? tagScore / maxScore : 0, // Normalización
-        matchedSegments,
       }))
       .sort((a, b) => {
-        const aCompleteMatch = a.matchedSegments === totalSegments
-        const bCompleteMatch = b.matchedSegments === totalSegments
-
-        if (aCompleteMatch && !bCompleteMatch) return -1
-        if (!aCompleteMatch && bCompleteMatch) return 1
-
         if (a.tagScore === 0 && b.tagScore !== 0) return 1
         if (a.tagScore !== 0 && b.tagScore === 0) return -1
 
         return b.tagScore - a.tagScore // Ordenar por puntaje
       })
       .filter(({ tagScore }) => tagScore > 0) // Excluir fotos penalizadas
+  }
+
+  // Para un termino y una lista de tags, busca posibles matcheos por 1) string comparison, 2) embedding. Con extensive true
+  // no se para al matchear por string sino que añade tambien embeddings. Primer caso para evaluar queries, segundo para sacar
+  // tags afines a un termino, de ambas maneras.
+  public async findMatchingTagsForTerm(term, tags, threshold, limit, extensive = false) {
+    let lematizedTerm = pluralize.singular(term.toLowerCase())
+    let termWordCount = lematizedTerm.split(' ').length // solo tags con igual o menos palabras que el term, para evitar 'red umbrella' -> 'umbrellas' por prox semantica
+
+    let equalOrShorterTags = []
+    for (let tag of tags) {
+      let lematizedTagName = pluralize.singular(tag.name.toLowerCase())
+      if (lematizedTagName.split(' ').length >= termWordCount) {
+        equalOrShorterTags.push(tag)
+      }
+    }
+
+    let matchedTagsByString = equalOrShorterTags
+      .map((t) => pluralize.singular(t.name.toLowerCase()))
+      .filter((lematizedTagName) => {
+        const regex = new RegExp(`\\b${pluralize.singular(lematizedTerm.toLowerCase())}\\b`, 'i')
+        return regex.test(lematizedTagName)
+      })
+
+    let stringMatches = matchedTagsByString.map((tagName) => {
+      return { name: tagName, proximity: 0.9 }
+    })
+
+    if (matchedTagsByString.length && !extensive) {
+      return {
+        matchingTags: stringMatches,
+        method: 'String comparison',
+        lematizedTerm,
+      }
+    }
+
+    let { embeddings } = await this.modelsService.getEmbeddings([lematizedTerm])
+    const matchingResults = await this.findSimilarTagToEmbedding(
+      embeddings[0],
+      threshold,
+      limit,
+      'cosine_similarity',
+      equalOrShorterTags.map((t) => t.id)
+    )
+
+    let semanticMatches = matchingResults.map((tag) => {
+      return { name: tag.name, proximity: tag.proximity }
+    })
+
+    // Combine results and remove duplicates
+    let allMatches = [...stringMatches, ...semanticMatches]
+    let uniqueMatches = allMatches.filter(
+      (match, index, self) => index === self.findIndex((t) => t.name === match.name)
+    )
+
+    return {
+      matchingTags: uniqueMatches,
+      method: extensive ? 'String and Semantic comparison' : 'Semantic proximity',
+      lematizedTerm,
+    }
   }
 
   private async chunkDescriptions(

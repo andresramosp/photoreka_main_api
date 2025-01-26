@@ -1,6 +1,5 @@
 // @ts-nocheck
 
-import { createRequire } from 'module'
 import {
   SYSTEM_MESSAGE_QUERY_ENRICHMENT,
   SYSTEM_MESSAGE_QUERY_REQUIRE_SOURCE,
@@ -13,8 +12,6 @@ import {
 import AnalyzerService from './analyzer_service.js'
 import EmbeddingsService from './embeddings_service.js'
 import ModelsService from './models_service.js'
-const require = createRequire(import.meta.url)
-const pluralize = require('pluralize')
 
 export default class QueryService {
   public modelsService: ModelsService = null
@@ -104,11 +101,12 @@ export default class QueryService {
     }
 
     for (let { term, operator } of termsWithOperators) {
-      let { matchingTags, method, lematizedTerm } = await this.findMatchingTagsForTerm(term, photo)
+      let { matchingTags, method, lematizedTerm } =
+        await this.embeddingsService.findMatchingTagsForTerm(term, photo.tags, 0.85, 5)
 
       if (matchingTags.length > 0) {
         console.log(
-          `[evaluateQueryLogic]: Found matching tags for '${term}' [${lematizedTerm}] -> '${matchingTags}' by ${method} `
+          `[evaluateQueryLogic]: Found matching tags for '${term}' [${lematizedTerm}] -> '${matchingTags.map((mt) => mt.name)}' by ${method} `
         )
         if (operator === 'NOT') {
           hasNotMatched = true
@@ -123,45 +121,6 @@ export default class QueryService {
     }
 
     return allMatched
-  }
-
-  private async findMatchingTagsForTerm(term, photo) {
-    let lematizedTerm = pluralize.singular(term.toLowerCase())
-    let termWordCount = lematizedTerm.split(' ').length // solo tags con igual o menos palabras que el term, para evitar 'red umbrella' -> 'umbrellas' por prox semantica
-
-    let equalOrShorterTags = []
-    for (let tag of photo.tags) {
-      let lematizedTagName = pluralize.singular(tag.name.toLowerCase())
-      if (lematizedTagName.split(' ').length >= termWordCount) {
-        equalOrShorterTags.push(tag)
-      }
-    }
-
-    let matchedTagsByString = equalOrShorterTags
-      .map((t) => pluralize.singular(t.name.toLowerCase()))
-      .filter((lematizedTagName) => {
-        const regex = new RegExp(`\\b${pluralize.singular(lematizedTerm.toLowerCase())}\\b`, 'i')
-        return regex.test(lematizedTagName)
-      })
-
-    if (matchedTagsByString.length) {
-      return { matchingTags: matchedTagsByString, method: 'String comparison', lematizedTerm }
-    } else {
-      let { embeddings } = await this.modelsService.getEmbeddings([lematizedTerm])
-      const matchingResults = await this.embeddingsService.findSimilarTagToEmbedding(
-        embeddings[0],
-        0.85,
-        5,
-        'cosine_similarity',
-        equalOrShorterTags.map((t) => t.id)
-      )
-
-      return {
-        matchingTags: matchingResults.map((tag) => tag.name),
-        method: 'Semantic proximity',
-        lematizedTerm,
-      }
-    }
   }
 
   public async getTagsForLogicalQuery(
