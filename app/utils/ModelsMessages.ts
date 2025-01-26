@@ -254,7 +254,7 @@ Queries will vary in specificity and intent, such as:
 Your response must adapt to the type of query, prioritizing semantic precision and avoiding overly general expansions that could introduce irrelevant results:
 
 - For highly specific and precise queries: 1) set clear field with the query without prefixes (“photos of...”... "show me images of..."), 2) set enriched field with original, unchanged query, 3) set type as 'specific'
-- For vague/conceptual queries: 1) set clear field with the query without prefixes ("pictures of...”... "show me images of...") 2) set enriched field with terms that are synonymous 3) set 'type' as 'vague'
+- For vague/conceptual queries: 1) set clear field with the query without prefixes ("pictures of...”... "show me images of...") 2) set enriched field with terms that are synonymous, segmentating different semantic fields with |, if many 3) set 'type' as 'vague'
 - For logically structured queries (... and ... or ... not...): 1) set clear field with structured logical (AND|OR|NOT) segments, 2) set enriched field with those segments enriched with synonymous 3) set 'type' as 'logical'
 
 ### Input format:
@@ -281,12 +281,12 @@ Your response must adapt to the type of query, prioritizing semantic precision a
 #### Example 2 (vague query):
 **Input**:
 {
-  "query": "photos with children playing"
+  "query": "photos with children playing at the park"
 }
 **Output**:
 {
-  "clear": "children playing"
-  "enriched": "children playing, kids enjoying, children having fun, children playing sports"
+  "clear": "children playing at the park"
+  "enriched": "children playing, kids enjoying, children having fun | park, public park, playground"
   "type": "vague"
 }
 #### Example 3 (vague query):

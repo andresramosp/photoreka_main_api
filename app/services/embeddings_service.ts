@@ -36,7 +36,7 @@ export default class EmbeddingsService {
     this.modelsService = new ModelsService()
   }
 
-  @MeasureExecutionTime
+  // @MeasureExecutionTime
   public async findSimilarTagsToText(
     term: string,
     threshold: number = 0.3,
@@ -57,7 +57,7 @@ export default class EmbeddingsService {
     return result
   }
 
-  @MeasureExecutionTime
+  // @MeasureExecutionTime
   public async findSimilarChunksToText(
     term: string,
     threshold: number = 0.3,
@@ -72,7 +72,7 @@ export default class EmbeddingsService {
     return this.findSimilarChunkToEmbedding(embeddings[0], threshold, limit, metric, photo)
   }
 
-  @MeasureExecutionTime
+  // @MeasureExecutionTime
   public async findSimilarTagsToTag(
     tag: Tag,
     threshold: number = 0.3,
@@ -122,7 +122,7 @@ export default class EmbeddingsService {
 
   // Con photo, saca las proximidades de sus chunks con el termino,
   // sin foto, busca en todos los chunks de descripciones
-  @MeasureExecutionTime
+  // @MeasureExecutionTime
   public async findSimilarChunkToEmbedding(
     embedding: number[],
     threshold: number = 0.3,
@@ -183,7 +183,7 @@ export default class EmbeddingsService {
     return result.rows
   }
 
-  @MeasureExecutionTime
+  // @MeasureExecutionTime
   public async findSimilarTagToEmbedding(
     embedding: number[],
     threshold: number = 0.3,
@@ -251,178 +251,180 @@ export default class EmbeddingsService {
     return embeddings[0] || null
   }
 
-  public async getScoredTagsPhotos(
-    photos: Photo[],
-    description: string,
-    similarityThreshold: number = 0.2
-  ): Promise<{ photo: Photo; tagScore: number }[]> {
-    const matchingTags = await this.findSimilarTagsToText(
-      description,
-      similarityThreshold,
-      500, // Limitar la cantidad de tags considerados
-      'cosine_similarity'
-    )
+  // public async getScoredTagsPhotos(
+  //   photos: Photo[],
+  //   description: string,
+  //   similarityThreshold: number = 0.2
+  // ): Promise<{ photo: Photo; tagScore: number }[]> {
+  //   const matchingTags = await this.findSimilarTagsToText(
+  //     description,
+  //     similarityThreshold,
+  //     500, // Limitar la cantidad de tags considerados
+  //     'cosine_similarity'
+  //   )
 
-    const matchingTagMap: Map<string, number> = new Map(
-      matchingTags.map((tag: any) => [tag.name, tag.proximity])
-    )
+  //   const matchingTagMap: Map<string, number> = new Map(
+  //     matchingTags.map((tag: any) => [tag.name, tag.proximity])
+  //   )
 
-    const relevantPhotos = photos.filter((photo) =>
-      photo.tags?.some((tag) => matchingTagMap.has(tag.name))
-    )
+  //   const relevantPhotos = photos.filter((photo) =>
+  //     photo.tags?.some((tag) => matchingTagMap.has(tag.name))
+  //   )
 
-    const results = relevantPhotos.map((photo) => {
-      const photoMatchingTags = photo.tags?.filter((tag) => matchingTagMap.has(tag.name)) || []
+  //   const results = relevantPhotos.map((photo) => {
+  //     const photoMatchingTags = photo.tags?.filter((tag) => matchingTagMap.has(tag.name)) || []
 
-      // Calcula proximidades relevantes con ponderación exponencial
-      const proximities = photoMatchingTags.map((tag) =>
-        Math.exp((matchingTagMap.get(tag.name) || 0) - 0.5)
-      )
+  //     // Calcula proximidades relevantes con ponderación exponencial
+  //     const proximities = photoMatchingTags.map((tag) =>
+  //       Math.exp((matchingTagMap.get(tag.name) || 0) - 0.5)
+  //     )
 
-      // Máximo y media ponderada
-      const maxProximity = Math.max(...proximities, 0)
-      const averageProximity =
-        proximities.reduce((sum, proximity) => sum + proximity, 0) / (proximities.length || 1)
+  //     // Máximo y media ponderada
+  //     const maxProximity = Math.max(...proximities, 0)
+  //     const averageProximity =
+  //       proximities.reduce((sum, proximity) => sum + proximity, 0) / (proximities.length || 1)
 
-      // Score combinado
-      const tagScore = 0.75 * maxProximity + 0.25 * averageProximity
+  //     // Score combinado
+  //     const tagScore = 0.75 * maxProximity + 0.25 * averageProximity
 
-      return { photo, tagScore }
-    })
+  //     return { photo, tagScore }
+  //   })
 
-    return results.sort((a, b) => b.tagScore - a.tagScore)
-  }
+  //   return results.sort((a, b) => b.tagScore - a.tagScore)
+  // }
 
   // A partir de una partición de la query logica saca los tags relevantes y ordena todas las fotos
-  public async getScoredTagsPhotosLogical(
-    photos: Photo[],
-    description: string,
-    similarityThreshold: number = 0.3
-  ): Promise<{ photo: Photo; tagScore: number }[]> {
-    const segments = description.split(/\b(AND|OR|NOT)\b/).map((s) => s.trim())
-    const results: Record<string, any[]> = { AND: [], OR: [], NOT: [] }
-    const promises: Promise<any>[] = []
+  // Da prioridad a fotos con todos los segmmentos matched
+  // Tags repetidos en una misma foto atenuan la suma con raíz cuadrada
+  // public async getScoredTagsPhotosLogical(
+  //   photos: Photo[],
+  //   description: string,
+  //   similarityThreshold: number = 0.3
+  // ): Promise<{ photo: Photo; tagScore: number }[]> {
+  //   const segments = description.split(/\b(AND|OR|NOT)\b/).map((s) => s.trim())
+  //   const results: Record<string, any[]> = { AND: [], OR: [], NOT: [] }
+  //   const promises: Promise<any>[] = []
 
-    // Procesar cada segmento lógico
-    for (let i = 0; i < segments.length; i++) {
-      const segment = segments[i]
-      if (['AND', 'OR', 'NOT'].includes(segment)) continue
+  //   // Procesar cada segmento lógico
+  //   for (let i = 0; i < segments.length; i++) {
+  //     const segment = segments[i]
+  //     if (['AND', 'OR', 'NOT'].includes(segment)) continue
 
-      const operator =
-        segments[i - 1] && ['AND', 'OR', 'NOT'].includes(segments[i - 1]) ? segments[i - 1] : 'AND' // Asume AND como predeterminado
+  //     const operator =
+  //       segments[i - 1] && ['AND', 'OR', 'NOT'].includes(segments[i - 1]) ? segments[i - 1] : 'AND' // Asume AND como predeterminado
 
-      promises.push(
-        (async () => {
-          const { embeddings } = await this.modelsService.getEmbeddings([segment])
-          const similarTags = await this.findSimilarTagToEmbedding(
-            embeddings[0],
-            similarityThreshold,
-            100,
-            'cosine_similarity'
-          )
-          results[operator].push(...similarTags)
-        })()
-      )
-    }
+  //     promises.push(
+  //       (async () => {
+  //         const { embeddings } = await this.modelsService.getEmbeddings([segment])
+  //         const similarTags = await this.findSimilarTagToEmbedding(
+  //           embeddings[0],
+  //           similarityThreshold,
+  //           100,
+  //           'cosine_similarity'
+  //         )
+  //         results[operator].push(...similarTags)
+  //       })()
+  //     )
+  //   }
 
-    await Promise.all(promises)
+  //   await Promise.all(promises)
 
-    // Obtener sets para operadores lógicos
-    const andResults = new Set(results.AND.flat())
-    const orResults = new Set(results.OR.flat())
-    const notResults = new Set(results.NOT.flat())
+  //   // Obtener sets para operadores lógicos
+  //   const andResults = new Set(results.AND.flat())
+  //   const orResults = new Set(results.OR.flat())
+  //   const notResults = new Set(results.NOT.flat())
 
-    // Intersección lógica AND-OR
-    const intersection = [...andResults].filter((tag) => orResults.has(tag) || orResults.size === 0)
+  //   // Intersección lógica AND-OR
+  //   const intersection = [...andResults].filter((tag) => orResults.has(tag) || orResults.size === 0)
 
-    // Normalizar proximidades al rango [0, 1]
-    const proximities = intersection.map((tag) => tag.proximity)
-    const maxProximity = Math.max(...proximities, 1) // Evitar división por 0
-    const tagScoresMap = new Map<string, number>()
+  //   // Normalizar proximidades al rango [0, 1]
+  //   const proximities = intersection.map((tag) => tag.proximity)
+  //   const maxProximity = Math.max(...proximities, 1) // Evitar división por 0
+  //   const tagScoresMap = new Map<string, number>()
 
-    intersection.forEach((tag: any) => {
-      const normalizedProximity = tag.proximity / maxProximity // Normalización
-      tagScoresMap.set(tag.name, normalizedProximity)
-    })
+  //   intersection.forEach((tag: any) => {
+  //     const normalizedProximity = tag.proximity / maxProximity // Normalización
+  //     tagScoresMap.set(tag.name, normalizedProximity)
+  //   })
 
-    // Filtrar fotos relevantes y calcular puntajes
-    const resultsWithScores = photos.map((photo) => {
-      const segmentScores: number[] = [] // Almacena el puntaje por segmento lógico
-      let matchedSegments = 0 // Contador de segmentos matcheados lógicamente
-      const totalSegments = Object.keys(results).filter((key) => key !== 'NOT').length // Número de segmentos sin incluir NOT
-      let hasInvalidNotTag = false // Flag para detectar penalizaciones por NOT
+  //   // Filtrar fotos relevantes y calcular puntajes
+  //   const resultsWithScores = photos.map((photo) => {
+  //     const segmentScores: number[] = [] // Almacena el puntaje por segmento lógico
+  //     let matchedSegments = 0 // Contador de segmentos matcheados lógicamente
+  //     const totalSegments = Object.keys(results).filter((key) => key !== 'NOT').length // Número de segmentos sin incluir NOT
+  //     let hasInvalidNotTag = false // Flag para detectar penalizaciones por NOT
 
-      // Iterar por segmentos lógicos y calcular el puntaje
-      for (const segment of Object.keys(results)) {
-        const matchingTags =
-          photo.tags?.filter((tag) =>
-            results[segment].some((resultTag) => resultTag.name === tag.name)
-          ) || []
+  //     // Iterar por segmentos lógicos y calcular el puntaje
+  //     for (const segment of Object.keys(results)) {
+  //       const matchingTags =
+  //         photo.tags?.filter((tag) =>
+  //           results[segment].some((resultTag) => resultTag.name === tag.name)
+  //         ) || []
 
-        if (segment === 'NOT') {
-          // Detectar si algún tag en NOT tiene proximidad >= 0.6
-          const maxProximity = Math.max(
-            ...matchingTags.map((tag) => tagScoresMap.get(tag.name) || 0)
-          )
-          if (maxProximity >= 0.6) {
-            hasInvalidNotTag = true // Penalizar la foto
-          }
-          continue // Saltar el resto de la lógica para NOT
-        }
+  //       if (segment === 'NOT') {
+  //         // Detectar si algún tag en NOT tiene proximidad >= 0.6
+  //         const maxProximity = Math.max(
+  //           ...matchingTags.map((tag) => tagScoresMap.get(tag.name) || 0)
+  //         )
+  //         if (maxProximity >= 0.6) {
+  //           hasInvalidNotTag = true // Penalizar la foto
+  //         }
+  //         continue // Saltar el resto de la lógica para NOT
+  //       }
 
-        if (matchingTags.length > 0) {
-          // Verificar si el segmento matchea lógicamente (proximidad >= 0.6)
-          const maxProximity = Math.max(
-            ...matchingTags.map((tag) => tagScoresMap.get(tag.name) || 0)
-          )
+  //       if (matchingTags.length > 0) {
+  //         // Verificar si el segmento matchea lógicamente (proximidad >= 0.6)
+  //         const maxProximity = Math.max(
+  //           ...matchingTags.map((tag) => tagScoresMap.get(tag.name) || 0)
+  //         )
 
-          if (maxProximity >= 0.6) {
-            matchedSegments++ // Incrementar si el segmento matchea
-          }
+  //         if (maxProximity >= 0.6) {
+  //           matchedSegments++ // Incrementar si el segmento matchea
+  //         }
 
-          // Calcular el puntaje con atenuación
-          const segmentProximities = matchingTags.map((tag) => tagScoresMap.get(tag.name) || 0)
+  //         // Calcular el puntaje con atenuación
+  //         const segmentProximities = matchingTags.map((tag) => tagScoresMap.get(tag.name) || 0)
 
-          const segmentScore = Math.sqrt(
-            segmentProximities.reduce((sum, proximity) => sum + proximity, 0)
-          ) // Usar raíz cuadrada como atenuación
-          segmentScores.push(segmentScore)
-        }
-      }
+  //         const segmentScore = Math.sqrt(
+  //           segmentProximities.reduce((sum, proximity) => sum + proximity, 0)
+  //         ) // Usar raíz cuadrada como atenuación
+  //         segmentScores.push(segmentScore)
+  //       }
+  //     }
 
-      // Calcular el puntaje total
-      const totalScore = segmentScores.reduce((sum, score) => sum + score, 0)
+  //     // Calcular el puntaje total
+  //     const totalScore = segmentScores.reduce((sum, score) => sum + score, 0)
 
-      return {
-        photo,
-        tagScore: hasInvalidNotTag ? -1 : totalScore, // Penalización absoluta si hay tags en NOT
-        matchedSegments,
-        totalSegments,
-      }
-    })
+  //     return {
+  //       photo,
+  //       tagScore: hasInvalidNotTag ? -1 : totalScore, // Penalización absoluta si hay tags en NOT
+  //       matchedSegments,
+  //       totalSegments,
+  //     }
+  //   })
 
-    // Ordenar fotos priorizando cobertura lógica y luego puntaje
-    resultsWithScores.sort((a, b) => {
-      // Priorizar fotos que cumplen todos los segmentos
-      const aCompleteMatch = a.matchedSegments === a.totalSegments
-      const bCompleteMatch = b.matchedSegments === b.totalSegments
+  //   // Ordenar fotos priorizando cobertura lógica y luego puntaje
+  //   resultsWithScores.sort((a, b) => {
+  //     // Priorizar fotos que cumplen todos los segmentos
+  //     const aCompleteMatch = a.matchedSegments === a.totalSegments
+  //     const bCompleteMatch = b.matchedSegments === b.totalSegments
 
-      if (aCompleteMatch && !bCompleteMatch) return -1
-      if (!aCompleteMatch && bCompleteMatch) return 1
+  //     if (aCompleteMatch && !bCompleteMatch) return -1
+  //     if (!aCompleteMatch && bCompleteMatch) return 1
 
-      // Penalizar fotos con tags del segmento NOT
-      if (a.tagScore === -1 && b.tagScore !== -1) return 1
-      if (a.tagScore !== -1 && b.tagScore === -1) return -1
+  //     // Penalizar fotos con tags del segmento NOT
+  //     if (a.tagScore === -1 && b.tagScore !== -1) return 1
+  //     if (a.tagScore !== -1 && b.tagScore === -1) return -1
 
-      // Si ambos cumplen o no cumplen, ordenar por puntaje
-      return b.tagScore - a.tagScore
-    })
+  //     // Si ambos cumplen o no cumplen, ordenar por puntaje
+  //     return b.tagScore - a.tagScore
+  //   })
 
-    // Retornar las fotos con sus puntajes
-    return resultsWithScores
-      .filter(({ tagScore }) => tagScore !== -1) // Excluir fotos penalizadas por NOT
-      .map(({ photo, tagScore }) => ({ photo, tagScore }))
-  }
+  //   // Retornar las fotos con sus puntajes
+  //   return resultsWithScores
+  //     .filter(({ tagScore }) => tagScore !== -1) // Excluir fotos penalizadas por NOT
+  //     .map(({ photo, tagScore }) => ({ photo, tagScore }))
+  // }
 
   // Dada una foto saca sus tags relevantes a partir de una partición de la query lógica
 
@@ -480,7 +482,7 @@ export default class EmbeddingsService {
     }
 
     const [scoredTagsPhotos, scoredDescPhotosChunked] = await Promise.all([
-      this.getScoredTagsPhotos(photos, description),
+      this.getScoredTagsByQuerySegments(photos, description),
       this.getScoredDescPhotos(photos, description),
     ])
 
@@ -517,7 +519,7 @@ export default class EmbeddingsService {
       tags: 1.0,
     }
 
-    const scoredTagsPhotos = await this.getScoredTagsPhotosLogical(photos, enrichedQuery)
+    const scoredTagsPhotos = await this.getScoredTagsByQuerySegments(photos, enrichedQuery)
 
     const tagScoresMap = new Map(scoredTagsPhotos.map((item) => [item.photo.id, item.tagScore]))
 
@@ -537,6 +539,117 @@ export default class EmbeddingsService {
       .sort((a, b) => b.totalScore - a.totalScore)
 
     return filteredAndSortedPhotos
+  }
+
+  public async getScoredTagsByQuerySegments(
+    photos: Photo[],
+    description: string,
+    similarityThreshold: number = 0.3
+  ): Promise<{ photo: Photo; tagScore: number }[]> {
+    // Detectar si es una descripción segmentada con '|'
+    const isSimpleDescription = !description.includes('|')
+    const segments = isSimpleDescription
+      ? description.split(/\b(AND|OR|NOT)\b/).map((s) => s.trim()) // Estructura lógica
+      : description.split('|').map((segment) => segment.trim()) // Todos en AND
+
+    // Inicializar estructura lógica para operadores
+    const results: Record<'AND' | 'OR' | 'NOT', Map<string, number>> = {
+      AND: new Map(),
+      OR: new Map(),
+      NOT: new Map(),
+    }
+
+    // Lista de segmentos lógicos procesados
+    const logicalSegments: Array<{ segment: string; operator: 'AND' | 'OR' | 'NOT' }> = []
+
+    // Procesar cada segmento para obtener tags similares
+    await Promise.all(
+      segments.map(async (segment, index) => {
+        if (['AND', 'OR', 'NOT'].includes(segment)) return // Saltar operadores
+
+        const operator =
+          isSimpleDescription && index > 0 && ['AND', 'OR', 'NOT'].includes(segments[index - 1])
+            ? segments[index - 1] // Operador explícito
+            : 'AND' // Operador predeterminado para casos con '|'
+
+        logicalSegments.push({ segment, operator }) // Guardar segmento lógico
+
+        const matchingTags = await this.findSimilarTagsToText(
+          segment,
+          similarityThreshold,
+          500,
+          'cosine_similarity'
+        )
+
+        // Guardar los tags en el operador correspondiente
+        matchingTags.forEach((tag: any) => {
+          results[operator].set(tag.name, tag.proximity)
+        })
+      })
+    )
+
+    // Calcular el total de segmentos relevantes (excluyendo NOT)
+    const totalSegments = logicalSegments.filter(({ operator }) => operator !== 'NOT').length
+
+    // Filtrar fotos relevantes: deben cumplir al menos un segmento AND u OR
+    const relevantPhotos = photos.filter((photo) => {
+      const hasValidTags = photo.tags?.some(
+        (tag) => results.AND.has(tag.name) || results.OR.has(tag.name)
+      )
+      return hasValidTags || results.AND.size === 0 // Si no hay AND, basta con OR
+    })
+
+    // Calcular puntajes para cada foto
+    const scoredPhotos = relevantPhotos.map((photo) => {
+      let totalScore = 0
+      let matchedSegments = 0
+      let hasInvalidNotTag = false
+
+      // Evaluar cada segmento lógico
+      for (const { segment, operator } of logicalSegments) {
+        const tagMap = results[operator]
+        const matchingTags = photo.tags?.filter((tag) => tagMap.has(tag.name)) || []
+
+        if (matchingTags.length > 0) {
+          const proximities = matchingTags.map((tag) => {
+            const proximity = tagMap.get(tag.name) || 0
+            return proximity >= 0.6 ? Math.exp(proximity - 0.5) : proximity // Exponencial si >= 0.6
+          })
+
+          // Sumar puntuación con atenuación (raíz cuadrada)
+          const segmentScore = Math.sqrt(proximities.reduce((sum, proximity) => sum + proximity, 0))
+
+          if (operator === 'NOT') {
+            hasInvalidNotTag = hasInvalidNotTag || segmentScore > 0 // Penalización
+          } else {
+            totalScore += segmentScore
+            if (operator === 'AND') matchedSegments++ // Contar segmentos AND
+          }
+        }
+      }
+
+      return {
+        photo,
+        tagScore: hasInvalidNotTag ? -1 : totalScore,
+        matchedSegments, // Solo útil para priorización interna
+      }
+    })
+
+    // Ordenar fotos priorizando las que cumplen todos los segmentos AND y luego por puntaje
+    return scoredPhotos
+      .sort((a, b) => {
+        const aCompleteMatch = a.matchedSegments === totalSegments
+        const bCompleteMatch = b.matchedSegments === totalSegments
+
+        if (aCompleteMatch && !bCompleteMatch) return -1
+        if (!aCompleteMatch && bCompleteMatch) return 1
+
+        if (a.tagScore === -1 && b.tagScore !== -1) return 1
+        if (a.tagScore !== -1 && b.tagScore === -1) return -1
+
+        return b.tagScore - a.tagScore // Ordenar por puntaje
+      })
+      .filter(({ tagScore }) => tagScore !== -1) // Excluir fotos penalizadas
   }
 
   private async chunkDescriptions(
