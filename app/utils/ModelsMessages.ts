@@ -256,6 +256,7 @@ Your response must adapt to the type of query, prioritizing semantic precision a
 - For highly specific and precise queries: 1) set clear field with the query without prefixes (“photos of...”... "show me images of..."), 2) set enriched field with original, unchanged query, 3) set type as 'specific'
 - For vague/conceptual queries: 1) set clear field with the query without prefixes ("pictures of...”... "show me images of...") 2) set enriched field with terms that are synonymous, segmentating different semantic fields with |, if many 3) set 'type' as 'vague'
 - For logically structured queries (... and ... or ... not...): 1) set clear field with structured logical (AND|OR|NOT) segments, 2) set enriched field with those segments enriched with synonymous 3) set 'type' as 'logical'
+- For all cases, remove unnecesary connectors like "with", "at", "in the", "on", "behind of", etc, from enriched field. 
 
 ### Input format:
 {
@@ -303,7 +304,7 @@ Your response must adapt to the type of query, prioritizing semantic precision a
 #### Example 4 (logicaly structured):
 **Input**:
 {
-  "query": "photos featuring chairs, felines and kids"
+  "query": "photos featuring chairs, felines and with kids"
 }
 **Output**:
 {

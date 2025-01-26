@@ -577,7 +577,7 @@ export default class EmbeddingsService {
         const matchingTags = await this.findSimilarTagsToText(
           segment,
           similarityThreshold,
-          500,
+          100,
           'cosine_similarity'
         )
 
@@ -635,8 +635,19 @@ export default class EmbeddingsService {
       }
     })
 
-    // Ordenar fotos priorizando las que cumplen todos los segmentos AND y luego por puntaje
+    // Obtener el puntaje máximo para normalización
+    const maxScore = Math.max(
+      ...scoredPhotos.map(({ tagScore }) => (tagScore > 0 ? tagScore : 0)),
+      1
+    ) // Evitar división por 0
+
+    // Normalizar los puntajes y ordenar
     return scoredPhotos
+      .map(({ photo, tagScore, matchedSegments }) => ({
+        photo,
+        tagScore: tagScore > 0 ? tagScore / maxScore : 0, // Normalización
+        matchedSegments,
+      }))
       .sort((a, b) => {
         const aCompleteMatch = a.matchedSegments === totalSegments
         const bCompleteMatch = b.matchedSegments === totalSegments
@@ -644,12 +655,12 @@ export default class EmbeddingsService {
         if (aCompleteMatch && !bCompleteMatch) return -1
         if (!aCompleteMatch && bCompleteMatch) return 1
 
-        if (a.tagScore === -1 && b.tagScore !== -1) return 1
-        if (a.tagScore !== -1 && b.tagScore === -1) return -1
+        if (a.tagScore === 0 && b.tagScore !== 0) return 1
+        if (a.tagScore !== 0 && b.tagScore === 0) return -1
 
         return b.tagScore - a.tagScore // Ordenar por puntaje
       })
-      .filter(({ tagScore }) => tagScore !== -1) // Excluir fotos penalizadas
+      .filter(({ tagScore }) => tagScore > 0) // Excluir fotos penalizadas
   }
 
   private async chunkDescriptions(
