@@ -426,13 +426,13 @@ export default class PhotosService {
     let attempts = 0
     let hasMore
 
-    let method =
-      enrichmentResult.type == 'logical'
-        ? 'getSemanticScoredPhotosLogical'
-        : 'getSemanticScoredPhotos'
-    const nearPhotos = await this.embeddingsService[method](photos, enrichmentResult.clear)
-    //  enrichmentResult.enriched: TODO: ver si merece la pena pasar la enriched, y si se hace, como tratar las comas, porque
-    // no matchea igual de bien varios terminos que por separado
+    let queryStr = searchType == 'semantic' ? enrichmentResult.clear : enrichmentResult.enriched
+    let nearPhotos = []
+    if (enrichmentResult.type == 'logical') {
+      nearPhotos = await this.embeddingsService.getScoredPhotosByTags(photos, queryStr)
+    } else {
+      nearPhotos = await this.embeddingsService.getScoredPhotosByTagsAndDesc(photos, queryStr)
+    }
 
     if (embeddingsOnly) {
       return {

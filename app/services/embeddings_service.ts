@@ -475,9 +475,9 @@ export default class EmbeddingsService {
   }
 
   @MeasureExecutionTime
-  public async getSemanticScoredPhotos(
+  public async getScoredPhotosByTagsAndDesc(
     photos: Photo[],
-    description: string
+    query: string
   ): Promise<ChunkedPhoto[] | undefined> {
     const weights = {
       tags: 0.6,
@@ -485,8 +485,8 @@ export default class EmbeddingsService {
     }
 
     const [scoredTagsPhotos, scoredDescPhotosChunked] = await Promise.all([
-      this.getScoredTagsByQuerySegments(photos, description),
-      this.getScoredDescPhotos(photos, description),
+      this.getScoredTagsByQuerySegments(photos, query),
+      this.getScoredDescPhotos(photos, query),
     ])
 
     const tagScoresMap = new Map(scoredTagsPhotos.map((item) => [item.photo.id, item.tagScore]))
@@ -514,15 +514,15 @@ export default class EmbeddingsService {
   }
 
   @MeasureExecutionTime
-  public async getSemanticScoredPhotosLogical(
+  public async getScoredPhotosByTags(
     photos: Photo[],
-    enrichedQuery: string
+    query: string
   ): Promise<ChunkedPhoto[] | undefined> {
     const weights = {
       tags: 1.0,
     }
 
-    const scoredTagsPhotos = await this.getScoredTagsByQuerySegments(photos, enrichedQuery)
+    const scoredTagsPhotos = await this.getScoredTagsByQuerySegments(photos, query)
 
     const tagScoresMap = new Map(scoredTagsPhotos.map((item) => [item.photo.id, item.tagScore]))
 
@@ -544,7 +544,7 @@ export default class EmbeddingsService {
     return filteredAndSortedPhotos
   }
 
-  public async getScoredTagsByQuerySegments(
+  private async getScoredTagsByQuerySegments(
     photos: Photo[],
     description: string,
     similarityThreshold: number = 0.3
@@ -602,41 +602,45 @@ export default class EmbeddingsService {
       let matchedSegments = 0
       let hasInvalidNotTag = false
 
-      if (photo.id == '51ab3269-93d9-4d08-bad0-82f6b0251f09') {
+      if (photo.id == '7e5ef5cd-ced1-4658-bb8c-1af7bc5684ed') {
         console.log()
       }
 
       // Evaluar cada segmento lógico
+      // 1. Si un segmento tiene tag con prox > 0.8, matchea. Si todos los segmentos matchean, la foto va arriba
+      // 2. El score de un segmento (usado si no todos matchean), viene dado por el max proximity + suma atenuada (% 2 y capado al max) de proximities
       for (const { segment, operator } of logicalSegments) {
         const tagMap = results[segment]
         const matchingTags = photo.tags?.filter((tag) => tagMap.has(tag.name)) || []
 
         if (matchingTags.length > 0) {
-          const proximities = matchingTags.map((tag) => {
-            return tagMap.get(tag.name) || 0
-          })
-          // TODO: ver como bonificar un poco tener varios tags, y no solo mirar MAX
+          const proximities = matchingTags.map((tag) => tagMap.get(tag.name) || 0)
           const maxProximity = Math.max(...proximities)
+
+          const totalProximities = proximities.reduce((sum, proximity) => sum + proximity, 0)
+          const adjustedProximities = totalProximities / 2
+
           if (maxProximity > 0.8) matchedSegments++
 
-          totalScore += maxProximity
+          // Calcular la puntuación total sin sobreponderar el maxScore
+          totalScore += maxProximity + Math.min(adjustedProximities, maxProximity)
         }
       }
 
-      // Si matchea n segmentos, le damos n de score. Si no, el totalScore, que será maximo 0.9 por segmento, siempre menos.
       return {
         photo,
-        tagScore: matchedSegments == totalSegments ? totalSegments : totalScore,
+        tagScore:
+          matchedSegments === totalSegments
+            ? totalSegments + 1 // Asegura que la foto que matchea todo siempre tenga mayor score
+            : Math.min(totalScore, totalSegments), // Limita el score parcial al maximo que tendría por matcheo total - 1
       }
     })
 
-    // Obtener el puntaje máximo para normalización
     const maxScore = Math.max(
       ...scoredPhotos.map(({ tagScore }) => (tagScore > 0 ? tagScore : 0)),
       1
-    ) // Evitar división por 0
+    )
 
-    // Normalizar los puntajes y ordenar
     return scoredPhotos
       .map(({ photo, tagScore }) => ({
         photo,
@@ -654,6 +658,7 @@ export default class EmbeddingsService {
   // Para un termino y una lista de tags, busca posibles matcheos por 1) string comparison, 2) embedding. Con extensive true
   // no se para al matchear por string sino que añade tambien embeddings. Primer caso para evaluar queries, segundo para sacar
   // tags afines a un termino, de ambas maneras.
+  // NOTA A FUTURO: siempre serían tags de las fotos del usuario, no todos.
   public async findMatchingTagsForTerm(term, tags, threshold, limit, extensive = false) {
     let lematizedTerm = pluralize.singular(term.toLowerCase())
     let termWordCount = lematizedTerm.split(' ').length // solo tags con igual o menos palabras que el term, para evitar 'red umbrella' -> 'umbrellas' por prox semantica
