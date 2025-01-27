@@ -103,7 +103,7 @@ import Photo from '#models/photo'
 import { Exception } from '@adonisjs/core/exceptions'
 import ModelsService from './models_service.js'
 import Tag from '#models/tag'
-import { SYSTEM_MESSAGE_ANALIZER_2 } from '../utils/ModelsMessages.js'
+import { SYSTEM_MESSAGE_ANALIZER_MULTIPLE } from '../utils/ModelsMessages.js'
 import { createRequire } from 'module'
 import EmbeddingsService from './embeddings_service.js'
 import DescriptionChunk from '#models/descriptionChunk'
@@ -162,7 +162,7 @@ export default class AnalyzerService {
       const batch = validImages.slice(i, i + maxImagesPerBatch)
 
       const batchPromise = modelsService.getGPTResponse(
-        SYSTEM_MESSAGE_ANALIZER_2(batch),
+        SYSTEM_MESSAGE_ANALIZER_MULTIPLE(batch),
         [
           ...batch.map(({ base64 }) => ({
             type: 'image_url',
@@ -172,7 +172,9 @@ export default class AnalyzerService {
             },
           })),
         ],
-        'gpt-4o-mini'
+        'gpt-4o-mini',
+        null,
+        false
       )
 
       batchPromises.push(batchPromise)
@@ -188,7 +190,7 @@ export default class AnalyzerService {
     responses.forEach((response) => {
       if (response.status === 'fulfilled') {
         try {
-          results.push(response.value.result)
+          results.push(...response.value.result)
           costs.push(response.value.cost)
         } catch (err) {
           console.log(err)
@@ -207,32 +209,6 @@ export default class AnalyzerService {
       cost: costs,
     }
   }
-
-  // public findTagsWithSimilarWords(tag: string, tagList: string[]) {
-  //   const STOPWORDS = ['at', 'in', 'on', 'the', 'and', 'or', 'but', 'a', 'an', 'of', 'for', 'to']
-
-  //   // Helper function to lemmatize and filter words
-  //   function lemmatizeAndFilter(text: string) {
-  //     const words = text
-  //       .toLowerCase()
-  //       .split(/\W+/) // Split on non-word characters
-  //       .filter((word) => word && !STOPWORDS.includes(word)) // Remove stopwords
-
-  //     return words.map((word) => lemmatizer.stem(word))
-  //   }
-
-  //   // Lemmatize and filter the input tag
-  //   const lemmatizedTagWords = lemmatizeAndFilter(tag)
-
-  //   // Find tags with at least 50% overlapping lemmatized words in both directions
-  //   return tagList.filter((candidateTag) => {
-  //     const candidateWords = lemmatizeAndFilter(candidateTag)
-  //     const matchCount = candidateWords.filter((word) => lemmatizedTagWords.includes(word)).length
-  //     const forwardMatch = matchCount / lemmatizedTagWords.length >= 0.5
-  //     const backwardMatch = matchCount / candidateWords.length >= 0.5
-  //     return forwardMatch && backwardMatch
-  //   })
-  // }
 
   @MeasureExecutionTime
   public async addMetadata(metadata: { id: string; [key: string]: any }[]) {

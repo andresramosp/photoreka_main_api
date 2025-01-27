@@ -24,7 +24,7 @@ export default class QueryService {
     this.analyzerService = new AnalyzerService()
   }
 
-  public async processQuery(type: 'semantic' | 'creative', query) {
+  public async processQuery(searchType: 'semantic' | 'creative', query) {
     const enrichmentMessage = SYSTEM_MESSAGE_QUERY_ENRICHMENT
     const sourceMessage = SYSTEM_MESSAGE_QUERY_REQUIRE_SOURCE
 
@@ -47,7 +47,7 @@ export default class QueryService {
 
     let searchModelMessage
 
-    if (type === 'semantic') {
+    if (searchType === 'semantic') {
       if (!useImage) {
         if (enrichmentResult.type === 'logical') {
           searchModelMessage = SYSTEM_MESSAGE_SEARCH_SEMANTIC_LOGICAL_v2(true)
@@ -57,7 +57,7 @@ export default class QueryService {
       } else {
         searchModelMessage = SYSTEM_MESSAGE_SEARCH_MODEL_ONLY_IMAGE
       }
-    } else if (type === 'creative') {
+    } else if (searchType === 'creative') {
       if (!useImage) {
         searchModelMessage = SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE(true)
       } else {

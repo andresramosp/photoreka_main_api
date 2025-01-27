@@ -451,6 +451,10 @@ export default class EmbeddingsService {
       photo.descriptionChunks?.some((chunk) => matchingChunkMap.has(chunk.id))
     )
 
+    const photosWithMultipleChunks = relevantPhotos.filter(
+      (entry) => entry.matchingChunks.length > 1
+    )
+
     const results = relevantPhotos.map((photo) => {
       const photoMatchingChunks =
         photo.descriptionChunks?.filter((chunk) => matchingChunkMap.has(chunk.id)) || []
@@ -544,6 +548,7 @@ export default class EmbeddingsService {
     return filteredAndSortedPhotos
   }
 
+  @MeasureExecutionTime
   private async getScoredTagsByQuerySegments(
     photos: Photo[],
     description: string,
@@ -572,20 +577,32 @@ export default class EmbeddingsService {
 
         logicalSegments.push({ segment, operator })
 
-        const { matchingTags } = await this.findMatchingTagsForTerm(
-          segment,
-          allTags,
-          0.4,
-          100,
-          true
+        // Dividir el segmento por comas y procesar cada subsegmento
+        const subSegments = segment.split(',').map((s) => s.trim())
+        results[segment] = results[segment] || new Map<string, number>() // Inicializar el mapa del segmento
+
+        await Promise.all(
+          subSegments.map(async (subSegment) => {
+            const { matchingTags } = await this.findMatchingTagsForTerm(
+              subSegment,
+              allTags,
+              0.4,
+              100,
+              true
+            )
+
+            // Añadir los resultados de cada subsegmento al mapa del segmento completo
+            matchingTags.forEach((tag: any) => {
+              const currentProximity = results[segment].get(tag.name) || 0
+              results[segment].set(tag.name, Math.max(currentProximity, tag.proximity)) // Usar el mayor proximity
+            })
+
+            // Añadir tags únicos al conjunto de tags relevantes
+            allRelevantTags = Array.from(
+              new Set([...allRelevantTags, ...matchingTags.map((t) => t.name)])
+            )
+          })
         )
-
-        results[segment] = results[segment] || new Map<string, number>()
-
-        matchingTags.forEach((tag: any) => {
-          results[segment].set(tag.name, tag.proximity)
-        })
-        allRelevantTags = [...allRelevantTags, ...matchingTags.map((t) => t.name)]
       })
     )
 
@@ -600,9 +617,9 @@ export default class EmbeddingsService {
     const scoredPhotos = relevantPhotos.map((photo) => {
       let totalScore = 0
       let matchedSegments = 0
-      let hasInvalidNotTag = false
+      let hasNotSegmentMatched = false
 
-      if (photo.id == '7e5ef5cd-ced1-4658-bb8c-1af7bc5684ed') {
+      if (photo.id == '207a9520-5037-458c-acfb-af108a834e53') {
         console.log()
       }
 
@@ -620,19 +637,26 @@ export default class EmbeddingsService {
           const totalProximities = proximities.reduce((sum, proximity) => sum + proximity, 0)
           const adjustedProximities = totalProximities / 2
 
-          if (maxProximity > 0.8) matchedSegments++
+          if (maxProximity > 0.8) {
+            if (operator == 'OR' || operator == 'AND') matchedSegments++
+            if (operator == 'NOT' && !hasNotSegmentMatched) {
+              hasNotSegmentMatched = true
+            }
+          }
 
           // Calcular la puntuación total sin sobreponderar el maxScore
-          totalScore += maxProximity + Math.min(adjustedProximities, maxProximity)
+          totalScore +=
+            (maxProximity + Math.min(adjustedProximities, maxProximity)) *
+            (operator == 'NOT' ? 0.25 : 1) // Los tags NOT tienen penalización pero no se excluyen porque a veces matchean con tags no excluyentes (women -> people)
         }
       }
 
+      const queryMatched = matchedSegments === totalSegments && !hasNotSegmentMatched
+      // El totalScore es 0 cuando un segmento NOT hizo full match
+      const totalTagsScore = !hasNotSegmentMatched ? Math.min(totalScore, totalSegments) : 0
       return {
         photo,
-        tagScore:
-          matchedSegments === totalSegments
-            ? totalSegments + 1 // Asegura que la foto que matchea todo siempre tenga mayor score
-            : Math.min(totalScore, totalSegments), // Limita el score parcial al maximo que tendría por matcheo total - 1
+        tagScore: queryMatched ? totalSegments + 1 : totalTagsScore,
       }
     })
 
