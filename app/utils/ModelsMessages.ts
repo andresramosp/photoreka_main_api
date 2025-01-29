@@ -11,8 +11,8 @@ export const SYSTEM_MESSAGE_ANALIZER_MULTIPLE = (photosBatch: any[]) => `
    - 'id': id of the image, using this comma-separated, ordered list: ${photosBatch.map((img: any) => img.id).join(',')}
    - 'description' (minimum 300 words): describes the image in detail, and trying to capture the general meaning of the scene, storytelling 
       if any, and interactions. Pay attention to special bonus like: reflections, quirky juxtapositions of elements, good layering, optical illusions or potential methaphoric meanings.
-   - 'objects_tags' (string[] up to 8 words): list all the objects, you can see in the photo. Example ['red lunarisca', 'big cronopio', 'old book']
-   - 'persons_tags' (string[] up to 7 words): all the people you can see in the photo, trying to specify gender and age. Example: ['cronopio in suits', 'funny lunarisca', 'waiter in black']
+   - 'objects_tags' (string[] up to 8 words): list the objects you can see in the photo, prioritizing those with a relevant presence. Example ['red lunarisca', 'big cronopio', 'old book']
+   - 'persons_tags' (string[] up to 7 words): list the people you see in the photo and who have a relevant presence. Ignore distant people if they have no relevant role in the photo. Try to specify gender, age and clothing. Example: ['man in suits', 'funny kid', 'waiter with red hat']
    - 'action_tags' (string[] up to 5 words): similiar to 'persons_tags', but enphatizing the actions of each person. Include the subject of the action.  Example: ['cronopio playing football', 'cronopio waiting bus']
    - 'location_tags' (string[] up to 4 words): tags which describes the concrete location, and wether it's inside or outside. 
    - 'weather_time_tags': (string[] up to 3 words): tags related to weather and time of the day, season of the year if possible, etc. Example: ['rainy', 'daytime', 'winter']
