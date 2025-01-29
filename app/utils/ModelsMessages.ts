@@ -19,7 +19,7 @@ export const SYSTEM_MESSAGE_ANALIZER_MULTIPLE = (photosBatch: any[]) => `
    - 'symbols_tags' (string[] up to 4 words): list all the symbols, figures, text, logos or paintings you can see in the photo.
    - 'culture_tags' (string[] up to 3 words): the culture and/or country you guess the photo has been taken. As much concrete as possible. 
    - 'generic_tags' (string[] up to 4 words): general tags that group all the previous ones. Example ['people', 'sports', 'fashion', 'books']
-   - 'bonus_tags' (string[] up to 4 words): dedicated to special bonus, if any, which make the photo special from artistic point of view. Example: ['boy reflected', 'complementary colors', 'silhouettes', 'juxtaposition between monkey and Kingkong painting']
+   - 'bonus_tags' (string[] up to 4 words): dedicated to special bonus, if any, which make the photo remarkable from artistic point of view. Example: ['abstract reflections', 'good layering', 'complementary colors', 'silhouettes', 'emotional connection', 'juxtaposition between monkey and Kingkong painting']
    Note: Try to add a nuance to disambiguate single terms. For example: "orange (fruit)", or "water (drink)"
    Return always an rooted, single array of images. 
 `
@@ -246,21 +246,8 @@ Always returns a JSON, and only JSON. If there are no terms, return an empty JSO
 `
 
 export const SYSTEM_MESSAGE_QUERY_ENRICHMENT = `
-You are an intelligent assistant for processing user queries about finding photos. Your task is to analyze the user's query and decide whether to expand its semantic 
+You are an intelligent assistant for processing user queries about finding photos. Your task is to analyze the user's query and structure it, plus expand its semantic 
 content for improved accuracy in filtering with embeddings. 
-
-Queries will vary in specificity and intent, such as:
-
-- **Highly specific queries**: e.g., "man wearing a blue shirt juggling in the bathroom." or "that photo with a woman sitting in a red sofa with a plant on her left."
-- **Vague queries**: e.g., "photos with vegetation." or "photos that resonate with The Exorcist."
-- **Logically structured queries**: e.g., "photos with horses and dogs"
-
-Your response must adapt to the type of query, prioritizing semantic precision and avoiding overly general expansions that could introduce irrelevant results:
-
-- For highly specific and precise queries: 1) set clear field with the query without prefixes (“photos of...”... "show me images of..."), 2) set enriched field with original, unchanged query, 3) set type as 'specific'
-- For vague/conceptual queries: 1) set clear field with the query without prefixes ("pictures of...”... "show me images of...") 2) set enriched field with terms that are synonymous, segmentating different semantic fields with |, if many 3) set 'type' as 'vague'
-- For logically structured queries (... and ... or ... not...): 1) set clear field with structured logical (AND|OR|NOT) segments, 2) set enriched field with those segments enriched with synonymous 3) set 'type' as 'logical'
-- For all cases, remove unnecesary connectors like "with", "at", "in the", "on", "behind of", etc, from enriched field. 
 
 ### Input format:
 {
@@ -269,32 +256,36 @@ Your response must adapt to the type of query, prioritizing semantic precision a
 ### Output format:
 {
   "enriched": string,
-  "clear": string
-  "type": 'specific' | 'vague' | 'logical'
+  "clear": string,
 }
-#### Example 1 (highly specific):
+
+**Guidelines**
+
+- Set 'clear' field with the query splited in its semantic fields, using pipes (|), or using operators (AND|OR|NOT) when the query has a *clear logical* structure (this... and that... not those).
+- Set 'enriched' field with those previous segments enriched with synonymous, but avoid including terms that generalize too much or are broader than the original ones.
+- For both fields 'clear' and 'enriched', remove unnecesary prefix and connectors like "photos of", "with", "at", "in the", "on", "behind of", etc.
+
+#### Example 1 (split + enrich in semantic fields):
 **Input**:
 {
   "query": "photo of blond man sitting in the corner of a coffee shop in Jamaica with an iced tea",
 }
 **Output**:
 {
-  "clear": "blond man sitting in the corner of a coffee shop in Jamaica with an iced tea",
-  "enriched": "photo of blond man sitting in the corner of a coffee shop in Jamaica with an iced tea",
-  "type": "specific"
+  "clear": "blond man sitting in corner | coffee shop | Jamaica | iced tea",
+  "enriched": "blond man sitting corner, blond male person sitting | coffee shop, cafe, restaurante | Jamaica | iced tea, tea with ice",
 }
-#### Example 2 (vague query):
+#### Example 2 (split + enrich in semantic fields):
 **Input**:
 {
   "query": "photos with children playing at the park"
 }
 **Output**:
 {
-  "clear": "children playing at the park"
+  "clear": "children playing | park"
   "enriched": "children playing, kids enjoying, children having fun | park, public park, playground"
-  "type": "vague"
 }
-#### Example 3 (vague query):
+#### Example 3 (only one segment field + enrichment):
 **Input**:
 {
   "query": "photos that resonate with the concept of The Exorcist"
@@ -303,7 +294,6 @@ Your response must adapt to the type of query, prioritizing semantic precision a
 {
   "clear": "concept of The Exorcist"
   "enriched": "The Exorcist, dimly lit rooms, religious artifacts, daemons, eerie atmospheres, vintage furniture",
-  "type": "vague"
 }
 #### Example 4 (logicaly structured):
 **Input**:
@@ -314,18 +304,16 @@ Your response must adapt to the type of query, prioritizing semantic precision a
 {
   "clear": "chairs AND felines AND kids"
   "enriched": "chairs, sofa, furniture AND feline, cats, lions, tigers AND kids, childre, boys, girls",
-  "type": "logical"
 }
   #### Example 5 (logicaly structured):
 **Input**:
 {
-  "query": "photos with umbrellas or taxis, but not at night"
+  "query": "photos with woman holding umbrella, or taxis, but not at night"
 }
 **Output**:
 {
-  "clear": "(umbrellas OR taxis) NOT night"
+  "clear": "umbrellas OR taxis NOT night"
   "enriched": "umbrellas, parasols, canopies OR taxi, cab, car NOT night, nighttime",
-  "type": "logical"
 }
 #### Example 6 (logicaly structured):
 **Input**:
@@ -336,7 +324,6 @@ Your response must adapt to the type of query, prioritizing semantic precision a
 {
   "clear": "kids playing AND girls painting"
   "enriched": "kids playing, children enjoying, children sporting AND girls painting, girls doing art, girls drawing",
-  "type": "logical"
 }
 
 Always returns a JSON, and only JSON, in the output format. 
@@ -344,18 +331,7 @@ Always returns a JSON, and only JSON, in the output format.
 `
 
 export const SYSTEM_MESSAGE_QUERY_REQUIRE_SOURCE = `
-You are an intelligent assistant for processing user queries about finding photos. Your task is to analyze the user's query and determine whether it requires:
-- **Only the description**: The query can be answered based solely on the textual description of the photo.
-- **Only the image**: The query can be answered based solely on the visual schema/tonality of the photo.
-- **Both description and image**: The query requires both the textual description and the visual analysis of the photo.
-
-Image is necessary when the query involves **visual aspects** not explicitly stated in the description, such as:
-- Composition (e.g., "balanced composition between right and left").
-- Tonal qualities (e.g., "photos with general cold tonality").
-- Spatial arrangement (e.g., "more people on one side").
-- Balance or general schematic structure (e.g., "main subject on the left").
-
-However, when a query includes elements that can only be found in the description combined with visual analysis, classify it as requiring **both**.
+You are an intelligent assistant for processing user queries about finding photos. 
 
 ### Input format:
 {
@@ -364,76 +340,93 @@ However, when a query includes elements that can only be found in the descriptio
 
 ### Output format:
 {
-  "requireSource": "description" | "image" | "both"
+  "requireSource": "description" | "image",
+  "specific": true|false
 }
+
+**Guidelines**
+
+1) Your task is to analyze the user's query and determine the 'requireSource', which can be:
+- **The description**: The query is complex, not a mere list of yes/no elements, or it contains some more vague, subjective or subtle aspects for which it would be convenient to use the full description. 
+- **The image**: The query can be answered based solely on the visual schema/tonality of the photo. It tipically happens when the query involves visual aspects difficult to find in the tags/descriptions, such as composition, spatial arrangement, or tonalities.
+In case of doubt, always select "description".
+2) For 'specific' field, try to find out if the user is looking for a specific photo. This typically happens with singular prefixes like “a photo with...”, or when the query is very long and detailed and *super specific*.
 
 ### Examples:
 
-#### Example 1 (description only):
+#### Example 1
 **Input**:
 {
-  "query": "blond man sitting in the corner of a coffee shop in Jamaica with an iced tea"
+  "query": "photos with trees"
 }
 
 **Output**:
 {
-  "requireSource": "description"
+  "requireSource": "description",
+  "specific": false
 }
 
-#### Example 2 (description only):
+#### Example 2:
 **Input**:
 {
-  "query": "photos with vegetation"
+  "query": "a blond man sitting in the corner of a coffee shop in Jamaica and holding an iced tea"
 }
 
 **Output**:
 {
-  "requireSource": "description"
+  "requireSource": "description",
+  "specific": true
 }
 
-#### Example 3 (image only):
+#### Example 3:
 **Input**:
 {
-  "query": "photos with cold tonality"
+  "query": "images with an attractive person",
 }
 
 **Output**:
 {
-  "requireSource": "image"
+  "requireSource": "description",
+  "specific": false
 }
 
-#### Example 4 (both description and image):
+#### Example 4 (image):
 **Input**:
 {
-  "query": "a photo of a woman sitting on a red sofa and a general dark tonality"
+  "query": "photos with balanced composition between right and left",
 }
 
 **Output**:
 {
-  "requireSource": "both"
+  "requireSource": "image",
+    "specific": false
 }
 
-#### Example 5 (image only):
+
+#### Example 5 (image):
 **Input**:
 {
-  "query": "photos with balanced composition between right and left"
+  "query": "photos with balanced composition between right and left",
 }
 
 **Output**:
 {
-  "requireSource": "image"
+  "requireSource": "image",
+    "specific": false
 }
 
-#### Example 6 (image only):
+#### Example 6 (image):
 **Input**:
 {
-  "query": "photos with general cold tonality and where the main subject is on the left"
+  "query": "photos with upper side empty, and green tones",
 }
 
 **Output**:
 {
-  "requireSource": "image"
+  "requireSource": "image",
+    "specific": false
 }
+
 
 Always returns a JSON, and only JSON, in the output format. 
 

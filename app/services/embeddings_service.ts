@@ -254,183 +254,6 @@ export default class EmbeddingsService {
     return embeddings[0] || null
   }
 
-  // public async getScoredTagsPhotos(
-  //   photos: Photo[],
-  //   description: string,
-  //   similarityThreshold: number = 0.2
-  // ): Promise<{ photo: Photo; tagScore: number }[]> {
-  //   const matchingTags = await this.findSimilarTagsToText(
-  //     description,
-  //     similarityThreshold,
-  //     500, // Limitar la cantidad de tags considerados
-  //     'cosine_similarity'
-  //   )
-
-  //   const matchingTagMap: Map<string, number> = new Map(
-  //     matchingTags.map((tag: any) => [tag.name, tag.proximity])
-  //   )
-
-  //   const relevantPhotos = photos.filter((photo) =>
-  //     photo.tags?.some((tag) => matchingTagMap.has(tag.name))
-  //   )
-
-  //   const results = relevantPhotos.map((photo) => {
-  //     const photoMatchingTags = photo.tags?.filter((tag) => matchingTagMap.has(tag.name)) || []
-
-  //     // Calcula proximidades relevantes con ponderación exponencial
-  //     const proximities = photoMatchingTags.map((tag) =>
-  //       Math.exp((matchingTagMap.get(tag.name) || 0) - 0.5)
-  //     )
-
-  //     // Máximo y media ponderada
-  //     const maxProximity = Math.max(...proximities, 0)
-  //     const averageProximity =
-  //       proximities.reduce((sum, proximity) => sum + proximity, 0) / (proximities.length || 1)
-
-  //     // Score combinado
-  //     const tagScore = 0.75 * maxProximity + 0.25 * averageProximity
-
-  //     return { photo, tagScore }
-  //   })
-
-  //   return results.sort((a, b) => b.tagScore - a.tagScore)
-  // }
-
-  // A partir de una partición de la query logica saca los tags relevantes y ordena todas las fotos
-  // Da prioridad a fotos con todos los segmmentos matched
-  // Tags repetidos en una misma foto atenuan la suma con raíz cuadrada
-  // public async getScoredTagsPhotosLogical(
-  //   photos: Photo[],
-  //   description: string,
-  //   similarityThreshold: number = 0.3
-  // ): Promise<{ photo: Photo; tagScore: number }[]> {
-  //   const segments = description.split(/\b(AND|OR|NOT)\b/).map((s) => s.trim())
-  //   const results: Record<string, any[]> = { AND: [], OR: [], NOT: [] }
-  //   const promises: Promise<any>[] = []
-
-  //   // Procesar cada segmento lógico
-  //   for (let i = 0; i < segments.length; i++) {
-  //     const segment = segments[i]
-  //     if (['AND', 'OR', 'NOT'].includes(segment)) continue
-
-  //     const operator =
-  //       segments[i - 1] && ['AND', 'OR', 'NOT'].includes(segments[i - 1]) ? segments[i - 1] : 'AND' // Asume AND como predeterminado
-
-  //     promises.push(
-  //       (async () => {
-  //         const { embeddings } = await this.modelsService.getEmbeddings([segment])
-  //         const similarTags = await this.findSimilarTagToEmbedding(
-  //           embeddings[0],
-  //           similarityThreshold,
-  //           100,
-  //           'cosine_similarity'
-  //         )
-  //         results[operator].push(...similarTags)
-  //       })()
-  //     )
-  //   }
-
-  //   await Promise.all(promises)
-
-  //   // Obtener sets para operadores lógicos
-  //   const andResults = new Set(results.AND.flat())
-  //   const orResults = new Set(results.OR.flat())
-  //   const notResults = new Set(results.NOT.flat())
-
-  //   // Intersección lógica AND-OR
-  //   const intersection = [...andResults].filter((tag) => orResults.has(tag) || orResults.size === 0)
-
-  //   // Normalizar proximidades al rango [0, 1]
-  //   const proximities = intersection.map((tag) => tag.proximity)
-  //   const maxProximity = Math.max(...proximities, 1) // Evitar división por 0
-  //   const tagScoresMap = new Map<string, number>()
-
-  //   intersection.forEach((tag: any) => {
-  //     const normalizedProximity = tag.proximity / maxProximity // Normalización
-  //     tagScoresMap.set(tag.name, normalizedProximity)
-  //   })
-
-  //   // Filtrar fotos relevantes y calcular puntajes
-  //   const resultsWithScores = photos.map((photo) => {
-  //     const segmentScores: number[] = [] // Almacena el puntaje por segmento lógico
-  //     let matchedSegments = 0 // Contador de segmentos matcheados lógicamente
-  //     const totalSegments = Object.keys(results).filter((key) => key !== 'NOT').length // Número de segmentos sin incluir NOT
-  //     let hasInvalidNotTag = false // Flag para detectar penalizaciones por NOT
-
-  //     // Iterar por segmentos lógicos y calcular el puntaje
-  //     for (const segment of Object.keys(results)) {
-  //       const matchingTags =
-  //         photo.tags?.filter((tag) =>
-  //           results[segment].some((resultTag) => resultTag.name === tag.name)
-  //         ) || []
-
-  //       if (segment === 'NOT') {
-  //         // Detectar si algún tag en NOT tiene proximidad >= 0.6
-  //         const maxProximity = Math.max(
-  //           ...matchingTags.map((tag) => tagScoresMap.get(tag.name) || 0)
-  //         )
-  //         if (maxProximity >= 0.6) {
-  //           hasInvalidNotTag = true // Penalizar la foto
-  //         }
-  //         continue // Saltar el resto de la lógica para NOT
-  //       }
-
-  //       if (matchingTags.length > 0) {
-  //         // Verificar si el segmento matchea lógicamente (proximidad >= 0.6)
-  //         const maxProximity = Math.max(
-  //           ...matchingTags.map((tag) => tagScoresMap.get(tag.name) || 0)
-  //         )
-
-  //         if (maxProximity >= 0.6) {
-  //           matchedSegments++ // Incrementar si el segmento matchea
-  //         }
-
-  //         // Calcular el puntaje con atenuación
-  //         const segmentProximities = matchingTags.map((tag) => tagScoresMap.get(tag.name) || 0)
-
-  //         const segmentScore = Math.sqrt(
-  //           segmentProximities.reduce((sum, proximity) => sum + proximity, 0)
-  //         ) // Usar raíz cuadrada como atenuación
-  //         segmentScores.push(segmentScore)
-  //       }
-  //     }
-
-  //     // Calcular el puntaje total
-  //     const totalScore = segmentScores.reduce((sum, score) => sum + score, 0)
-
-  //     return {
-  //       photo,
-  //       tagScore: hasInvalidNotTag ? -1 : totalScore, // Penalización absoluta si hay tags en NOT
-  //       matchedSegments,
-  //       totalSegments,
-  //     }
-  //   })
-
-  //   // Ordenar fotos priorizando cobertura lógica y luego puntaje
-  //   resultsWithScores.sort((a, b) => {
-  //     // Priorizar fotos que cumplen todos los segmentos
-  //     const aCompleteMatch = a.matchedSegments === a.totalSegments
-  //     const bCompleteMatch = b.matchedSegments === b.totalSegments
-
-  //     if (aCompleteMatch && !bCompleteMatch) return -1
-  //     if (!aCompleteMatch && bCompleteMatch) return 1
-
-  //     // Penalizar fotos con tags del segmento NOT
-  //     if (a.tagScore === -1 && b.tagScore !== -1) return 1
-  //     if (a.tagScore !== -1 && b.tagScore === -1) return -1
-
-  //     // Si ambos cumplen o no cumplen, ordenar por puntaje
-  //     return b.tagScore - a.tagScore
-  //   })
-
-  //   // Retornar las fotos con sus puntajes
-  //   return resultsWithScores
-  //     .filter(({ tagScore }) => tagScore !== -1) // Excluir fotos penalizadas por NOT
-  //     .map(({ photo, tagScore }) => ({ photo, tagScore }))
-  // }
-
-  // Dada una foto saca sus tags relevantes a partir de una partición de la query lógica
-
   public async getScoredDescPhotos(
     photos: Photo[],
     description: string,
@@ -449,10 +272,6 @@ export default class EmbeddingsService {
 
     const relevantPhotos = photos.filter((photo) =>
       photo.descriptionChunks?.some((chunk) => matchingChunkMap.has(chunk.id))
-    )
-
-    const photosWithMultipleChunks = relevantPhotos.filter(
-      (entry) => entry.matchingChunks.length > 1
     )
 
     const results = relevantPhotos.map((photo) => {
@@ -692,6 +511,14 @@ export default class EmbeddingsService {
       let lematizedTagName = pluralize.singular(tag.name.toLowerCase())
       if (lematizedTagName.split(' ').length >= termWordCount) {
         equalOrShorterTags.push(tag)
+      }
+    }
+
+    if (!equalOrShorterTags.length) {
+      return {
+        matchingTags: [],
+        method: 'String comparison (no candidates)',
+        lematizedTerm,
       }
     }
 

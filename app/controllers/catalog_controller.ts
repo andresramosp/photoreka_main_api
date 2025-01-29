@@ -80,30 +80,13 @@ export default class CatalogController {
     }
   }
 
-  public async searchDesc({ response, request }: HttpContext) {
+  public async search({ response, request }: HttpContext) {
     try {
       const photosService = new PhotosService()
 
       const query = request.body()
 
-      const result = await photosService.search(query, 'semantic', {
-        embeddingsOnly: query.useEmbeddings,
-      })
-
-      return response.ok(result)
-    } catch (error) {
-      console.error('Error fetching photos:', error)
-      return response.internalServerError({ message: 'Error fetching photos' })
-    }
-  }
-
-  public async searchCreative({ response, request }: HttpContext) {
-    try {
-      const photosService = new PhotosService()
-
-      const query = request.body()
-
-      const result = await photosService.search(query, 'creative', {
+      const result = await photosService.search(query, query.searchType, {
         embeddingsOnly: query.useEmbeddings,
       })
 

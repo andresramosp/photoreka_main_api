@@ -24,45 +24,50 @@ export default class QueryService {
     this.analyzerService = new AnalyzerService()
   }
 
-  public async processQuery(searchType: 'semantic' | 'creative', query) {
+  public async processQuery(searchType: 'logical' | 'semantic' | 'creative', query) {
     const enrichmentMessage = SYSTEM_MESSAGE_QUERY_ENRICHMENT
     const sourceMessage = SYSTEM_MESSAGE_QUERY_REQUIRE_SOURCE
 
-    // Ejecutamos las llamadas en paralelo
-    const [enrichmentResponse, sourceResponse] = await Promise.all([
-      this.modelsService.getDSResponse(
-        enrichmentMessage,
-        JSON.stringify({ query: query.description })
-      ),
-      this.modelsService.getDSResponse(sourceMessage, JSON.stringify({ query: query.description })),
-    ])
+    // Ejecutamos las llamadas en paralelo, omitiendo la llamada a sourceMessage si searchType es 'logical'
+    const enrichmentPromise = this.modelsService.getGPTResponse(
+      enrichmentMessage,
+      JSON.stringify({ query: query.description })
+    )
 
-    const { result: enrichmentResult, cost: cost1 } = enrichmentResponse
-    const { result: sourceResult, cost: cost2 } = sourceResponse
+    let enrichmentResponse, sourceResponse
 
-    let useImage = sourceResult.requireSource == 'image'
-    if (useImage) {
-      console.log()
+    if (searchType === 'logical') {
+      enrichmentResponse = await enrichmentPromise
+      sourceResponse = { result: { requireSource: null, cost: 0 } } // Simulamos una respuesta vacía para evitar errores
+    } else {
+      ;[enrichmentResponse, sourceResponse] = await Promise.all([
+        enrichmentPromise,
+        this.modelsService.getGPTResponse(
+          sourceMessage,
+          JSON.stringify({ query: query.description })
+        ),
+      ])
     }
+
+    let { result: enrichmentResult, cost: cost1 } = enrichmentResponse
+    let { result: sourceResult, cost: cost2 } = sourceResponse
+
+    enrichmentResult.original = query.description
 
     let searchModelMessage
 
-    if (searchType === 'semantic') {
-      if (!useImage) {
-        if (enrichmentResult.type === 'logical') {
-          searchModelMessage = SYSTEM_MESSAGE_SEARCH_SEMANTIC_LOGICAL_v2(true)
-        } else {
-          searchModelMessage = SYSTEM_MESSAGE_SEARCH_SEMANTIC(true)
-        }
-      } else {
-        searchModelMessage = SYSTEM_MESSAGE_SEARCH_MODEL_ONLY_IMAGE
-      }
-    } else if (searchType === 'creative') {
-      if (!useImage) {
-        searchModelMessage = SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE(true)
-      } else {
-        searchModelMessage = SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE_ONLY_IMAGE
-      }
+    if (searchType === 'logical') {
+      searchModelMessage = SYSTEM_MESSAGE_SEARCH_SEMANTIC_LOGICAL_v2(true)
+    } else if (searchType === 'semantic') {
+      searchModelMessage =
+        sourceResult.requireSource === 'description'
+          ? SYSTEM_MESSAGE_SEARCH_SEMANTIC(true)
+          : SYSTEM_MESSAGE_SEARCH_MODEL_ONLY_IMAGE(true)
+    } else {
+      searchModelMessage =
+        sourceResult.requireSource === 'image'
+          ? SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE_ONLY_IMAGE(true)
+          : SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE(true)
     }
 
     console.log(
@@ -72,7 +77,6 @@ export default class QueryService {
     return {
       searchModelMessage,
       sourceResult,
-      useImage,
       enrichmentResult,
       cost1,
       cost2,
@@ -96,11 +100,11 @@ export default class QueryService {
     let allMatched = true
     let hasNotMatched = false
 
-    if (photo.id == '884b1f43-e678-4dbf-b788-48b05c945e61') {
-      console.log()
-    }
-
     for (let { term, operator } of termsWithOperators) {
+      if (photo.id == '38371661-b2b9-4e09-9809-ddc490f4239f') {
+        console.log()
+      }
+
       let { matchingTags, method, lematizedTerm } =
         await this.embeddingsService.findMatchingTagsForTerm(term, photo.tags, 0.85, 5)
 
@@ -130,7 +134,10 @@ export default class QueryService {
     limitPerSegment: number = 8
   ) {
     // Dividir la consulta en segmentos separados por operadores
-    const segments = query.split(/\b(AND|OR|NOT)\b/).map((s) => s.trim())
+    const isSimpleDescription = !query.includes('|')
+    const segments = isSimpleDescription
+      ? query.split(/\b(AND|OR|NOT)\b/).map((s) => s.trim())
+      : query.split('|').map((segment) => segment.trim())
     const tagsSet = new Set<any>() // Usar un Set para evitar duplicados
     const promises: Promise<any>[] = []
 
