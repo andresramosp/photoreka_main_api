@@ -262,7 +262,7 @@ export default class EmbeddingsService {
     const matchingChunks = await this.findSimilarChunksToText(
       description,
       similarityThreshold,
-      500, // Limitar la cantidad de chunks considerados
+      10000, // Limitar la cantidad de chunks considerados
       'cosine_similarity'
     )
 
@@ -278,6 +278,9 @@ export default class EmbeddingsService {
       const photoMatchingChunks =
         photo.descriptionChunks?.filter((chunk) => matchingChunkMap.has(chunk.id)) || []
 
+      if (photo.id == '20936682-6b33-43ec-ac5a-83d8ff210144') {
+        console.log()
+      }
       // Calcula proximidades relevantes con ponderación exponencial
       const proximities = photoMatchingChunks.map((chunk) =>
         Math.exp((matchingChunkMap.get(chunk.id) || 0) - 0.5)
@@ -300,13 +303,33 @@ export default class EmbeddingsService {
   @MeasureExecutionTime
   public async getScoredPhotosByTagsAndDesc(
     photos: Photo[],
-    query: string
+    query: string,
+    cacheKeySuffix: string
   ): Promise<ChunkedPhoto[] | undefined> {
     const weights = {
       tags: 0.6,
       desc: 0.4,
     }
 
+    const cacheKey = `scoredPhotoIds:${cacheKeySuffix.toLowerCase().trim()}`
+    const cachedPhotoIds = cache.get<number[]>(cacheKey)
+
+    if (cachedPhotoIds) {
+      const cachedPhotosMap = new Map(photos.map((photo) => [photo.id, photo]))
+
+      const cachedPhotos = cachedPhotoIds
+        .map((id) => cachedPhotosMap.get(id))
+        .filter(Boolean) as Photo[]
+
+      return cachedPhotos.map((photo) => ({
+        photo,
+        tagScore: 0,
+        descScore: 0,
+        totalScore: 0,
+      }))
+    }
+
+    // No hay cache, calcular los scores
     const [scoredTagsPhotos, scoredDescPhotosChunked] = await Promise.all([
       this.getScoredTagsByQuerySegments(photos, query),
       this.getScoredDescPhotos(photos, query),
@@ -329,13 +352,17 @@ export default class EmbeddingsService {
       }
     })
 
+    // Filtrar y ordenar
     const filteredAndSortedPhotos: ChunkedPhoto[] = scoredPhotos
       .filter((photo) => photo.totalScore > 0.05)
       .sort((a, b) => b.totalScore - a.totalScore)
 
+    // Guardar solo los IDs en caché
+    const photoIds = filteredAndSortedPhotos.map((photo) => photo.photo.id)
+    cache.set(cacheKey, photoIds)
+
     return filteredAndSortedPhotos
   }
-
   @MeasureExecutionTime
   public async getScoredPhotosByTags(
     photos: Photo[],

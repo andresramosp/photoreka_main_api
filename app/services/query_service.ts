@@ -54,6 +54,8 @@ export default class QueryService {
 
     enrichmentResult.original = query.description
 
+    sourceResult.requireSource = 'description'
+
     let searchModelMessage
 
     if (searchType === 'logical') {

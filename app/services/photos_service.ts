@@ -432,7 +432,8 @@ export default class PhotosService {
     // Embeddings de momento parece funcionar siempre mejor con tags + desc
     nearPhotos = await this.embeddingsService.getScoredPhotosByTagsAndDesc(
       photos,
-      sourceResult.specific ? enrichmentResult.clear : enrichmentResult.enriched
+      sourceResult.specific ? enrichmentResult.clear : enrichmentResult.enriched,
+      query.description
     )
 
     do {
@@ -457,10 +458,6 @@ export default class PhotosService {
 
       if (embeddingsOnly) {
         return
-      }
-
-      if (attempts >= maxPageAttempts || paginatedPhotos.length === 0) {
-        break
       }
 
       const photoBatches = []
@@ -513,19 +510,28 @@ export default class PhotosService {
 
       query.iteration++
       attempts++
-    } while (!photosResult.length)
 
-    yield {
-      type: 'result',
-      data: {
-        results: { [query.iteration - 1]: { photos: photosResult } },
-        hasMore: hasMore && attempts < maxPageAttempts,
-        cost: { enrichmentCost, sourceCost, modelCosts },
-        iteration: query.iteration - 1,
-        enrichmentResult,
-        requireSource: { source: sourceResult.requireSource, useImage },
-      },
-    }
+      yield {
+        type: 'result',
+        data: {
+          results: { [query.iteration - 1]: { photos: photosResult } },
+          hasMore: hasMore && attempts < maxPageAttempts,
+          cost: { enrichmentCost, sourceCost, modelCosts },
+          iteration: query.iteration - 1,
+          enrichmentResult,
+          requireSource: { source: sourceResult.requireSource, useImage },
+        },
+      }
+
+      if (attempts >= maxPageAttempts || paginatedPhotos.length === 0) {
+        yield {
+          type: 'searchEnd',
+        }
+        return
+      }
+
+      await this.sleep(500)
+    } while (!photosResult.some((p) => p.isIncluded))
   }
 
   public async evaluateBatches(photoBatches, clearQuery, searchType) {
