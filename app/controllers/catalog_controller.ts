@@ -5,6 +5,7 @@ import path from 'path'
 import crypto from 'crypto'
 import Photo from '#models/photo'
 import PhotosService from '#services/photos_service'
+import ws from '#services/ws'
 
 export default class CatalogController {
   /**
@@ -80,19 +81,23 @@ export default class CatalogController {
     }
   }
 
-  public async search({ response, request }: HttpContext) {
+  public async search({ request, response }: HttpContext) {
     try {
       const photosService = new PhotosService()
-
       const query = request.body()
 
-      const result = await photosService.search(query, query.searchType, {
+      const stream = photosService.search(query, query.searchType, {
         embeddingsOnly: query.useEmbeddings,
       })
 
-      return response.ok(result)
+      for await (const result of stream) {
+        ws.io?.emit(result.type, result.data)
+      }
+
+      return response.ok({ message: 'Search process initiated' })
     } catch (error) {
       console.error('Error fetching photos:', error)
+      ws.io?.emit('searchError', { message: 'Error fetching photos' })
       return response.internalServerError({ message: 'Error fetching photos' })
     }
   }

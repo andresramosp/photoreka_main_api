@@ -62,11 +62,11 @@ export default class QueryService {
       searchModelMessage =
         sourceResult.requireSource === 'description'
           ? SYSTEM_MESSAGE_SEARCH_SEMANTIC(true)
-          : SYSTEM_MESSAGE_SEARCH_MODEL_ONLY_IMAGE(true)
+          : SYSTEM_MESSAGE_SEARCH_MODEL_ONLY_IMAGE
     } else {
       searchModelMessage =
         sourceResult.requireSource === 'image'
-          ? SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE_ONLY_IMAGE(true)
+          ? SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE_ONLY_IMAGE
           : SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE(true)
     }
 

@@ -26,6 +26,7 @@ import EmbeddingsService from './embeddings_service.js'
 import AnalyzerService from './analyzer_service.js'
 import withCost from '../decorators/withCost.js'
 import QueryService from './query_service.js'
+import withCostWS from '../decorators/withCostWs.js'
 
 export default class PhotosService {
   sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -392,8 +393,8 @@ export default class PhotosService {
     }
   }
 
-  @withCost
-  public async search(
+  @withCostWS
+  public async *search(
     query: any,
     searchType: 'logical' | 'semantic' | 'creative',
     options = { embeddingsOnly: false }
@@ -434,23 +435,29 @@ export default class PhotosService {
       sourceResult.specific ? enrichmentResult.clear : enrichmentResult.enriched
     )
 
-    if (embeddingsOnly) {
-      return {
-        results: {
-          [query.iteration]: {
-            photos: nearPhotos?.slice(0, 100)?.map((item) => item.photo),
-          },
-        },
-        iteration: query.iteration,
-        enrichmentQuery: enrichmentResult.enriched,
-        scores: nearPhotos?.slice(0, 100),
-      }
-    }
-
     do {
       const offset = (query.iteration - 1) * pageSize
       const paginatedPhotos = nearPhotos.slice(offset, offset + pageSize)
       hasMore = offset + pageSize < nearPhotos.length
+
+      yield {
+        type: 'embeddings',
+        data: {
+          hasMore,
+          results: {
+            [query.iteration]: {
+              photos: paginatedPhotos.map((item) => item.photo),
+            },
+          },
+          iteration: query.iteration,
+          enrichmentQuery: enrichmentResult.enriched,
+          scores: nearPhotos?.slice(0, 100),
+        },
+      }
+
+      if (embeddingsOnly) {
+        return
+      }
 
       if (attempts >= maxPageAttempts || paginatedPhotos.length === 0) {
         break
@@ -508,13 +515,16 @@ export default class PhotosService {
       attempts++
     } while (!photosResult.length)
 
-    return {
-      results: { [query.iteration]: { photos: photosResult } },
-      hasMore: hasMore && attempts < maxPageAttempts,
-      cost: { enrichmentCost, sourceCost, modelCosts },
-      iteration: query.iteration,
-      enrichmentResult,
-      requireSource: { source: sourceResult.requireSource, useImage },
+    yield {
+      type: 'result',
+      data: {
+        results: { [query.iteration - 1]: { photos: photosResult } },
+        hasMore: hasMore && attempts < maxPageAttempts,
+        cost: { enrichmentCost, sourceCost, modelCosts },
+        iteration: query.iteration - 1,
+        enrichmentResult,
+        requireSource: { source: sourceResult.requireSource, useImage },
+      },
     }
   }
 
