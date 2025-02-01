@@ -418,8 +418,8 @@ export default class PhotosService {
       cost2: sourceCost,
     } = await this.queryService.processQuery(searchType, query)
 
-    const pageSize = 8
-    const batchSize = searchType == 'logical' ? 2 : 4
+    const pageSize = 9 //embeddingsOnly ? 9 : 8
+    const batchSize = 3 // searchType == 'logical' ? 2 : 4
     const maxPageAttempts = 3
 
     let photosResult = []
@@ -433,7 +433,7 @@ export default class PhotosService {
     nearPhotos = await this.embeddingsService.getScoredPhotosByTagsAndDesc(
       photos,
       sourceResult.specific ? enrichmentResult.clear : enrichmentResult.enriched,
-      query.description
+      searchType + '_' + query.description
     )
 
     do {
@@ -515,7 +515,7 @@ export default class PhotosService {
         type: 'result',
         data: {
           results: { [query.iteration - 1]: { photos: photosResult } },
-          hasMore: hasMore && attempts < maxPageAttempts,
+          hasMore,
           cost: { enrichmentCost, sourceCost, modelCosts },
           iteration: query.iteration - 1,
           enrichmentResult,
@@ -525,7 +525,7 @@ export default class PhotosService {
 
       if (attempts >= maxPageAttempts || paginatedPhotos.length === 0) {
         yield {
-          type: 'searchEnd',
+          type: 'maxPageAttempts',
         }
         return
       }

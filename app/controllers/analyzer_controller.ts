@@ -1,7 +1,11 @@
-import type { HttpContext } from '@adonisjs/core/http'
+// @ts-nocheck
 
+import type { HttpContext } from '@adonisjs/core/http'
 import AnalyzerService from '#services/analyzer_service'
-import EmbeddingsService from '#services/embeddings_service'
+import ws from '#services/ws'
+import Photo from '#models/photo'
+
+const analysisProcesses = new Map<string, AsyncGenerator>()
 
 export default class AnalyzerController {
   public async analyze({ request, response }: HttpContext) {
@@ -9,28 +13,42 @@ export default class AnalyzerController {
 
     try {
       // Obtener los IDs de las imágenes desde el frontend
-      const { photos } = request.body()
+      const { userId } = request.body()
+
+      // Aqui sacariamos las photos de este usuario
+      const photos = await Photo.query().where('metadata', null)
       if (!Array.isArray(photos) || photos.length === 0) {
         return response.badRequest({ message: 'No image IDs provided' })
       }
 
+      if (!userId) {
+        return response.badRequest({ message: 'User ID is required' })
+      }
+
       const photosIds = photos.map((photo) => photo.id)
 
-      const { results, cost } = await analyzerService.analyze(photosIds, 1)
+      // Si el usuario ya tiene un análisis en curso, no iniciar otro
+      if (!analysisProcesses.has(userId)) {
+        const process = analyzerService.analyze(photosIds, 1)
+        analysisProcesses.set(userId, process)
 
-      return response.ok({
-        results,
-        cost,
-      })
+        // Ejecutar el stream y emitir los eventos por WebSocket
+        this.handleAnalysisStream(userId, process)
+      }
+
+      return response.ok({ message: 'Analysis started', userId })
     } catch (error) {
       console.error(error)
       return response.internalServerError({ message: 'Something went wrong', error: error.message })
     }
   }
 
-  public async compare({ request, response }: HttpContext) {
-    const embedddingsService = new EmbeddingsService()
-    const { term, texts } = request.body()
-    return embedddingsService.compareGenerality(term, texts)
+  private async handleAnalysisStream(userId: string, stream: AsyncGenerator) {
+    for await (const result of stream) {
+      ws.io?.to(userId).emit(result.type, result.data) // Emitir solo a este usuario
+    }
+
+    // Cuando termina el análisis, limpiar el proceso de la memoria
+    analysisProcesses.delete(userId)
   }
 }

@@ -2,6 +2,7 @@
 
 import {
   SYSTEM_MESSAGE_QUERY_ENRICHMENT,
+  SYSTEM_MESSAGE_QUERY_ENRICHMENT_CREATIVE,
   SYSTEM_MESSAGE_QUERY_REQUIRE_SOURCE,
   SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE,
   SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE_ONLY_IMAGE,
@@ -25,7 +26,10 @@ export default class QueryService {
   }
 
   public async processQuery(searchType: 'logical' | 'semantic' | 'creative', query) {
-    const enrichmentMessage = SYSTEM_MESSAGE_QUERY_ENRICHMENT
+    const enrichmentMessage =
+      searchType !== 'creative'
+        ? SYSTEM_MESSAGE_QUERY_ENRICHMENT
+        : SYSTEM_MESSAGE_QUERY_ENRICHMENT_CREATIVE
     const sourceMessage = SYSTEM_MESSAGE_QUERY_REQUIRE_SOURCE
 
     // Ejecutamos las llamadas en paralelo, omitiendo la llamada a sourceMessage si searchType es 'logical'
@@ -54,7 +58,7 @@ export default class QueryService {
 
     enrichmentResult.original = query.description
 
-    sourceResult.requireSource = 'description'
+    // sourceResult.requireSource = 'description'
 
     let searchModelMessage
 

@@ -19,7 +19,7 @@ export const SYSTEM_MESSAGE_ANALIZER_MULTIPLE = (photosBatch: any[]) => `
    - 'symbols_tags' (string[] up to 4 words): list all the symbols, figures, text, logos or paintings you can see in the photo.
    - 'culture_tags' (string[] up to 3 words): the culture and/or country you guess the photo has been taken. As much concrete as possible. 
    - 'generic_tags' (string[] up to 4 words): general tags that group all the previous ones. Example ['people', 'sports', 'fashion', 'books']
-   - 'bonus_tags' (string[] up to 4 words): dedicated to special bonus, if any, which make the photo remarkable from artistic point of view. Example: ['abstract reflections', 'good layering', 'complementary colors', 'silhouettes', 'emotional connection', 'juxtaposition between monkey and Kingkong painting']
+   - 'bonus_tags' (string[] up to 4 words): dedicated to special bonus, if any, which make the photo remarkable from artistic point of view. Example: ['abstract reflections', 'good layering', 'complementary colors', 'silhouettes', 'juxtaposition between monkey and Kingkong painting']
    Note: Try to add a nuance to disambiguate single terms. For example: "orange (fruit)", or "water (drink)"
    Return always an rooted, single array of images. 
 `
@@ -330,6 +330,62 @@ Always returns a JSON, and only JSON, in the output format.
 
 `
 
+export const SYSTEM_MESSAGE_QUERY_ENRICHMENT_CREATIVE = `
+You are an intelligent assistant for processing user queries about finding photos. Your task is to analyze the user's query and structure it, plus expand its semantic 
+content for improved accuracy in filtering with embeddings. This version prioritizes creative and associative enrichment, incorporating metaphorical or poetically related terms.
+
+### Input format:
+{
+  "query": string
+}
+### Output format:
+{
+  "enriched": string,
+  "clear": string,
+}
+
+**Guidelines**
+
+- Set 'clear' field with the query split into its semantic fields, using pipes (|).
+- Set 'enriched' field with those previous segments expanded using synonyms, poetic associations, and metaphorical links that enhance meaning and atmosphere.
+- For both 'clear' and 'enriched', remove unnecessary prefixes and connectors like "photos of", "with", "at", "in the", "on", "behind of", etc.
+
+#### Example 1:
+**Input**:
+{
+  "query": "photos that capture the loneliness of a motel room"
+}
+**Output**:
+{
+  "clear": "loneliness | motel room"
+  "enriched": "loneliness, solitude, quiet despair | motel room, faded wallpaper, flickering neon, a single unmade bed"
+}
+
+#### Example 2:
+**Input**:
+{
+  "query": "images evoking the mystery of an abandoned train station"
+}
+**Output**:
+{
+  "clear": "mystery | abandoned train station"
+  "enriched": "mystery, enigma, forgotten stories | abandoned train station, rusted tracks, lingering echoes, a timetable with no departures"
+}
+
+#### Example 3:
+**Input**:
+{
+  "query": "scenes that feel like Blade Runner"
+}
+**Output**:
+{
+  "clear": "Blade Runner atmosphere"
+  "enriched": "Blade Runner, neon dystopia, cyberpunk city | rain-soaked streets, holographic ads, silhouettes in trench coats, flickering neon signs"
+}
+
+Always return a JSON, and only JSON, in the output format.
+`
+
 export const SYSTEM_MESSAGE_QUERY_REQUIRE_SOURCE = `
 You are an intelligent assistant for processing user queries about finding photos. 
 
@@ -348,7 +404,7 @@ You are an intelligent assistant for processing user queries about finding photo
 
 1) Your task is to analyze the user's query and determine the 'requireSource', which can be:
 - **The description**: The query is complex, not a mere list of yes/no elements, or it contains some more vague, subjective or subtle aspects for which it would be convenient to use the full description. 
-- **The image**: The query can be answered based solely on the visual schema/tonality of the photo. It tipically happens when the query involves visual aspects difficult to find in the tags/descriptions, such as composition, spatial arrangement, or tonalities.
+- **The image**: The query can be answered based solely on the visual schema/tonality of the photo. It tipically happens when the query involves visual aspects difficult to find in the tags/descriptions, such as composition, spatial arrangement, questions about concrete areas of the frame, or tonalities.
 In case of doubt, always select "description".
 2) For 'specific' field, try to find out if the user is looking for a specific photo. This typically happens with singular prefixes like “a photo with...”, or when the query is very long and detailed and *super specific*.
 
@@ -424,41 +480,12 @@ In case of doubt, always select "description".
 **Output**:
 {
   "requireSource": "image",
-    "specific": false
+  "specific": false
 }
 
 
 Always returns a JSON, and only JSON, in the output format. 
 
-`
-// De momento en desuso, usamos la misma para semantic y creative
-export const SYSTEM_MESSAGE_QUERY_ENRICHMENT_CREATIVE = `
-You are a creative chatbot in charge of processing the query of a user who is looking for photos. This query will be something like “pictures of nature” or 
-“pictures of people playing.” Your task is to prepare the query for filtering with embeddings, using a creative and flexible approach that enables finding visually 
-or conceptually inspiring results. Treat the input as follows:
-
-Remove prefixes that create semantic noise, such as “pictures of...” or “photos of...”.
-Enrich the semantic content with creative and lateral associations, such as abstract, emotional, or symbolic ideas related to the query.
-Expand the query creatively, incorporating symbolic, emotional, or indirect associations to enhance diversity and inspire creativity.
-Input format: { query: '...' }
-Output format: { query: '...' }
-
-Key Features for Output:
-
-Expand the query creatively, incorporating symbolic, emotional, or indirect associations.
-Keep the expanded query visually and conceptually diverse.
-Do not include any "exclude" field.
-Example
-For the query "photos in urban places".
-Result:
-{ 
-  "query": "urban landscapes, geometric patterns, neon lights, human interaction, cityscapes, urban solitude, abstract urban textures" 
-}
-For the query "pictures of water".
-{ 
-  "query": "water, reflections, fluid dynamics, oceanic waves, shimmering light, aquatic life, abstract liquid forms, flowing motion" 
-}
-  Always return a JSON response in the output format.
 `
 
 export const SYSTEM_MESSAGE_SEARCH_SEMANTIC = (includeReasoning: boolean) => `
@@ -492,7 +519,7 @@ json
 [
   {
     "id": "string",
-    ${includeReasoning ? '"reasoning": "string",' : ''}
+    ${includeReasoning ? '"reasoning": "string", // max. 25 words' : ''}
     "isIncluded": true/false
   }
 ]
@@ -653,7 +680,7 @@ export const SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE = (includeReasoning: boolean) 
     {
       'id': 'string',
       'isIncluded': true/false,
-      ${includeReasoning ? "'reasoning': 'string'" : ''}
+      ${includeReasoning ? "'reasoning': 'string' // max. 25 words" : ''}
     }
   ]
   

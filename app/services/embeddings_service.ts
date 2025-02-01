@@ -329,7 +329,6 @@ export default class EmbeddingsService {
       }))
     }
 
-    // No hay cache, calcular los scores
     const [scoredTagsPhotos, scoredDescPhotosChunked] = await Promise.all([
       this.getScoredTagsByQuerySegments(photos, query),
       this.getScoredDescPhotos(photos, query),

@@ -109,6 +109,8 @@ import EmbeddingsService from './embeddings_service.js'
 import DescriptionChunk from '#models/descriptionChunk'
 import MeasureExecutionTime from '../decorators/measureExecutionTime.js'
 import withCost from '../decorators/withCost.js'
+import withCostWS from '../decorators/withCostWs.js'
+import ws from './ws.js'
 const require = createRequire(import.meta.url)
 const pluralize = require('pluralize')
 
@@ -120,31 +122,26 @@ export default class AnalyzerService {
   /**
    * Asociar tags a una foto con soporte por lotes
    */
-  @withCost
-  // @MeasureExecutionTime
-  public async analyze(photosIds: string[], maxImagesPerBatch = 3) {
+  @withCostWS
+  public async *analyze(photosIds: string[], maxImagesPerBatch = 3) {
     const photosService = new PhotosService()
     const modelsService = new ModelsService()
 
     const photos = await photosService.getPhotosByIds(photosIds)
-
     const uploadPath = path.join(process.cwd(), 'public/uploads/photos')
 
     const validImages = []
     for (const photo of photos) {
-      const filePath = path.join(uploadPath, `${photo.name}`) // Ajusta la extensión según corresponda
+      const filePath = path.join(uploadPath, `${photo.name}`)
 
       try {
-        // Verificar si el archivo existe
         await fs.access(filePath)
-
-        // Procesar la imagen con sharp
         const resizedBuffer = await sharp(filePath)
           .resize({ width: 1024, fit: 'inside' })
           .toBuffer()
 
         validImages.push({
-          id: photo.id, // Usar el ID proporcionado
+          id: photo.id,
           base64: resizedBuffer.toString('base64'),
         })
       } catch (error) {
@@ -156,7 +153,6 @@ export default class AnalyzerService {
       throw new Exception('No valid images found for the provided IDs')
     }
 
-    // Procesar en lotes con Promise.allSettled para manejar errores individuales
     const batchPromises = []
     for (let i = 0; i < validImages.length; i += maxImagesPerBatch) {
       const batch = validImages.slice(i, i + maxImagesPerBatch)
@@ -178,8 +174,7 @@ export default class AnalyzerService {
       )
 
       batchPromises.push(batchPromise)
-
-      await new Promise((resolve) => setTimeout(resolve, 750))
+      await new Promise((resolve) => setTimeout(resolve, 750)) // Evitar rate-limits
     }
 
     const responses = await Promise.allSettled(batchPromises)
@@ -200,24 +195,19 @@ export default class AnalyzerService {
       }
     })
 
-    // Agregar metadatos
     await this.addMetadata(results)
 
-    // Retornar el resultado combinado
-    return {
-      results,
-      cost: costs,
-    }
+    yield { type: 'analysisComplete', data: { cost: costs } } // Devolvemos progresivamente cada foto procesada
+
+    return
   }
 
-  @MeasureExecutionTime
   public async addMetadata(metadata: { id: string; [key: string]: any }[]) {
     const existingTags = await Tag.all()
     const tagMap = new Map(
       existingTags.map((tag) => [lemmatizer.stem(tag.name.toLowerCase()), tag])
     )
 
-    // Process all metadata entries in parallel
     await Promise.all(
       metadata.map(async (data) => {
         const { id, description, ...rest } = data
@@ -226,6 +216,7 @@ export default class AnalyzerService {
         if (photo) {
           const updateData: any = {}
           const tagInstances: any[] = []
+
           await Promise.all([
             await this.processDesc(description, photo.id),
             ...Object.keys(rest)
@@ -249,11 +240,18 @@ export default class AnalyzerService {
             }
           })
 
-          photo.merge({ ...updateData, description, metadata: { ...photo.metadata, ...rest } })
+          photo.merge({
+            ...updateData,
+            description,
+            metadata: { ...photo.metadata, ...rest },
+          })
+
           await photo.save()
 
+          // 🔹 Enviamos un evento WebSocket inmediatamente tras guardar la foto
+          ws.io?.emit('photoProcessed', { id: photo.id })
+
           if (tagInstances.length > 0) {
-            // Eliminar duplicados basados en el campo "name"
             const uniqueTagInstances = Array.from(
               new Map(tagInstances.map((tag) => [tag.name.toLowerCase(), tag])).values()
             )
