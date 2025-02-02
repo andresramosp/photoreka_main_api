@@ -20,6 +20,9 @@ export default class Photo extends BaseModel {
   @column()
   declare name: string
 
+  @column()
+  declare url: string
+
   @column.dateTime({ autoCreate: true })
   declare createdAt: DateTime
 

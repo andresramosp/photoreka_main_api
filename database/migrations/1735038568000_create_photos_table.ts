@@ -9,6 +9,7 @@ export default class extends BaseSchema {
       table.text('description')
       table.string('title')
       table.string('name')
+      table.text('url')
       table.jsonb('metadata')
       table.timestamp('created_at')
       table.timestamp('updated_at')

@@ -119,9 +119,6 @@ const lemmatizer = {
 }
 
 export default class AnalyzerService {
-  /**
-   * Asociar tags a una foto con soporte por lotes
-   */
   @withCostWS
   public async *analyze(photosIds: string[], maxImagesPerBatch = 3) {
     const photosService = new PhotosService()
@@ -136,9 +133,7 @@ export default class AnalyzerService {
 
       try {
         await fs.access(filePath)
-        const resizedBuffer = await sharp(filePath)
-          .resize({ width: 1024, fit: 'inside' })
-          .toBuffer()
+        const resizedBuffer = await sharp(filePath).toBuffer()
 
         validImages.push({
           id: photo.id,
@@ -197,9 +192,56 @@ export default class AnalyzerService {
 
     await this.addMetadata(results)
 
-    yield { type: 'analysisComplete', data: { cost: costs } } // Devolvemos progresivamente cada foto procesada
+    yield { type: 'analysisComplete', data: { cost: costs } }
+
+    this.compressPhotos(photos)
 
     return
+  }
+
+  private async compressPhotos(photos) {
+    const uploadPath = path.join(process.cwd(), 'public/uploads/photos')
+
+    let minQuality = 30
+
+    for (const photo of photos) {
+      const filePath = path.join(uploadPath, photo.name)
+      const tempFilePath = path.join(uploadPath, `temp-${photo.name}`)
+
+      try {
+        await fs.access(filePath) // Verifica si el archivo existe
+
+        let quality = 80 // Calidad inicial (ajustable)
+
+        while (true) {
+          // Redimensiona la imagen con un ancho fijo de 512px, manteniendo la proporción
+          await sharp(filePath)
+            .resize({ width: 512, fit: 'inside' })
+            .jpeg({ quality, progressive: true }) // Comprime con calidad ajustable
+            .toFile(tempFilePath)
+
+          // Obtiene el tamaño del archivo resultante
+          const stats = await fs.stat(tempFilePath)
+          if (stats.size <= 50 * 1024 || quality <= minQuality) break // Sale si cumple con el tamaño o si la calidad es muy baja
+
+          quality -= 5 // Reduce la calidad y reintenta
+        }
+
+        // Reemplaza el archivo original con el comprimido
+        await fs.rename(tempFilePath, filePath)
+      } catch (error) {
+        console.error(`Error procesando ${photo.name}:`, error)
+
+        // Limpieza: elimina el archivo temporal si existe
+        try {
+          await fs.unlink(tempFilePath)
+        } catch (unlinkError) {
+          if (unlinkError.code !== 'ENOENT') {
+            console.error(`Error eliminando archivo temporal ${tempFilePath}:`, unlinkError)
+          }
+        }
+      }
+    }
   }
 
   public async addMetadata(metadata: { id: string; [key: string]: any }[]) {

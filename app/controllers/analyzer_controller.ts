@@ -17,6 +17,7 @@ export default class AnalyzerController {
 
       // Aqui sacariamos las photos de este usuario
       const photos = await Photo.query().where('metadata', null)
+
       if (!Array.isArray(photos) || photos.length === 0) {
         return response.badRequest({ message: 'No image IDs provided' })
       }
@@ -45,7 +46,7 @@ export default class AnalyzerController {
 
   private async handleAnalysisStream(userId: string, stream: AsyncGenerator) {
     for await (const result of stream) {
-      ws.io?.to(userId).emit(result.type, result.data) // Emitir solo a este usuario
+      ws.io?.emit(result.type, result.data) // .to(userId) para Emitir solo a este usuario
     }
 
     // Cuando termina el análisis, limpiar el proceso de la memoria

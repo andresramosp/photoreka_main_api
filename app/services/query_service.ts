@@ -90,14 +90,13 @@ export default class QueryService {
   }
 
   public async evaluateQueryLogic(query, photo) {
-    const segments = query.split(/\s+(AND|NOT)\s+/i).filter(Boolean) // Split into terms and operators
+    const segments = query.split(/\s+(AND|OR|NOT|\|)\s+/i).filter(Boolean) // Split into terms and operators
     const termsWithOperators = []
 
-    // Parse terms and associate them with their operators
     let currentOperator = 'AND'
     for (let segment of segments) {
-      if (segment.toUpperCase() === 'AND' || segment.toUpperCase() === 'NOT') {
-        currentOperator = segment.toUpperCase()
+      if (['AND', 'OR', 'NOT', '|'].includes(segment.toUpperCase())) {
+        currentOperator = segment.toUpperCase() === '|' ? 'AND' : segment.toUpperCase()
       } else {
         termsWithOperators.push({ term: segment.trim(), operator: currentOperator })
       }
@@ -105,12 +104,9 @@ export default class QueryService {
 
     let allMatched = true
     let hasNotMatched = false
+    let hasOrMatch = false
 
     for (let { term, operator } of termsWithOperators) {
-      if (photo.id == '38371661-b2b9-4e09-9809-ddc490f4239f') {
-        console.log()
-      }
-
       let { matchingTags, method, lematizedTerm } =
         await this.embeddingsService.findMatchingTagsForTerm(term, photo.tags, 0.85, 5)
 
@@ -118,11 +114,16 @@ export default class QueryService {
         console.log(
           `[evaluateQueryLogic]: Found matching tags for '${term}' [${lematizedTerm}] -> '${matchingTags.map((mt) => mt.name)}' by ${method} `
         )
+
         if (operator === 'NOT') {
           hasNotMatched = true
+        } else if (operator === 'OR') {
+          hasOrMatch = true
         }
       } else {
-        return null
+        if (operator === 'AND') {
+          return null
+        }
       }
     }
 
@@ -130,7 +131,7 @@ export default class QueryService {
       return false
     }
 
-    return allMatched
+    return hasOrMatch || allMatched
   }
 
   public async getTagsForLogicalQuery(
