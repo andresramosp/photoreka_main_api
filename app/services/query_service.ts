@@ -35,12 +35,14 @@ export default class QueryService {
     // Ejecutamos las llamadas en paralelo, omitiendo la llamada a sourceMessage si searchType es 'logical'
     const enrichmentPromise = this.modelsService.getGPTResponse(
       enrichmentMessage,
-      JSON.stringify({ query: query.description })
+      JSON.stringify({ query: query.description }),
+      'gpt-4o-mini'
     )
 
     let enrichmentResponse, sourceResponse
 
-    if (searchType === 'logical') {
+    if (true) {
+      // (searchType === 'logical') {
       enrichmentResponse = await enrichmentPromise
       sourceResponse = { result: { requireSource: null, cost: 0 } } // Simulamos una respuesta vacía para evitar errores
     } else {
@@ -58,7 +60,7 @@ export default class QueryService {
 
     enrichmentResult.original = query.description
 
-    // sourceResult.requireSource = 'description'
+    sourceResult.requireSource = 'description'
 
     let searchModelMessage
 
@@ -165,6 +167,9 @@ export default class QueryService {
             'cosine_similarity',
             photo.tags.map((tag) => tag.id)
           )
+          if (photo.id == 'f6096759-8ec6-4e08-888a-b39e83e05c69') {
+            console.log()
+          }
           similarTags.forEach((tag) => tagsSet.add(tag)) // Agregar tags al Set
           console.log(`Similar tags to ${segment}: ${similarTags.map((t) => t.name)}`)
         })()

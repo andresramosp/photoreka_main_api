@@ -9,7 +9,7 @@ export default class extends BaseSchema {
         id SERIAL PRIMARY KEY,
         photo_id UUID NOT NULL,
         chunk TEXT,
-        embedding VECTOR(384),
+        embedding VECTOR(768),
         CONSTRAINT fk_photo FOREIGN KEY (photo_id) REFERENCES photos(id) ON DELETE CASCADE
       )
     `)

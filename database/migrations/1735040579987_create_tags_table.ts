@@ -14,7 +14,7 @@ export default class extends BaseSchema {
         name VARCHAR(255) NOT NULL UNIQUE,
         "group" VARCHAR(255),
         children JSONB,
-        embedding VECTOR(384),
+        embedding VECTOR(768),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )

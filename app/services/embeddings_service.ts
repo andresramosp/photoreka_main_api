@@ -307,27 +307,27 @@ export default class EmbeddingsService {
     cacheKeySuffix: string
   ): Promise<ChunkedPhoto[] | undefined> {
     const weights = {
-      tags: 0.6,
-      desc: 0.4,
+      tags: 1,
+      desc: 0,
     }
 
     const cacheKey = `scoredPhotoIds:${cacheKeySuffix.toLowerCase().trim()}`
     const cachedPhotoIds = cache.get<number[]>(cacheKey)
 
-    if (cachedPhotoIds) {
-      const cachedPhotosMap = new Map(photos.map((photo) => [photo.id, photo]))
+    // if (cachedPhotoIds) {
+    //   const cachedPhotosMap = new Map(photos.map((photo) => [photo.id, photo]))
 
-      const cachedPhotos = cachedPhotoIds
-        .map((id) => cachedPhotosMap.get(id))
-        .filter(Boolean) as Photo[]
+    //   const cachedPhotos = cachedPhotoIds
+    //     .map((id) => cachedPhotosMap.get(id))
+    //     .filter(Boolean) as Photo[]
 
-      return cachedPhotos.map((photo) => ({
-        photo,
-        tagScore: 0,
-        descScore: 0,
-        totalScore: 0,
-      }))
-    }
+    //   return cachedPhotos.map((photo) => ({
+    //     photo,
+    //     tagScore: 0,
+    //     descScore: 0,
+    //     totalScore: 0,
+    //   }))
+    // }
 
     const [scoredTagsPhotos, scoredDescPhotosChunked] = await Promise.all([
       this.getScoredTagsByQuerySegments(photos, query),
@@ -428,7 +428,7 @@ export default class EmbeddingsService {
 
         await Promise.all(
           subSegments.map(async (subSegment) => {
-            const { matchingTags } = await this.findMatchingTagsForTerm(
+            const { matchingTags } = await this.findMatchingTagsForTerm_V2(
               subSegment,
               allTags,
               0.4,
@@ -464,7 +464,7 @@ export default class EmbeddingsService {
       let matchedSegments = 0
       let hasNotSegmentMatched = false
 
-      if (photo.id == '207a9520-5037-458c-acfb-af108a834e53') {
+      if (photo.id == 'bcb46a06-8559-47f7-aa69-509e65258d03') {
         console.log()
       }
 
@@ -492,7 +492,7 @@ export default class EmbeddingsService {
           // Calcular la puntuación total sin sobreponderar el maxScore
           totalScore +=
             (maxProximity + Math.min(adjustedProximities, maxProximity)) *
-            (operator == 'NOT' ? 0.25 : 1) // Los tags NOT tienen penalización pero no se excluyen porque a veces matchean con tags no excluyentes (women -> people)
+            (operator == 'NOT' ? -0.5 : 1)
         }
       }
 
@@ -589,6 +589,66 @@ export default class EmbeddingsService {
     return {
       matchingTags: uniqueMatches,
       method: extensive ? 'String and Semantic comparison' : 'Semantic proximity',
+      lematizedTerm,
+    }
+  }
+
+  public async findMatchingTagsForTerm_V2(term, tags, threshold, limit) {
+    let lematizedTerm = pluralize.singular(term.toLowerCase())
+    let termWordCount = lematizedTerm.split(' ').length // solo tags con igual o menos palabras que el term, para evitar 'red umbrella' -> 'umbrellas' por prox semantica
+
+    // 1. String comparison con los tags iguales o mas cortos
+    let equalOrShorterTags = []
+    // for (let tag of tags) {
+    //   let lematizedTagName = pluralize.singular(tag.name.toLowerCase())
+    //   if (lematizedTagName.split(' ').length >= termWordCount) {
+    //     equalOrShorterTags.push(tag)
+    //   }
+    // }
+
+    let matchedTagsByString = equalOrShorterTags
+      .map((t) => pluralize.singular(t.name.toLowerCase()))
+      .filter((lematizedTagName) => {
+        const regex = new RegExp(`\\b${pluralize.singular(lematizedTerm.toLowerCase())}\\b`, 'i')
+        return regex.test(lematizedTagName)
+      })
+
+    let stringMatches = matchedTagsByString.map((tagName) => {
+      return { name: tagName, proximity: 0.9 }
+    })
+
+    // 2. Embeddings + evaluación por inferencia lógica
+
+    let { embeddings } = await this.modelsService.getEmbeddings([lematizedTerm])
+    const similarTags = await this.findSimilarTagToEmbedding(
+      embeddings[0],
+      threshold,
+      limit,
+      'cosine_similarity',
+      tags.map((t) => t.id)
+    )
+
+    let evaluatedSimilarTags = await this.modelsService.adjustProximitiesByContextInference(
+      lematizedTerm,
+      similarTags
+    )
+
+    let semanticMatches = evaluatedSimilarTags.map((tag) => {
+      return {
+        name: tag.name,
+        proximity: tag.proximity,
+        embeddingsProximity: tag.embeddingsProximity,
+      }
+    })
+
+    // Combine results and remove duplicates
+    let allMatches = [...stringMatches, ...semanticMatches]
+    let uniqueMatches = allMatches.filter(
+      (match, index, self) => index === self.findIndex((t) => t.name === match.name)
+    )
+
+    return {
+      matchingTags: uniqueMatches,
       lematizedTerm,
     }
   }

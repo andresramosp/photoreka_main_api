@@ -341,8 +341,13 @@ export default class PhotosService {
       if (searchType == 'logical') {
         const similarTags = await this.queryService.getTagsForLogicalQuery(
           batchedPhoto.photo,
-          enrichmentResult.clear
+          enrichmentResult.clear,
+          0.05, // 'kids' esta a 0.09 de 'girl smiling' :&
+          20
         )
+        if (batchedPhoto.photo.id == 'f6096759-8ec6-4e08-888a-b39e83e05c69') {
+          console.log()
+        }
         return {
           tempID: batchedPhoto.photo.tempID,
           tags: similarTags.map((nt) => nt.name),
@@ -381,7 +386,7 @@ export default class PhotosService {
               batch.map((cp) => cp.photo.id)
             )),
           ],
-      method == 'getGPTResponse' ? 'gpt-4o-mini' : 'deepseek-chat',
+      method == 'getGPTResponse' ? 'gpt-4o' : 'deepseek-chat',
       null,
       searchType === 'creative' ? 1.3 : searchType === 'semantic' ? 0.3 : 0.1,
       false
@@ -432,7 +437,8 @@ export default class PhotosService {
     // Embeddings de momento parece funcionar siempre mejor con tags + desc
     nearPhotos = await this.embeddingsService.getScoredPhotosByTagsAndDesc(
       photos,
-      sourceResult.specific ? enrichmentResult.clear : enrichmentResult.enriched,
+      enrichmentResult.clear,
+      // sourceResult.specific ? enrichmentResult.clear : enrichmentResult.enriched,
       searchType + '_' + query.description
     )
 
@@ -530,7 +536,7 @@ export default class PhotosService {
         return
       }
 
-      await this.sleep(500)
+      await this.sleep(750)
     } while (!photosResult.some((p) => p.isIncluded))
   }
 
@@ -583,7 +589,7 @@ export default class PhotosService {
         await fs.access(filePath)
 
         const resizedBuffer = await sharp(filePath)
-          .resize({ width: 1012, fit: 'inside' })
+          // .resize({ width: 1012, fit: 'inside' })
           .toBuffer()
 
         validImages.push({

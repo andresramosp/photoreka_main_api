@@ -159,7 +159,7 @@ export default class AnalyzerService {
             type: 'image_url',
             image_url: {
               url: `data:image/jpeg;base64,${base64}`,
-              detail: 'high',
+              detail: 'low',
             },
           })),
         ],
@@ -194,7 +194,7 @@ export default class AnalyzerService {
 
     yield { type: 'analysisComplete', data: { cost: costs } }
 
-    this.compressPhotos(photos)
+    // this.compressPhotos(photos)
 
     return
   }
@@ -203,6 +203,7 @@ export default class AnalyzerService {
     const uploadPath = path.join(process.cwd(), 'public/uploads/photos')
 
     let minQuality = 30
+    let minSizeKb = 80
 
     for (const photo of photos) {
       const filePath = path.join(uploadPath, photo.name)
@@ -222,7 +223,7 @@ export default class AnalyzerService {
 
           // Obtiene el tamaño del archivo resultante
           const stats = await fs.stat(tempFilePath)
-          if (stats.size <= 50 * 1024 || quality <= minQuality) break // Sale si cumple con el tamaño o si la calidad es muy baja
+          if (stats.size <= minSizeKb * 1024 || quality <= minQuality) break // Sale si cumple con el tamaño o si la calidad es muy baja
 
           quality -= 5 // Reduce la calidad y reintenta
         }

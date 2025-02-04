@@ -9,18 +9,21 @@ export const SYSTEM_MESSAGE_ANALIZER_MULTIPLE = (photosBatch: any[]) => `
    ]
    For each image, include following properties:
    - 'id': id of the image, using this comma-separated, ordered list: ${photosBatch.map((img: any) => img.id).join(',')}
-   - 'description' (minimum 300 words): describes the image in detail, and trying to capture the general meaning of the scene, storytelling 
+   - 'description' (minimum 250 words per photo): describes the image in detail, and trying to capture the general meaning of the scene, storytelling 
       if any, and interactions. Pay attention to special bonus like: reflections, quirky juxtapositions of elements, good layering, optical illusions or potential methaphoric meanings.
    - 'objects_tags' (string[] up to 8 words): list the objects you can see in the photo, prioritizing those with a relevant presence. Example ['red lunarisca', 'big cronopio', 'old book']
-   - 'persons_tags' (string[] up to 7 words): list the people you see in the photo and who have a relevant presence. Ignore distant people if they have no relevant role in the photo. Try to specify gender, age and clothing. Example: ['man in suits', 'funny kid', 'waiter with red hat']
-   - 'action_tags' (string[] up to 5 words): similiar to 'persons_tags', but enphatizing the actions of each person. Include the subject of the action.  Example: ['cronopio playing football', 'cronopio waiting bus']
+   - 'persons_tags' (string[] up to 7 words): list the people you see in the photo and who have a relevant presence. Try to specify gender, age and clothing. Example: ['man in suits', 'funny kid', 'waiter with red hat']
+   - 'action_tags' (string[] up to 5 words): similiar to 'persons_tags', but enphatizing the actions and gestures of each person. Include the subject of the action.  Example: ['waiter playing football', 'policeman waiting bus', 'cross-legged girl']
    - 'location_tags' (string[] up to 4 words): tags which describes the concrete location, and wether it's inside or outside. 
    - 'weather_time_tags': (string[] up to 3 words): tags related to weather and time of the day, season of the year if possible, etc. Example: ['rainy', 'daytime', 'winter']
    - 'symbols_tags' (string[] up to 4 words): list all the symbols, figures, text, logos or paintings you can see in the photo.
    - 'culture_tags' (string[] up to 3 words): the culture and/or country you guess the photo has been taken. As much concrete as possible. 
-   - 'generic_tags' (string[] up to 4 words): general tags that group all the previous ones. Example ['people', 'sports', 'fashion', 'books']
+   - 'generic_tags' (string[] up to 4 words): general tags that group all the previous ones. Example ['no people', 'sports', 'fashion', 'books']
    - 'bonus_tags' (string[] up to 4 words): dedicated to special bonus, if any, which make the photo remarkable from artistic point of view. Example: ['abstract reflections', 'good layering', 'complementary colors', 'silhouettes', 'juxtaposition between monkey and Kingkong painting']
-   Note: Try to add a nuance to disambiguate single terms. For example: "orange (fruit)", or "water (drink)"
+  *Guidelines*: 
+  - For tags related to phisical things (objects, people, etc.), discards those that are distant or barely visible, or of little relevance to the scene.
+  - Try to add a nuance to disambiguate single terms. For example: "orange (fruit)", or "water (drink)"
+  - Avoid too general terms like "people". Use more nuanced ones. Exampkes: "elegant people", "person alone", "big group of people"
    Return always an rooted, single array of images. 
 `
 
@@ -261,7 +264,7 @@ content for improved accuracy in filtering with embeddings.
 
 **Guidelines**
 
-- Set 'clear' field with the query splited in its semantic fields, using pipes (|), or using operators (AND|OR|NOT) when the query has a *clear logical* structure (this... and that... not those).
+- Set 'clear' field with the query splited in its semantic fields, using pipes (|), or using operators (AND|OR|NOT) when the query has a *clear logical* structure (this... and that... not those). 
 - Set 'enriched' field with those previous segments enriched with synonymous, but avoid including terms that generalize too much or are broader than the original ones.
 - For both fields 'clear' and 'enriched', remove unnecesary prefix and connectors like "photos of", "with", "at", "in the", "on", "behind of", etc.
 
