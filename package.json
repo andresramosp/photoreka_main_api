@@ -59,6 +59,7 @@
     "@googleapis/oauth2": "^1.0.7",
     "@vinejs/vine": "^3.0.0",
     "axios": "^1.7.9",
+    "compromise": "^14.14.4",
     "googleapis": "^144.0.0",
     "lemmatizer": "^0.0.1",
     "luxon": "^3.5.0",

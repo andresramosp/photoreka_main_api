@@ -111,6 +111,7 @@ import MeasureExecutionTime from '../decorators/measureExecutionTime.js'
 import withCost from '../decorators/withCost.js'
 import withCostWS from '../decorators/withCostWs.js'
 import ws from './ws.js'
+import NLPService from './nlp_service.js'
 const require = createRequire(import.meta.url)
 const pluralize = require('pluralize')
 
@@ -251,6 +252,8 @@ export default class AnalyzerService {
       existingTags.map((tag) => [lemmatizer.stem(tag.name.toLowerCase()), tag])
     )
 
+    const nlpService = new NLPService()
+
     await Promise.all(
       metadata.map(async (data) => {
         const { id, description, ...rest } = data
@@ -266,7 +269,11 @@ export default class AnalyzerService {
               .filter((key) => key.endsWith('_tags'))
               .map(async (key) => {
                 const group = key.replace('_tags', '')
-                const tags = rest[key] || []
+                let tags = rest[key] || []
+                for (let tag of tags) {
+                  let sustantivesFromTag = nlpService.getSustantives(tag)
+                  if (sustantivesFromTag?.length) tags.push(...sustantivesFromTag)
+                }
                 await Promise.all(
                   tags.map((tagName: string) =>
                     this.processTag(tagName, group, tagMap, tagInstances)

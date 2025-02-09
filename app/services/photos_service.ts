@@ -437,9 +437,8 @@ export default class PhotosService {
     // Embeddings de momento parece funcionar siempre mejor con tags + desc
     nearPhotos = await this.embeddingsService.getScoredPhotosByTagsAndDesc(
       photos,
-      enrichmentResult.clear,
-      // sourceResult.specific ? enrichmentResult.clear : enrichmentResult.enriched,
-      searchType + '_' + query.description
+      enrichmentResult,
+      searchType
     )
 
     do {
@@ -458,7 +457,7 @@ export default class PhotosService {
           },
           iteration: query.iteration,
           enrichmentQuery: enrichmentResult.enriched,
-          scores: nearPhotos?.slice(0, 100),
+          scores: nearPhotos?.slice(0, 1000),
         },
       }
 

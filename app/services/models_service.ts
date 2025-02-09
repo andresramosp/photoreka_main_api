@@ -76,47 +76,31 @@ export default class ModelsService {
   public async adjustProximitiesByContextInference(
     term: string,
     tags: any[],
-    batchSize = 2
+    termsType: 'tag' | 'desc' = 'tag'
   ): Promise<any[]> {
     try {
-      // Dividir la lista de tags en lotes de tamaño batchSize
-      const batches = []
-      for (let i = 0; i < tags.length; i += batchSize) {
-        batches.push(tags.slice(i, i + batchSize))
+      const payload = {
+        term,
+        tag_list: tags.map((tag) => ({ name: tag.name })),
       }
 
-      // Ejecutar cada batch en paralelo usando Promise.all
-      const responses = await Promise.all(
-        batches.map(async (batch) => {
-          const payload = {
-            term,
-            tag_list: batch.map((tag) => ({ name: tag.name, proximity: tag.proximity })),
-          }
-
-          try {
-            const { data } = await axios.post(
-              'http://127.0.0.1:5000/adjust_proximities_by_context_inference',
-              payload,
-              { headers: { 'Content-Type': 'application/json' } }
-            )
-
-            return batch.map((tag) => ({
-              ...tag,
-              embeddingsProximity: tag.proximity,
-              proximity: data[tag.name]?.adjusted_proximity ?? tag.proximity, // Usa el original si no hay ajuste
-            }))
-          } catch (error) {
-            console.error(`Error en batch:`, error)
-            return batch // En caso de error en el batch, devuelve los originales
-          }
-        })
+      const { data } = await axios.post(
+        termsType == 'tag'
+          ? 'http://127.0.0.1:5000/adjust_tags_proximities_by_context_inference'
+          : 'http://127.0.0.1:5000/adjust_description_proximities_by_context_inference',
+        payload,
+        { headers: { 'Content-Type': 'application/json' } }
       )
 
-      // Combinar todas las respuestas en una sola lista
-      return responses.flat()
+      // Mapear los resultados ajustando la proximidad si está disponible
+      return tags.map((tag) => ({
+        ...tag,
+        embeddingsProximity: tag.proximity,
+        proximity: data[tag.name].adjusted_proximity,
+      }))
     } catch (error) {
       console.error('Error en adjustProximitiesByContextInference:', error)
-      return tags // En caso de fallo general, devolver los tags originales
+      return tags // En caso de error, devolver los tags originales
     }
   }
 
