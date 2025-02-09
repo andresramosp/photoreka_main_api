@@ -11,17 +11,18 @@ export const SYSTEM_MESSAGE_ANALIZER_MULTIPLE = (photosBatch: any[]) => `
    - 'id': id of the image, using this comma-separated, ordered list: ${photosBatch.map((img: any) => img.id).join(',')}
    - 'description' (minimum 250 words per photo): describes the image in detail, and trying to capture the general meaning of the scene, storytelling 
       if any, and interactions. Pay attention to special bonus like: reflections, quirky juxtapositions of elements, good layering, optical illusions or potential methaphoric meanings.
-   - 'objects_tags' (string[] up to 8 words): list the objects you can see in the photo, prioritizing those with a relevant presence. Example ['red lunarisca', 'big cronopio', 'old book']
+   - 'objects_tags' (string[] up to 7 words): list the physical objects you can see in the photo, prioritizing those with a relevant presence. Example ['big tree', 'big umbrella', 'old building']
    - 'persons_tags' (string[] up to 7 words): list the people you see in the photo and who have a relevant presence. Try to specify gender, age and clothing. Example: ['man in suits', 'funny kid', 'waiter with red hat']
    - 'action_tags' (string[] up to 5 words): similiar to 'persons_tags', but enphatizing the actions and gestures of each person. Include the subject of the action.  Example: ['waiter playing football', 'policeman waiting bus', 'cross-legged girl']
    - 'location_tags' (string[] up to 4 words): tags which describes the concrete location, and wether it's inside or outside. 
+   - 'animals_tags' (string[] up to 4 words): list the animals you can see in the photo, prioritizing those with a relevant presence. Example ['white dog', 'black cat']
    - 'weather_time_tags': (string[] up to 3 words): tags related to weather and time of the day, season of the year if possible, etc. Example: ['rainy', 'daytime', 'winter']
-   - 'symbols_tags' (string[] up to 4 words): list all the symbols, figures, text, logos or paintings you can see in the photo.
+   - 'symbols_tags' (string[] up to 4 words): list all the symbols, figures, text, logos or paintings you can see in the photo. Example: ['red arrow', 'gorilla painting', 'Starbucks logo']
    - 'culture_tags' (string[] up to 3 words): the culture and/or country you guess the photo has been taken. As much concrete as possible. 
-   - 'generic_tags' (string[] up to 4 words): general tags that group all the previous ones. Example ['no people', 'sports', 'fashion', 'books']
+   - 'topic_tags' (string[] up to 4 words): tags about general topics in the photo. Example ['no people', 'sports', 'fashion', 'books']
    - 'bonus_tags' (string[] up to 4 words): dedicated to special bonus, if any, which make the photo remarkable from artistic point of view. Example: ['abstract reflections', 'good layering', 'complementary colors', 'silhouettes', 'juxtaposition between monkey and Kingkong painting']
   *Guidelines*: 
-  - For tags related to phisical things (objects, people, etc.), discards those that are distant or barely visible, or of little relevance to the scene.
+  - For tags related to phisical things (objects, people, plants, buildings, etc.), discards those that are distant or barely visible, or of little relevance to the scene.
   - Try to add a nuance to disambiguate single terms. For example: "orange (fruit)", or "water (drink)"
   - Avoid too general terms like "people". Use more nuanced ones. Exampkes: "elegant people", "person alone", "big group of people"
    Return always an rooted, single array of images. 

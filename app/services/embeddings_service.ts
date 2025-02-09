@@ -254,7 +254,7 @@ export default class EmbeddingsService {
     const matchingChunks = await this.findSimilarChunksToText(
       description,
       0.2,
-      1000,
+      2000,
       'cosine_similarity'
     )
 
@@ -337,19 +337,19 @@ export default class EmbeddingsService {
     const cacheKey = `scoredPhotoIds:${query.toLowerCase().trim()}_${searchType}`
     const cachedPhotoIds = cache.get<number[]>(cacheKey)
 
-    if (cachedPhotoIds) {
-      const cachedPhotosMap = new Map(photos.map((photo) => [photo.id, photo]))
-      const cachedPhotos = cachedPhotoIds
-        .map((id) => cachedPhotosMap.get(id))
-        .filter(Boolean) as Photo[]
+    // if (cachedPhotoIds) {
+    //   const cachedPhotosMap = new Map(photos.map((photo) => [photo.id, photo]))
+    //   const cachedPhotos = cachedPhotoIds
+    //     .map((id) => cachedPhotosMap.get(id))
+    //     .filter(Boolean) as Photo[]
 
-      return cachedPhotos.map((photo) => ({
-        photo,
-        tagScore: 0,
-        descScore: 0,
-        totalScore: 0,
-      }))
-    }
+    //   return cachedPhotos.map((photo) => ({
+    //     photo,
+    //     tagScore: 0,
+    //     descScore: 0,
+    //     totalScore: 0,
+    //   }))
+    // }
 
     let scoredTagsPhotos: { photo: Photo; tagScore: number }[] = []
     let scoredDescPhotosChunked: { photo: Photo; descScore: number }[] = []
@@ -358,12 +358,12 @@ export default class EmbeddingsService {
     if (weights.tags > 0 && weights.desc > 0) {
       ;[scoredTagsPhotos, scoredDescPhotosChunked] = await Promise.all([
         this.getScoredTagsByQuerySegments(photos, query),
-        this.getScoredDescPhotos(photos, query),
+        this.getScoredDescPhotos(photos, enrichmentQuery.original),
       ])
     } else if (weights.tags > 0) {
       scoredTagsPhotos = await this.getScoredTagsByQuerySegments(photos, query)
     } else if (weights.desc > 0) {
-      scoredDescPhotosChunked = await this.getScoredDescPhotos(photos, query)
+      scoredDescPhotosChunked = await this.getScoredDescPhotos(photos, enrichmentQuery.original)
     }
 
     const tagScoresMap = new Map(scoredTagsPhotos.map((item) => [item.photo.id, item.tagScore]))
