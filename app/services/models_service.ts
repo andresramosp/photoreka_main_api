@@ -81,13 +81,13 @@ export default class ModelsService {
     try {
       const payload = {
         term,
-        tag_list: tags.map((tag) => ({ name: tag.name })),
+        tag_list: tags.map((tag) => ({ name: tag.name, group: tag.group })),
       }
 
       const { data } = await axios.post(
         termsType == 'tag'
           ? 'http://127.0.0.1:5000/adjust_tags_proximities_by_context_inference'
-          : 'http://127.0.0.1:5000/adjust_description_proximities_by_context_inference',
+          : 'http://127.0.0.1:5000/adjust_descs_proximities_by_context_inference',
         payload,
         { headers: { 'Content-Type': 'application/json' } }
       )
@@ -100,7 +100,7 @@ export default class ModelsService {
       }))
     } catch (error) {
       console.error('Error en adjustProximitiesByContextInference:', error)
-      return tags // En caso de error, devolver los tags originales
+      return [] // En caso de error, devolver los tags originales
     }
   }
 

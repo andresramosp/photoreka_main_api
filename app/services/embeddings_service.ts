@@ -337,19 +337,19 @@ export default class EmbeddingsService {
     const cacheKey = `scoredPhotoIds:${query.toLowerCase().trim()}_${searchType}`
     const cachedPhotoIds = cache.get<number[]>(cacheKey)
 
-    // if (cachedPhotoIds) {
-    //   const cachedPhotosMap = new Map(photos.map((photo) => [photo.id, photo]))
-    //   const cachedPhotos = cachedPhotoIds
-    //     .map((id) => cachedPhotosMap.get(id))
-    //     .filter(Boolean) as Photo[]
+    if (cachedPhotoIds) {
+      const cachedPhotosMap = new Map(photos.map((photo) => [photo.id, photo]))
+      const cachedPhotos = cachedPhotoIds
+        .map((id) => cachedPhotosMap.get(id))
+        .filter(Boolean) as Photo[]
 
-    //   return cachedPhotos.map((photo) => ({
-    //     photo,
-    //     tagScore: 0,
-    //     descScore: 0,
-    //     totalScore: 0,
-    //   }))
-    // }
+      return cachedPhotos.map((photo) => ({
+        photo,
+        tagScore: 0,
+        descScore: 0,
+        totalScore: 0,
+      }))
+    }
 
     let scoredTagsPhotos: { photo: Photo; tagScore: number }[] = []
     let scoredDescPhotosChunked: { photo: Photo; descScore: number }[] = []
@@ -431,13 +431,7 @@ export default class EmbeddingsService {
 
         await Promise.all(
           subSegments.map(async (subSegment) => {
-            const { matchingTags } = await this.findMatchingTagsForTerm(
-              subSegment,
-              allTags,
-              0.3,
-              100,
-              true
-            )
+            const { matchingTags } = await this.findMatchingTagsForTerm(subSegment, allTags)
 
             // Añadir los resultados de cada subsegmento al mapa del segmento completo
             matchingTags.forEach((tag: any) => {
@@ -463,13 +457,10 @@ export default class EmbeddingsService {
 
     // Calcular puntajes para cada foto
     const scoredPhotos = relevantPhotos.map((photo) => {
+      photo.matchingTags = photo.matchingTags || []
       let totalScore = 0
       let matchedSegments = 0
       let hasNotSegmentMatched = false
-
-      if (photo.id == '1f0e706e-9e83-47ce-a553-22123dddf072') {
-        console.log()
-      }
 
       // Evaluar cada segmento lógico
       // 1. Si un segmento tiene tag con prox > 0.8, matchea. Si todos los segmentos matchean, la foto va arriba
@@ -478,19 +469,22 @@ export default class EmbeddingsService {
         const tagMap = results[segment]
         const matchingTags = photo.tags?.filter((tag) => tagMap.has(tag.name)) || []
 
+        if (photo.id == '72e19bff-829c-49d9-a35d-866f8d68c117') {
+          console.log()
+        }
+
         if (matchingTags.length > 0) {
+          if (operator == 'OR' || operator == 'AND') matchedSegments++
+          if (operator == 'NOT' && !hasNotSegmentMatched) {
+            hasNotSegmentMatched = true
+          }
+          photo.matchingTags.push(...matchingTags.map((t) => t.name))
+
           const proximities = matchingTags.map((tag) => tagMap.get(tag.name) || 0)
           const maxProximity = Math.max(...proximities)
 
           const totalProximities = proximities.reduce((sum, proximity) => sum + proximity, 0)
           const adjustedProximities = totalProximities / 2
-
-          if (maxProximity > 0) {
-            if (operator == 'OR' || operator == 'AND') matchedSegments++
-            if (operator == 'NOT' && !hasNotSegmentMatched) {
-              hasNotSegmentMatched = true
-            }
-          }
 
           // Calcular la puntuación total sin sobreponderar el maxScore
           totalScore +=
@@ -527,44 +521,45 @@ export default class EmbeddingsService {
       .filter(({ tagScore }) => tagScore > 0) // Excluir fotos penalizadas
   }
 
-  public async findMatchingTagsForTerm(term, tags, embeddingsThreshold, limit) {
+  public async findMatchingTagsForTerm(term, tags) {
+    // TODO: arreglar lio con lematizacion: solo se aplica para sacar las coincidencias obvias por string
+    // Luego a python se le envian los tags normales (quitando los que ya se verificaron), y si se lematiza es ahí
+
     let lematizedTerm = pluralize.singular(term.toLowerCase())
     let termWordCount = lematizedTerm.split(' ').length
 
+    let lematizedTagNames = []
+    for (let tag of tags) {
+      let lematizedTagName = pluralize.singular(tag.name.toLowerCase())
+      lematizedTagNames.push({ name: lematizedTagName, id: tag.id })
+    }
+
     // 1. String comparison con los tags iguales o más cortos
     let equalOrShorterTags = []
-    // for (let tag of tags) {
-    //   let lematizedTagName = pluralize.singular(tag.name.toLowerCase())
-    //   if (lematizedTagName.split(' ').length >= termWordCount) {
-    //     equalOrShorterTags.push(tag)
-    //   }
-    // }
+    for (let tag of lematizedTagNames) {
+      if (tag.name.split(' ').length >= termWordCount) {
+        equalOrShorterTags.push(tag)
+      }
+    }
 
-    let matchedTagsByString = equalOrShorterTags
-      .map((t) => pluralize.singular(t.name.toLowerCase()))
-      .filter((lematizedTagName) => {
-        const regex = new RegExp(
-          `(^|\\s)${pluralize.singular(lematizedTerm.toLowerCase())}($|\\s)`,
-          'i'
-        )
-        return regex.test(lematizedTagName)
-      })
+    let matchedTagsByString = equalOrShorterTags.filter((tag) => {
+      const regex = new RegExp(`(^|\\s)${lematizedTerm}($|\\s)`, 'i')
+      return regex.test(tag.name)
+    })
 
-    let stringMatches = matchedTagsByString.map((tagName) => {
-      return { name: tagName, proximity: 0.9 }
+    let stringMatches = matchedTagsByString.map((tag) => {
+      return { name: tags.find((t) => t.id == tag.id).name, proximity: 0.9 }
     })
 
     // Excluir los tags que ya han sido encontrados por coincidencia de string
-    let remainingTags = tags.filter(
-      (tag) => !matchedTagsByString.includes(pluralize.singular(tag.name.toLowerCase()))
-    )
+    let remainingTags = lematizedTagNames.filter((tag) => !matchedTagsByString.includes(tag.name))
 
     // 2. Embeddings + ajuste por inferencia lógica
-    let { embeddings } = await this.modelsService.getEmbeddings([term])
+    let { embeddings } = await this.modelsService.getEmbeddings([lematizedTerm])
     const similarTags = await this.findSimilarTagToEmbedding(
       embeddings[0],
-      embeddingsThreshold,
-      2000, // debería ser num_photos * constante, con un limite de 5000 o así.
+      0.15,
+      1500, // debería ser num_photos * constante, con un limite de 5000 o así.
       'cosine_similarity',
       remainingTags.map((t) => t.id) // Solo considerar los tags que no coincidieron por string
     )
@@ -587,7 +582,7 @@ export default class EmbeddingsService {
     let allMatches = [...stringMatches, ...semanticMatches]
     let uniqueMatches = allMatches
       .filter((match, index, self) => index === self.findIndex((t) => t.name === match.name))
-      .filter((match) => match.proximity >= 0)
+      .filter((match) => match.proximity > 0)
 
     return {
       matchingTags: uniqueMatches,
