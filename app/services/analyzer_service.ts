@@ -370,7 +370,7 @@ export default class AnalyzerService {
         try {
           similarTagsResult = await embedddingsService.findSimilarTagsToText(tagName, 0.89, 5)
         } catch (err) {
-          console.log('Error in getSemanticSynonymTags')
+          console.log('Error in findSimilarTagsToText')
         }
 
         if (similarTagsResult?.length > 0) {

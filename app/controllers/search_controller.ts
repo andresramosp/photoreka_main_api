@@ -14,7 +14,8 @@ export default class SearchController {
       const query = request.body()
 
       const stream = photosService.search(query, query.searchType, {
-        embeddingsOnly: query.useEmbeddings,
+        quickSearch: query.isQuickSearch,
+        withInsights: query.withInsights, // solo de pago
       })
 
       for await (const result of stream) {

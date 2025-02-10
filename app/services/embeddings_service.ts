@@ -247,10 +247,8 @@ export default class EmbeddingsService {
   public async getScoredDescPhotos(
     photos: Photo[],
     description: string,
-    similarityThreshold: number = 0.12
+    applyAdjustment: boolean = true
   ): Promise<{ photo: Photo; descScore: number }[]> {
-    console.log('entrada a desc')
-
     const matchingChunks = await this.findSimilarChunksToText(
       description,
       0.2,
@@ -258,11 +256,13 @@ export default class EmbeddingsService {
       'cosine_similarity'
     )
 
-    let adjustedSimilarChunks = await this.modelsService.adjustProximitiesByContextInference(
-      description,
-      matchingChunks.map((mc) => ({ name: mc.chunk, proximity: mc.proximity, id: mc.id })),
-      'desc'
-    )
+    let adjustedSimilarChunks = applyAdjustment
+      ? await this.modelsService.adjustProximitiesByContextInference(
+          description,
+          matchingChunks.map((mc) => ({ name: mc.chunk, proximity: mc.proximity, id: mc.id })),
+          'desc'
+        )
+      : matchingChunks.map((mc) => ({ id: mc.id, proximity: mc.proximity }))
 
     const matchingChunkMap: Map<string | number, number> = new Map(
       adjustedSimilarChunks
@@ -275,12 +275,12 @@ export default class EmbeddingsService {
     )
 
     const scoredPhotos = relevantPhotos.map((photo) => {
+      photo.matchingChunks = photo.matchingChunks || []
       const photoMatchingChunks =
         photo.descriptionChunks?.filter((chunk) => matchingChunkMap.has(chunk.id)) || []
 
-      if (photo.id == '20936682-6b33-43ec-ac5a-83d8ff210144') {
-        console.log()
-      }
+      photo.matchingChunks.push(...photoMatchingChunks)
+
       // Calcula proximidades relevantes con ponderación exponencial
       const proximities = photoMatchingChunks.map((chunk) =>
         Math.exp((matchingChunkMap.get(chunk.id) || 0) - 0.5)
@@ -308,20 +308,22 @@ export default class EmbeddingsService {
         descScore: descScore > 0 ? descScore / maxScore : 0, // Normalización
       }))
       .sort((a, b) => b.descScore - a.descScore)
-      .filter(({ descScore }) => descScore > 0) // exclusión de negativos (contraditcions)
+      .filter(({ descScore }) => descScore > 0) // exclusión de negativos (contradicciones)
   }
 
   @MeasureExecutionTime
   public async getScoredPhotosByTagsAndDesc(
     photos: Photo[],
     enrichmentQuery: any,
-    searchType: 'logical' | 'semantic' | 'creative'
+    searchType: 'logical' | 'semantic' | 'creative',
+    quickSearch: boolean = false
   ): Promise<ChunkedPhoto[] | undefined> {
     let weights = {
       tags: 0,
       desc: 0,
     }
     let query = ''
+    let applyAdjustment = true
 
     if (searchType === 'logical') {
       weights = { tags: 1, desc: 0 }
@@ -334,47 +336,51 @@ export default class EmbeddingsService {
       query = enrichmentQuery.clear
     }
 
-    const cacheKey = `scoredPhotoIds:${query.toLowerCase().trim()}_${searchType}`
-    const cachedPhotoIds = cache.get<number[]>(cacheKey)
-
-    // if (cachedPhotoIds) {
-    //   const cachedPhotosMap = new Map(photos.map((photo) => [photo.id, photo]))
-    //   const cachedPhotos = cachedPhotoIds
-    //     .map((id) => cachedPhotosMap.get(id))
-    //     .filter(Boolean) as Photo[]
-
-    //   return cachedPhotos.map((photo) => ({
-    //     photo,
-    //     tagScore: 0,
-    //     descScore: 0,
-    //     totalScore: 0,
-    //   }))
-    // }
-
     let scoredTagsPhotos: { photo: Photo; tagScore: number }[] = []
     let scoredDescPhotosChunked: { photo: Photo; descScore: number }[] = []
 
-    // Evitar cálculos innecesarios
-    if (weights.tags > 0 && weights.desc > 0) {
+    if (quickSearch) {
+      // solo tags, con threshols de embeddings muy alto para reducir resultados
+      scoredTagsPhotos = await this.getScoredTagsByQuerySegments(
+        photos,
+        query,
+        applyAdjustment,
+        0.4
+      )
+    } else if (weights.tags > 0 && weights.desc > 0) {
       ;[scoredTagsPhotos, scoredDescPhotosChunked] = await Promise.all([
-        this.getScoredTagsByQuerySegments(photos, query),
-        this.getScoredDescPhotos(photos, enrichmentQuery.original),
+        this.getScoredTagsByQuerySegments(photos, query, applyAdjustment),
+        this.getScoredDescPhotos(photos, enrichmentQuery.original, applyAdjustment),
       ])
     } else if (weights.tags > 0) {
-      scoredTagsPhotos = await this.getScoredTagsByQuerySegments(photos, query)
+      scoredTagsPhotos = await this.getScoredTagsByQuerySegments(photos, query, applyAdjustment)
     } else if (weights.desc > 0) {
-      scoredDescPhotosChunked = await this.getScoredDescPhotos(photos, enrichmentQuery.original)
+      scoredDescPhotosChunked = await this.getScoredDescPhotos(
+        photos,
+        enrichmentQuery.original,
+        applyAdjustment
+      )
     }
 
-    const tagScoresMap = new Map(scoredTagsPhotos.map((item) => [item.photo.id, item.tagScore]))
+    const tagScoresMap = new Map(
+      scoredTagsPhotos.map((item) => [
+        item.photo.id,
+        { tagScore: item.tagScore, matchingTags: item.photo.matchingTags },
+      ])
+    )
     const descScoresMap = new Map(
-      scoredDescPhotosChunked.map((item) => [item.photo.id, item.descScore])
+      scoredDescPhotosChunked.map((item) => [
+        item.photo.id,
+        { descScore: item.descScore, matchingChunks: item.photo.matchingChunks },
+      ])
     )
 
     const scoredPhotos: ChunkedPhoto[] = photos.map((photo) => {
-      const tagScore = tagScoresMap.get(photo.id) || 0
-      const descScore = descScoresMap.get(photo.id) || 0
+      const { tagScore = 0, matchingTags = [] } = tagScoresMap.get(photo.id) || {}
+      const { descScore = 0, matchingChunks = [] } = descScoresMap.get(photo.id) || {}
 
+      photo.matchingTags = matchingTags
+      photo.matchingChunks = matchingChunks
       return {
         photo,
         tagScore,
@@ -388,10 +394,6 @@ export default class EmbeddingsService {
       .filter((photo) => photo.totalScore > 0)
       .sort((a, b) => b.totalScore - a.totalScore)
 
-    // Guardar solo los IDs en caché
-    const photoIds = filteredAndSortedPhotos.map((photo) => photo.photo.id)
-    cache.set(cacheKey, photoIds)
-
     return filteredAndSortedPhotos
   }
 
@@ -399,7 +401,8 @@ export default class EmbeddingsService {
   private async getScoredTagsByQuerySegments(
     photos: Photo[],
     description: string,
-    similarityThreshold: number = 0.3
+    applyAdjustment: boolean = true,
+    embeddingsProximityThreshold: number = 0.15
   ): Promise<{ photo: Photo; tagScore: number }[]> {
     console.log('entrada a tags')
 
@@ -431,7 +434,12 @@ export default class EmbeddingsService {
 
         await Promise.all(
           subSegments.map(async (subSegment) => {
-            const { matchingTags } = await this.findMatchingTagsForTerm(subSegment, allTags)
+            const { matchingTags } = await this.findMatchingTagsForTerm(
+              subSegment,
+              allTags,
+              applyAdjustment,
+              embeddingsProximityThreshold
+            )
 
             // Añadir los resultados de cada subsegmento al mapa del segmento completo
             matchingTags.forEach((tag: any) => {
@@ -521,10 +529,12 @@ export default class EmbeddingsService {
       .filter(({ tagScore }) => tagScore > 0) // Excluir fotos penalizadas
   }
 
-  public async findMatchingTagsForTerm(term, tags) {
-    // TODO: arreglar lio con lematizacion: solo se aplica para sacar las coincidencias obvias por string
-    // Luego a python se le envian los tags normales (quitando los que ya se verificaron), y si se lematiza es ahí
-
+  public async findMatchingTagsForTerm(
+    term,
+    tags,
+    applyAdjustment = true,
+    embeddingsProximityThreshold: number
+  ) {
     let lematizedTerm = pluralize.singular(term.toLowerCase())
     let termWordCount = lematizedTerm.split(' ').length
 
@@ -558,25 +568,31 @@ export default class EmbeddingsService {
     let { embeddings } = await this.modelsService.getEmbeddings([lematizedTerm])
     const similarTags = await this.findSimilarTagToEmbedding(
       embeddings[0],
-      0.15,
+      embeddingsProximityThreshold,
       1500, // debería ser num_photos * constante, con un limite de 5000 o así.
       'cosine_similarity',
       remainingTags.map((t) => t.id) // Solo considerar los tags que no coincidieron por string
     )
 
-    let adjustedSimilarTags = await this.modelsService.adjustProximitiesByContextInference(
-      term,
-      similarTags,
-      'tag'
-    )
+    let semanticMatches
 
-    let semanticMatches = adjustedSimilarTags.map((tag) => {
-      return {
-        name: tag.name,
-        proximity: tag.proximity,
-        embeddingsProximity: tag.embeddingsProximity,
-      }
-    })
+    if (applyAdjustment) {
+      let adjustedSimilarTags = await this.modelsService.adjustProximitiesByContextInference(
+        term,
+        similarTags,
+        'tag'
+      )
+
+      semanticMatches = adjustedSimilarTags.map((tag) => {
+        return {
+          name: tag.name,
+          proximity: tag.proximity,
+          embeddingsProximity: tag.embeddingsProximity,
+        }
+      })
+    } else {
+      semanticMatches = similarTags
+    }
 
     // Combinar resultados y eliminar duplicados
     let allMatches = [...stringMatches, ...semanticMatches]

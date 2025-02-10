@@ -48,6 +48,239 @@ export default class PhotosService {
     return photos
   }
 
+  @withCostWS
+  public async *search(
+    query: any,
+    searchType: 'logical' | 'semantic' | 'creative',
+    options = { quickSearch: false, withInsights: false }
+  ) {
+    const { quickSearch, withInsights } = options
+    const photos = (await Photo.query().preload('tags').preload('descriptionChunks')).map(
+      (photo) => ({
+        ...photo.$attributes,
+        tags: photo.tags,
+        descriptionChunks: photo.descriptionChunks,
+        tempID: Math.random().toString(36).substr(2, 4),
+      })
+    )
+
+    const {
+      enrichmentResult,
+      sourceResult,
+      useImage,
+      searchModelMessage,
+      cost1: enrichmentCost,
+      cost2: sourceCost,
+    } = await this.queryService.processQuery(searchType, query)
+
+    const pageSize = 9
+    const batchSize = 3
+    const maxPageAttempts = 3
+
+    let photosResult = []
+    let modelCosts = []
+    let attempts = 0
+    let hasMore
+
+    let embeddingScoredPhotos = await this.embeddingsService.getScoredPhotosByTagsAndDesc(
+      photos,
+      enrichmentResult,
+      searchType,
+      quickSearch
+    )
+
+    do {
+      const offset = (query.iteration - 1) * pageSize
+      const paginatedPhotos = embeddingScoredPhotos.slice(offset, offset + pageSize)
+      hasMore = offset + pageSize < embeddingScoredPhotos.length
+
+      yield {
+        type: 'embeddings',
+        data: {
+          hasMore,
+          results: {
+            [query.iteration]: {
+              photos: paginatedPhotos.map((item) => item.photo),
+            },
+          },
+          iteration: query.iteration,
+          enrichmentQuery: enrichmentResult.enriched,
+          scores: embeddingScoredPhotos?.slice(0, 1000),
+        },
+      }
+
+      // Salvo que queramos procesar con IA los insights, ya tenemos el resultado de esta página
+      if (!withInsights) {
+        return
+      }
+
+      let photoBatches = []
+      for (let i = 0; i < paginatedPhotos.length; i += batchSize) {
+        photoBatches.push(paginatedPhotos.slice(i, i + batchSize))
+      }
+
+      const batchPromises = photoBatches.map(async (batch) => {
+        const { modelResult, modelCost } = await this.processBatch(
+          batch,
+          enrichmentResult,
+          sourceResult,
+          searchModelMessage,
+          searchType,
+          paginatedPhotos
+        )
+
+        modelCosts.push(modelCost)
+
+        return batch
+          .map((item) => {
+            const result = modelResult.find((res) => res.id === item.photo.tempID)
+            const reasoning = result?.reasoning || ''
+            const isIncluded =
+              result?.isIncluded == true || result?.isIncluded == 'true' ? true : false
+
+            return reasoning
+              ? { ...item.photo, score: item.tagScore, isIncluded, reasoning }
+              : { ...item.photo, score: item.tagScore, isIncluded }
+          })
+          .filter((item) => modelResult.find((res) => res.id === item.tempID))
+      })
+
+      const batchResults = await Promise.all(batchPromises)
+      photosResult = photosResult.concat(...photoBatches, ...batchResults.flat())
+
+      query.iteration++
+      attempts++
+
+      yield {
+        type: 'result',
+        data: {
+          results: { [query.iteration - 1]: { photos: photosResult } },
+          hasMore,
+          cost: { enrichmentCost, sourceCost, modelCosts },
+          iteration: query.iteration - 1,
+          enrichmentResult,
+          requireSource: { source: sourceResult.requireSource, useImage },
+        },
+      }
+
+      if (attempts >= maxPageAttempts || paginatedPhotos.length === 0) {
+        yield {
+          type: 'maxPageAttempts',
+        }
+        return
+      }
+
+      await this.sleep(750)
+    } while (!photosResult.some((p) => p.isIncluded))
+  }
+
+  public async processBatch(
+    batch: any[],
+    enrichmentResult: any,
+    sourceResult: any,
+    searchModelMessage: any,
+    searchType: 'logical' | 'semantic' | 'creative',
+    paginatedPhotos: any[]
+  ) {
+    let needImage = sourceResult.requireSource == 'image'
+    const method = 'getGPTResponse' // !needImage ? 'getDSResponse' : 'getGPTResponse'
+    let chunkPromises = batch.map(async (batchedPhoto) => {
+      if (searchType == 'logical') {
+        const similarTags = await this.queryService.getTagsForLogicalQuery(
+          batchedPhoto.photo,
+          enrichmentResult.clear,
+          0.05, // 'kids' esta a 0.09 de 'girl smiling' :&
+          20
+        )
+        if (batchedPhoto.photo.id == 'f6096759-8ec6-4e08-888a-b39e83e05c69') {
+          console.log()
+        }
+        return {
+          tempID: batchedPhoto.photo.tempID,
+          tags: similarTags.map((nt) => nt.name),
+        }
+      } else {
+        const descChunks = await this.embeddingsService.getNearChunksFromDesc(
+          batchedPhoto.photo,
+          sourceResult.specific ? enrichmentResult.clear : enrichmentResult.enriched,
+          0.1
+        )
+        return {
+          tempID: batchedPhoto.photo.tempID,
+          chunkedDesc: descChunks.map((dc) => dc.text_chunk).join(' ... '),
+        }
+      }
+    })
+    let chunkResults = await Promise.all(chunkPromises)
+    const { result: modelResult, cost: modelCost } = await this.modelsService[method](
+      !needImage ? searchModelMessage : searchModelMessage(chunkResults.map((cp) => cp.tempID)),
+      !needImage
+        ? JSON.stringify({
+            query: searchType == 'logical' ? enrichmentResult.clear : enrichmentResult.original,
+            collection: chunkResults.map((chunkedPhoto) => ({
+              id: chunkedPhoto.tempID,
+              description: searchType !== 'logical' ? chunkedPhoto.chunkedDesc : undefined,
+              tags: searchType == 'logical' ? chunkedPhoto.tags : undefined,
+            })),
+          })
+        : [
+            {
+              type: 'text',
+              text: JSON.stringify({ query: enrichmentResult.original }),
+            },
+            ...(await this.generateImagesPayload(
+              paginatedPhotos.map((pp) => pp.photo),
+              batch.map((cp) => cp.photo.id)
+            )),
+          ],
+      method == 'getGPTResponse' ? 'gpt-4o' : 'deepseek-chat',
+      null,
+      searchType === 'creative' ? 1.3 : searchType === 'semantic' ? 0.3 : 0.1,
+      false
+    )
+
+    return {
+      modelResult,
+      modelCost,
+    }
+  }
+
+  public async generateImagesPayload(photos: Photo[], photoIds: string[]) {
+    const validImages: any[] = []
+    const uploadPath = path.join(process.cwd(), 'public/uploads/photos')
+
+    for (const id of photoIds) {
+      const photo = photos.find((photo) => photo.id == id)
+      if (!photo) continue
+
+      const filePath = path.join(uploadPath, `${photo.name}`)
+
+      try {
+        await fs.access(filePath)
+
+        const resizedBuffer = await sharp(filePath)
+          // .resize({ width: 1012, fit: 'inside' })
+          .toBuffer()
+
+        validImages.push({
+          id: photo.id,
+          base64: resizedBuffer.toString('base64'),
+        })
+      } catch (error) {
+        console.warn(`No se pudo procesar la imagen con ID: ${photo.id}`, error)
+      }
+    }
+
+    return validImages.map(({ base64 }) => ({
+      type: 'image_url',
+      image_url: {
+        url: `data:image/jpeg;base64,${base64}`,
+        detail: 'low',
+      },
+    }))
+  }
+
+  // Desuso
   public async filterByTags(tagsAnd: any[][], tagsNot: any[], tagsOr: any[]): Promise<any[]> {
     if (tagsOr.length) {
       tagsAnd.push(tagsOr.flat())
@@ -90,6 +323,7 @@ export default class PhotosService {
     })
   }
 
+  // Desuso
   public async saveExpandedTags(term: any, tags: any[], expansionResults: any) {
     const modelsService = new ModelsService()
 
@@ -139,6 +373,7 @@ export default class PhotosService {
     }
   }
 
+  // Desuso
   public async performTagsExpansion(terms: any[], allTags: any[], useModel: boolean = true) {
     let expansionResults: any = {}
     const expansionCosts: any[] = []
@@ -205,6 +440,7 @@ export default class PhotosService {
     return { expansionResults, expansionCosts }
   }
 
+  // Desuso
   @withCost
   public async searchByTags(query: any): Promise<any> {
     const allTags = await Tag.all()
@@ -327,218 +563,7 @@ export default class PhotosService {
     }
   }
 
-  public async processBatch(
-    batch: any[],
-    enrichmentResult: any,
-    sourceResult: any,
-    searchModelMessage: any,
-    searchType: 'logical' | 'semantic' | 'creative',
-    paginatedPhotos: any[]
-  ) {
-    let needImage = sourceResult.requireSource == 'image'
-    const method = 'getGPTResponse' // !needImage ? 'getDSResponse' : 'getGPTResponse'
-    let chunkPromises = batch.map(async (batchedPhoto) => {
-      if (searchType == 'logical') {
-        const similarTags = await this.queryService.getTagsForLogicalQuery(
-          batchedPhoto.photo,
-          enrichmentResult.clear,
-          0.05, // 'kids' esta a 0.09 de 'girl smiling' :&
-          20
-        )
-        if (batchedPhoto.photo.id == 'f6096759-8ec6-4e08-888a-b39e83e05c69') {
-          console.log()
-        }
-        return {
-          tempID: batchedPhoto.photo.tempID,
-          tags: similarTags.map((nt) => nt.name),
-        }
-      } else {
-        const descChunks = await this.embeddingsService.getNearChunksFromDesc(
-          batchedPhoto.photo,
-          sourceResult.specific ? enrichmentResult.clear : enrichmentResult.enriched,
-          0.1
-        )
-        return {
-          tempID: batchedPhoto.photo.tempID,
-          chunkedDesc: descChunks.map((dc) => dc.text_chunk).join(' ... '),
-        }
-      }
-    })
-    let chunkResults = await Promise.all(chunkPromises)
-    const { result: modelResult, cost: modelCost } = await this.modelsService[method](
-      !needImage ? searchModelMessage : searchModelMessage(chunkResults.map((cp) => cp.tempID)),
-      !needImage
-        ? JSON.stringify({
-            query: searchType == 'logical' ? enrichmentResult.clear : enrichmentResult.original,
-            collection: chunkResults.map((chunkedPhoto) => ({
-              id: chunkedPhoto.tempID,
-              description: searchType !== 'logical' ? chunkedPhoto.chunkedDesc : undefined,
-              tags: searchType == 'logical' ? chunkedPhoto.tags : undefined,
-            })),
-          })
-        : [
-            {
-              type: 'text',
-              text: JSON.stringify({ query: enrichmentResult.original }),
-            },
-            ...(await this.generateImagesPayload(
-              paginatedPhotos.map((pp) => pp.photo),
-              batch.map((cp) => cp.photo.id)
-            )),
-          ],
-      method == 'getGPTResponse' ? 'gpt-4o' : 'deepseek-chat',
-      null,
-      searchType === 'creative' ? 1.3 : searchType === 'semantic' ? 0.3 : 0.1,
-      false
-    )
-
-    return {
-      modelResult,
-      modelCost,
-    }
-  }
-
-  @withCostWS
-  public async *search(
-    query: any,
-    searchType: 'logical' | 'semantic' | 'creative',
-    options = { embeddingsOnly: false }
-  ) {
-    const { embeddingsOnly } = options
-    const photos = (await Photo.query().preload('tags').preload('descriptionChunks')).map(
-      (photo) => ({
-        ...photo.$attributes,
-        tags: photo.tags,
-        descriptionChunks: photo.descriptionChunks,
-        tempID: Math.random().toString(36).substr(2, 4),
-      })
-    )
-
-    const {
-      enrichmentResult,
-      sourceResult,
-      useImage,
-      searchModelMessage,
-      cost1: enrichmentCost,
-      cost2: sourceCost,
-    } = await this.queryService.processQuery(searchType, query)
-
-    const pageSize = 9 //embeddingsOnly ? 9 : 8
-    const batchSize = 3 // searchType == 'logical' ? 2 : 4
-    const maxPageAttempts = 3
-
-    let photosResult = []
-    let modelCosts = []
-    let attempts = 0
-    let hasMore
-
-    let nearPhotos = []
-
-    // Embeddings de momento parece funcionar siempre mejor con tags + desc
-    nearPhotos = await this.embeddingsService.getScoredPhotosByTagsAndDesc(
-      photos,
-      enrichmentResult,
-      searchType
-    )
-
-    do {
-      const offset = (query.iteration - 1) * pageSize
-      const paginatedPhotos = nearPhotos.slice(offset, offset + pageSize)
-      hasMore = offset + pageSize < nearPhotos.length
-
-      yield {
-        type: 'embeddings',
-        data: {
-          hasMore,
-          results: {
-            [query.iteration]: {
-              photos: paginatedPhotos.map((item) => item.photo),
-            },
-          },
-          iteration: query.iteration,
-          enrichmentQuery: enrichmentResult.enriched,
-          scores: nearPhotos?.slice(0, 1000),
-        },
-      }
-
-      if (embeddingsOnly) {
-        return
-      }
-
-      const photoBatches = []
-      for (let i = 0; i < paginatedPhotos.length; i += batchSize) {
-        photoBatches.push(paginatedPhotos.slice(i, i + batchSize))
-      }
-
-      const evaluatedBatches = await this.evaluateBatches(
-        photoBatches,
-        enrichmentResult.clear,
-        searchType
-      )
-
-      const photosWithoutProcessing = evaluatedBatches
-        .flatMap((batch) => batch.filter((batchedPhoto) => !batchedPhoto.photo.requiresProcessing))
-        .map((batchedPhotos) => batchedPhotos.photo)
-
-      const filteredBatches = evaluatedBatches
-        .map((batch) => batch.filter((batchedPhoto) => batchedPhoto.photo.requiresProcessing))
-        .filter((batch) => batch.length)
-
-      const batchPromises = filteredBatches.map(async (batch) => {
-        const { modelResult, modelCost } = await this.processBatch(
-          batch,
-          enrichmentResult,
-          sourceResult,
-          searchModelMessage,
-          searchType,
-          paginatedPhotos
-        )
-
-        modelCosts.push(modelCost)
-
-        return batch
-          .map((item) => {
-            const result = modelResult.find((res) => res.id === item.photo.tempID)
-            const reasoning = result?.reasoning || ''
-            const isIncluded =
-              result?.isIncluded == true || result?.isIncluded == 'true' ? true : false
-
-            return reasoning
-              ? { ...item.photo, score: item.tagScore, isIncluded, reasoning }
-              : { ...item.photo, score: item.tagScore, isIncluded }
-          })
-          .filter((item) => modelResult.find((res) => res.id === item.tempID))
-      })
-
-      const batchResults = await Promise.all(batchPromises)
-      photosResult = photosResult.concat(...photosWithoutProcessing, ...batchResults.flat())
-
-      query.iteration++
-      attempts++
-
-      yield {
-        type: 'result',
-        data: {
-          results: { [query.iteration - 1]: { photos: photosResult } },
-          hasMore,
-          cost: { enrichmentCost, sourceCost, modelCosts },
-          iteration: query.iteration - 1,
-          enrichmentResult,
-          requireSource: { source: sourceResult.requireSource, useImage },
-        },
-      }
-
-      if (attempts >= maxPageAttempts || paginatedPhotos.length === 0) {
-        yield {
-          type: 'maxPageAttempts',
-        }
-        return
-      }
-
-      await this.sleep(750)
-    } while (!photosResult.some((p) => p.isIncluded))
-  }
-
+  // En desuso, salvo que queramos que GPT evalúe tags como ya hace Roberta
   public async evaluateBatches(photoBatches, clearQuery, searchType) {
     return Promise.all(
       photoBatches.map(async (batch) => {
@@ -572,40 +597,5 @@ export default class PhotosService {
         return evaluatedPhotos // Return the array of evaluated photos for the batch
       })
     )
-  }
-
-  public async generateImagesPayload(photos: Photo[], photoIds: string[]) {
-    const validImages: any[] = []
-    const uploadPath = path.join(process.cwd(), 'public/uploads/photos')
-
-    for (const id of photoIds) {
-      const photo = photos.find((photo) => photo.id == id)
-      if (!photo) continue
-
-      const filePath = path.join(uploadPath, `${photo.name}`)
-
-      try {
-        await fs.access(filePath)
-
-        const resizedBuffer = await sharp(filePath)
-          // .resize({ width: 1012, fit: 'inside' })
-          .toBuffer()
-
-        validImages.push({
-          id: photo.id,
-          base64: resizedBuffer.toString('base64'),
-        })
-      } catch (error) {
-        console.warn(`No se pudo procesar la imagen con ID: ${photo.id}`, error)
-      }
-    }
-
-    return validImages.map(({ base64 }) => ({
-      type: 'image_url',
-      image_url: {
-        url: `data:image/jpeg;base64,${base64}`,
-        detail: 'low',
-      },
-    }))
   }
 }

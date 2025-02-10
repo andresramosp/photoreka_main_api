@@ -37,42 +37,6 @@ const USD_TO_EUR = 0.92
 
 export default class ModelsService {
   @MeasureExecutionTime
-  public async semanticProximity(
-    text: string,
-    texts: any,
-    threshold: number = 0
-  ): Promise<{ [key: string]: number }> {
-    try {
-      const isStringArray = Array.isArray(texts) && texts.every((item) => typeof item === 'string')
-      const endpoint = isStringArray
-        ? 'http://127.0.0.1:5000/semantic_proximity'
-        : 'http://127.0.0.1:5000/semantic_proximity_obj'
-
-      const payload = isStringArray
-        ? {
-            tag: text,
-            tag_list: texts,
-            threshold,
-          }
-        : {
-            tag: text,
-            tag_list: texts.map((item: any) => ({ id: item.id, text: item.text })),
-          }
-
-      const { data } = await axios.post(endpoint, payload, {
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      })
-
-      return data.similarities || {}
-    } catch (error) {
-      console.error('Error fetching semantic proximity:', error)
-      return {}
-    }
-  }
-
-  @MeasureExecutionTime
   public async adjustProximitiesByContextInference(
     term: string,
     tags: any[],
@@ -105,35 +69,6 @@ export default class ModelsService {
   }
 
   @MeasureExecutionTime
-  public async semanticProximitChunks(
-    text1: string,
-    text2: any,
-    chunkSize: number = 50
-  ): Promise<any[]> {
-    try {
-      const payload = {
-        text1,
-        text2,
-        chunk_size: chunkSize,
-      }
-
-      const { data } = await axios.post(
-        'http://127.0.0.1:5000/semantic_proximity_chunks',
-        payload,
-        {
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        }
-      )
-
-      return data || []
-    } catch (error) {
-      console.error('Error fetching semantic proximity:', error)
-      return {}
-    }
-  }
-
   public async getEmbeddings(tags: string[]): Promise<{ embeddings: number[][] }> {
     try {
       const payload = {
@@ -150,67 +85,6 @@ export default class ModelsService {
     } catch (error) {
       console.error('Error fetching semantic proximity:', error)
       return { embeddings: [] }
-    }
-  }
-
-  public async textToTags(text: string): Promise<string[]> {
-    try {
-      const payload = { description: text }
-      const { data } = await axios.post('http://127.0.0.1:5000/generate_tags', payload, {
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      })
-
-      return data.generated_tags || []
-    } catch (error) {
-      console.error('Error fetching tags by description:', error)
-      return []
-    }
-  }
-
-  public async getSynonymTags(tag: string, tagList: string[]): Promise<string[]> {
-    try {
-      const payload = {
-        tag,
-        tag_list: tagList,
-        proximity_threshold: 0.7,
-        apply_semantic_proximity: false,
-      }
-      const { data } = await axios.post('http://127.0.0.1:5000/get_synonym_tags', payload, {
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      })
-
-      return data.matches || []
-    } catch (error) {
-      console.error('Error fetching tags by description:', error)
-      return []
-    }
-  }
-
-  public async getSemanticSynonymTags(tag: string, tagList: string[]): Promise<{ matches: any[] }> {
-    try {
-      const payload = {
-        tag,
-        tag_list: tagList,
-        proximity_threshold: 0.9,
-      }
-      const { data } = await axios.post(
-        'http://127.0.0.1:5000/get_advanced_synonym_tags',
-        payload,
-        {
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        }
-      )
-
-      return data.matches || []
-    } catch (error) {
-      // console.error('Error fetching tags:', error)
-      return []
     }
   }
 
