@@ -244,6 +244,7 @@ export default class EmbeddingsService {
     return embeddings[0] || null
   }
 
+  @MeasureExecutionTime
   public async getScoredDescPhotos(
     photos: Photo[],
     description: string,
@@ -279,12 +280,17 @@ export default class EmbeddingsService {
       const photoMatchingChunks =
         photo.descriptionChunks?.filter((chunk) => matchingChunkMap.has(chunk.id)) || []
 
-      photo.matchingChunks.push(...photoMatchingChunks)
+      // Agregamos proximity a cada chunk
+      const enrichedMatchingChunks = photoMatchingChunks.map((chunk) => ({
+        id: chunk.id,
+        chunk: chunk.chunk,
+        proximity: matchingChunkMap.get(chunk.id) || 0,
+      }))
+
+      photo.matchingChunks.push(...enrichedMatchingChunks)
 
       // Calcula proximidades relevantes con ponderación exponencial
-      const proximities = photoMatchingChunks.map((chunk) =>
-        Math.exp((matchingChunkMap.get(chunk.id) || 0) - 0.5)
-      )
+      const proximities = enrichedMatchingChunks.map((chunk) => Math.exp(chunk.proximity - 0.5))
 
       // Máximo y media ponderada
       const maxProximity = Math.max(...proximities, 0)
