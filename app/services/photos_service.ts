@@ -65,13 +65,13 @@ export default class PhotosService {
     )
 
     const {
-      enrichmentResult,
+      structuredResult,
       sourceResult,
       useImage,
       searchModelMessage,
       cost1: enrichmentCost,
       cost2: sourceCost,
-    } = await this.queryService.processQuery(searchType, query)
+    } = await this.queryService.structureQuery(searchType, query)
 
     const pageSize = 9
     const batchSize = 3
@@ -84,7 +84,7 @@ export default class PhotosService {
 
     let embeddingScoredPhotos = await this.embeddingsService.getScoredPhotosByTagsAndDesc(
       photos,
-      enrichmentResult,
+      structuredResult,
       searchType,
       quickSearch
     )
@@ -104,7 +104,7 @@ export default class PhotosService {
             },
           },
           iteration: query.iteration,
-          enrichmentQuery: enrichmentResult.enriched,
+          structuredResult,
           scores: embeddingScoredPhotos?.slice(0, 1000),
         },
       }
@@ -122,7 +122,7 @@ export default class PhotosService {
       const batchPromises = photoBatches.map(async (batch) => {
         const { modelResult, modelCost } = await this.processBatch(
           batch,
-          enrichmentResult,
+          structuredResult,
           sourceResult,
           searchModelMessage,
           searchType,
@@ -158,7 +158,7 @@ export default class PhotosService {
           hasMore,
           cost: { enrichmentCost, sourceCost, modelCosts },
           iteration: query.iteration - 1,
-          enrichmentResult,
+          structuredResult,
           requireSource: { source: sourceResult.requireSource, useImage },
         },
       }
@@ -176,7 +176,7 @@ export default class PhotosService {
 
   public async processBatch(
     batch: any[],
-    enrichmentResult: any,
+    structuredResult: any,
     sourceResult: any,
     searchModelMessage: any,
     searchType: 'logical' | 'semantic' | 'creative',
@@ -188,7 +188,7 @@ export default class PhotosService {
       if (searchType == 'logical') {
         const similarTags = await this.queryService.getTagsForLogicalQuery(
           batchedPhoto.photo,
-          enrichmentResult.clear,
+          structuredResult.clear,
           0.05, // 'kids' esta a 0.09 de 'girl smiling' :&
           20
         )
@@ -202,7 +202,7 @@ export default class PhotosService {
       } else {
         const descChunks = await this.embeddingsService.getNearChunksFromDesc(
           batchedPhoto.photo,
-          sourceResult.specific ? enrichmentResult.clear : enrichmentResult.enriched,
+          structuredResult.clear,
           0.1
         )
         return {
@@ -216,7 +216,7 @@ export default class PhotosService {
       !needImage ? searchModelMessage : searchModelMessage(chunkResults.map((cp) => cp.tempID)),
       !needImage
         ? JSON.stringify({
-            query: searchType == 'logical' ? enrichmentResult.clear : enrichmentResult.original,
+            query: searchType == 'logical' ? structuredResult.clear : structuredResult.original,
             collection: chunkResults.map((chunkedPhoto) => ({
               id: chunkedPhoto.tempID,
               description: searchType !== 'logical' ? chunkedPhoto.chunkedDesc : undefined,
@@ -226,7 +226,7 @@ export default class PhotosService {
         : [
             {
               type: 'text',
-              text: JSON.stringify({ query: enrichmentResult.original }),
+              text: JSON.stringify({ query: structuredResult.original }),
             },
             ...(await this.generateImagesPayload(
               paginatedPhotos.map((pp) => pp.photo),

@@ -259,7 +259,7 @@ export default class EmbeddingsService {
 
     let adjustedSimilarChunks = applyAdjustment
       ? await this.modelsService.adjustProximitiesByContextInference(
-          description,
+          description.replace("|", "and"), // TODO: que structuredQuery devuelva una version asi, solo quitando el prefijo
           matchingChunks.map((mc) => ({ name: mc.chunk, proximity: mc.proximity, id: mc.id })),
           'desc'
         )
@@ -267,7 +267,7 @@ export default class EmbeddingsService {
 
     const matchingChunkMap: Map<string | number, number> = new Map(
       adjustedSimilarChunks
-        .filter((sc) => sc.proximity >= 0)
+        .filter((sc) => sc.proximity > 0)
         .map((chunk: any) => [chunk.id, chunk.proximity])
     )
 
@@ -335,7 +335,7 @@ export default class EmbeddingsService {
       weights = { tags: 1, desc: 0 }
       query = enrichmentQuery.clear
     } else if (searchType === 'semantic') {
-      weights = { tags: 0.6, desc: 0.4 }
+      weights = { tags: 0.5, desc: 0.5 }
       query = enrichmentQuery.clear
     } else {
       weights = { tags: 0.3, desc: 0.7 }
@@ -356,14 +356,14 @@ export default class EmbeddingsService {
     } else if (weights.tags > 0 && weights.desc > 0) {
       ;[scoredTagsPhotos, scoredDescPhotosChunked] = await Promise.all([
         this.getScoredTagsByQuerySegments(photos, query, applyAdjustment),
-        this.getScoredDescPhotos(photos, enrichmentQuery.original, applyAdjustment),
+        this.getScoredDescPhotos(photos, enrichmentQuery.clear, applyAdjustment),
       ])
     } else if (weights.tags > 0) {
       scoredTagsPhotos = await this.getScoredTagsByQuerySegments(photos, query, applyAdjustment)
     } else if (weights.desc > 0) {
       scoredDescPhotosChunked = await this.getScoredDescPhotos(
         photos,
-        enrichmentQuery.original,
+        enrichmentQuery.clear,
         applyAdjustment
       )
     }

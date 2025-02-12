@@ -89,6 +89,20 @@ export default class ModelsService {
   }
 
   @MeasureExecutionTime
+  public async getStructuredQuery(query: string): Promise<{ embeddings: number[][] }> {
+    const payload = {
+      query,
+    }
+    const { data } = await axios.post('http://127.0.0.1:5000/structure_query', payload, {
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    })
+
+    return data || {}
+  }
+
+  @MeasureExecutionTime
   public async getGPTResponse(
     systemContent: string | null,
     userContent: any,

@@ -25,53 +25,16 @@ export default class QueryService {
     this.analyzerService = new AnalyzerService()
   }
 
-  public async processQuery(searchType: 'logical' | 'semantic' | 'creative', query) {
-    const enrichmentMessage =
-      searchType !== 'creative'
-        ? SYSTEM_MESSAGE_QUERY_ENRICHMENT
-        : SYSTEM_MESSAGE_QUERY_ENRICHMENT_CREATIVE
-    const sourceMessage = SYSTEM_MESSAGE_QUERY_REQUIRE_SOURCE
+  public async structureQuery(searchType: 'logical' | 'semantic' | 'creative', query) {
+    let structuredResult = await this.modelsService.getStructuredQuery(query.description)
+    let sourceResult = { requireSource: 'description ' } // llamada a un clasificador que diga si la query requiere imagen o desc
 
-    // Ejecutamos las llamadas en paralelo, omitiendo la llamada a sourceMessage si searchType es 'logical'
-    const enrichmentPromise = this.modelsService.getGPTResponse(
-      enrichmentMessage,
-      JSON.stringify({ query: query.description }),
-      'gpt-4o-mini'
-    )
+    structuredResult.original = query.description
 
-    let enrichmentResponse, sourceResponse
-
-    if (true) {
-      // (searchType === 'logical') {
-      enrichmentResponse = await enrichmentPromise
-      sourceResponse = { result: { requireSource: null, cost: 0 } } // Simulamos una respuesta vacía para evitar errores
-    } else {
-      ;[enrichmentResponse, sourceResponse] = await Promise.all([
-        enrichmentPromise,
-        this.modelsService.getGPTResponse(
-          sourceMessage,
-          JSON.stringify({ query: query.description })
-        ),
-      ])
-    }
-
-    let { result: enrichmentResult, cost: cost1 } = enrichmentResponse
-    let { result: sourceResult, cost: cost2 } = sourceResponse
-
-    enrichmentResult.original = query.description
-
-    sourceResult.requireSource = 'description'
-
+    // Por si se incluyen insights, en principio solo para creative o busqueda con imagen por GPT
     let searchModelMessage
 
-    if (searchType === 'logical') {
-      searchModelMessage = SYSTEM_MESSAGE_SEARCH_SEMANTIC_LOGICAL_v2(true)
-    } else if (searchType === 'semantic') {
-      searchModelMessage =
-        sourceResult.requireSource === 'description'
-          ? SYSTEM_MESSAGE_SEARCH_SEMANTIC(true)
-          : SYSTEM_MESSAGE_SEARCH_MODEL_ONLY_IMAGE
-    } else {
+    if (searchType === 'creative') {
       searchModelMessage =
         sourceResult.requireSource === 'image'
           ? SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE_ONLY_IMAGE
@@ -79,61 +42,14 @@ export default class QueryService {
     }
 
     console.log(
-      `[processQuery]: Result for ${query.description} -> ${JSON.stringify(enrichmentResult)}`
+      `[processQuery]: Result for ${query.description} -> ${JSON.stringify(structuredResult)}`
     )
 
     return {
       searchModelMessage,
       sourceResult,
-      enrichmentResult,
-      cost1,
-      cost2,
+      structuredResult,
     }
-  }
-
-  public async evaluateQueryLogic(query, photo) {
-    const segments = query.split(/\s+(AND|OR|NOT|\|)\s+/i).filter(Boolean) // Split into terms and operators
-    const termsWithOperators = []
-
-    let currentOperator = 'AND'
-    for (let segment of segments) {
-      if (['AND', 'OR', 'NOT', '|'].includes(segment.toUpperCase())) {
-        currentOperator = segment.toUpperCase() === '|' ? 'AND' : segment.toUpperCase()
-      } else {
-        termsWithOperators.push({ term: segment.trim(), operator: currentOperator })
-      }
-    }
-
-    let allMatched = true
-    let hasNotMatched = false
-    let hasOrMatch = false
-
-    for (let { term, operator } of termsWithOperators) {
-      let { matchingTags, method, lematizedTerm } =
-        await this.embeddingsService.findMatchingTagsForTerm(term, photo.tags, 0.85, 5)
-
-      if (matchingTags.length > 0) {
-        console.log(
-          `[evaluateQueryLogic]: Found matching tags for '${term}' [${lematizedTerm}] -> '${matchingTags.map((mt) => mt.name)}' by ${method} `
-        )
-
-        if (operator === 'NOT') {
-          hasNotMatched = true
-        } else if (operator === 'OR') {
-          hasOrMatch = true
-        }
-      } else {
-        if (operator === 'AND') {
-          return null
-        }
-      }
-    }
-
-    if (hasNotMatched) {
-      return false
-    }
-
-    return hasOrMatch || allMatched
   }
 
   public async getTagsForLogicalQuery(
@@ -181,4 +97,117 @@ export default class QueryService {
 
     return [...tagsSet] // Devolver el Set como un array
   }
+
+  // desuso
+  public async evaluateQueryLogic(query, photo) {
+    const segments = query.split(/\s+(AND|OR|NOT|\|)\s+/i).filter(Boolean) // Split into terms and operators
+    const termsWithOperators = []
+
+    let currentOperator = 'AND'
+    for (let segment of segments) {
+      if (['AND', 'OR', 'NOT', '|'].includes(segment.toUpperCase())) {
+        currentOperator = segment.toUpperCase() === '|' ? 'AND' : segment.toUpperCase()
+      } else {
+        termsWithOperators.push({ term: segment.trim(), operator: currentOperator })
+      }
+    }
+
+    let allMatched = true
+    let hasNotMatched = false
+    let hasOrMatch = false
+
+    for (let { term, operator } of termsWithOperators) {
+      let { matchingTags, method, lematizedTerm } =
+        await this.embeddingsService.findMatchingTagsForTerm(term, photo.tags, 0.85, 5)
+
+      if (matchingTags.length > 0) {
+        console.log(
+          `[evaluateQueryLogic]: Found matching tags for '${term}' [${lematizedTerm}] -> '${matchingTags.map((mt) => mt.name)}' by ${method} `
+        )
+
+        if (operator === 'NOT') {
+          hasNotMatched = true
+        } else if (operator === 'OR') {
+          hasOrMatch = true
+        }
+      } else {
+        if (operator === 'AND') {
+          return null
+        }
+      }
+    }
+
+    if (hasNotMatched) {
+      return false
+    }
+
+    return hasOrMatch || allMatched
+  }
+
+  // desuso
+  // public async processQuery(searchType: 'logical' | 'semantic' | 'creative', query) {
+  //   const enrichmentMessage =
+  //     searchType !== 'creative'
+  //       ? SYSTEM_MESSAGE_QUERY_ENRICHMENT
+  //       : SYSTEM_MESSAGE_QUERY_ENRICHMENT_CREATIVE
+  //   const sourceMessage = SYSTEM_MESSAGE_QUERY_REQUIRE_SOURCE
+
+  //   // Ejecutamos las llamadas en paralelo, omitiendo la llamada a sourceMessage si searchType es 'logical'
+  //   const enrichmentPromise = this.modelsService.getGPTResponse(
+  //     enrichmentMessage,
+  //     JSON.stringify({ query: query.description }),
+  //     'gpt-4o-mini'
+  //   )
+
+  //   let enrichmentResponse, sourceResponse
+
+  //   if (true) {
+  //     // (searchType === 'logical') {
+  //     enrichmentResponse = await enrichmentPromise
+  //     sourceResponse = { result: { requireSource: null, cost: 0 } } // Simulamos una respuesta vacía para evitar errores
+  //   } else {
+  //     ;[enrichmentResponse, sourceResponse] = await Promise.all([
+  //       enrichmentPromise,
+  //       this.modelsService.getGPTResponse(
+  //         sourceMessage,
+  //         JSON.stringify({ query: query.description })
+  //       ),
+  //     ])
+  //   }
+
+  //   let { result: enrichmentResult, cost: cost1 } = enrichmentResponse
+  //   let { result: sourceResult, cost: cost2 } = sourceResponse
+
+  //   enrichmentResult.original = query.description
+
+  //   sourceResult.requireSource = 'description'
+
+  //   let searchModelMessage
+
+  //   if (searchType === 'logical') {
+  //     searchModelMessage = SYSTEM_MESSAGE_SEARCH_SEMANTIC_LOGICAL_v2(true)
+  //   } else if (searchType === 'semantic') {
+  //     searchModelMessage =
+  //       sourceResult.requireSource === 'description'
+  //         ? SYSTEM_MESSAGE_SEARCH_SEMANTIC(true)
+  //         : SYSTEM_MESSAGE_SEARCH_MODEL_ONLY_IMAGE
+  //   } else {
+  //     searchModelMessage =
+  //       sourceResult.requireSource === 'image'
+  //         ? SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE_ONLY_IMAGE
+  //         : SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE(true)
+  //   }
+
+  //   console.log(
+  //     `[processQuery]: Result for ${query.description} -> ${JSON.stringify(enrichmentResult)}`
+  //   )
+
+  //   return {
+  //     searchModelMessage,
+  //     sourceResult,
+  //     enrichmentResult,
+  //     cost1,
+  //     cost2,
+  //   }
+  // }
 }
