@@ -36,70 +36,94 @@ const PRICES = {
 const USD_TO_EUR = 0.92
 
 export default class ModelsService {
+  constructor() {
+    this.apiMode = process.env.API_MODELS
+    this.remoteBaseUrl = process.env.REMOTE_API_BASE_URL
+    this.localBaseUrl = process.env.LOCAL_API_BASE_URL
+    this.runpodApiKey = process.env.RUNPOD_API_KEY
+  }
+
+  buildRequestConfig(operation, payload) {
+    let url = ''
+    let requestPayload = payload
+    const headers = { 'Content-Type': 'application/json' }
+
+    if (this.apiMode === 'REMOTE') {
+      url = this.remoteBaseUrl
+      requestPayload = {
+        input: {
+          operation,
+          data: payload,
+        },
+      }
+      if (this.runpodApiKey) {
+        headers['Authorization'] = `Bearer ${this.runpodApiKey}`
+      }
+    } else {
+      url = `${this.localBaseUrl}/${operation}`
+    }
+
+    return { url, requestPayload, headers }
+  }
+
   @MeasureExecutionTime
-  public async adjustProximitiesByContextInference(
-    term: string,
-    tags: any[],
-    termsType: 'tag' | 'desc' = 'tag'
-  ): Promise<any[]> {
+  async adjustProximitiesByContextInference(term, tags, termsType = 'tag') {
     try {
-      const payload = {
+      let payload = {
         term,
         tag_list: tags.map((tag) => ({ name: tag.name, group: tag.group })),
       }
 
-      const { data } = await axios.post(
-        termsType == 'tag'
-          ? 'http://127.0.0.1:5000/adjust_tags_proximities_by_context_inference'
-          : 'http://127.0.0.1:5000/adjust_descs_proximities_by_context_inference',
-        payload,
-        { headers: { 'Content-Type': 'application/json' } }
-      )
+      const operation =
+        termsType === 'tag'
+          ? 'adjust_tags_proximities_by_context_inference'
+          : 'adjust_descs_proximities_by_context_inference'
 
-      // Mapear los resultados ajustando la proximidad si está disponible
+      const { url, requestPayload, headers } = this.buildRequestConfig(operation, payload)
+
+      let { data } = await axios.post(url, requestPayload, { headers })
+
+      data = data.output ? data.output : data
+
       return tags.map((tag) => ({
         ...tag,
         embeddingsProximity: tag.proximity,
-        proximity: data[tag.name].adjusted_proximity,
+        proximity: data[tag.name]?.adjusted_proximity,
       }))
     } catch (error) {
-      console.error('Error en adjustProximitiesByContextInference:', error)
-      return [] // En caso de error, devolver los tags originales
+      console.error('Error en adjustProximitiesByContextInference:', error.message)
+      return []
     }
   }
 
   @MeasureExecutionTime
-  public async getEmbeddings(tags: string[]): Promise<{ embeddings: number[][] }> {
+  async getEmbeddings(tags) {
     try {
-      const payload = {
-        tags,
-      }
+      const payload = { tags }
+      const { url, requestPayload, headers } = this.buildRequestConfig('get_embeddings', payload)
 
-      const { data } = await axios.post('http://127.0.0.1:5000/get_embeddings', payload, {
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      })
+      const { data } = await axios.post(url, requestPayload, { headers })
 
-      return data || {}
+      return data.output ? data.output : data || { embeddings: [] }
     } catch (error) {
-      console.error('Error fetching semantic proximity:', error)
+      console.error('Error en getEmbeddings:', error.message)
       return { embeddings: [] }
     }
   }
 
   @MeasureExecutionTime
-  public async getStructuredQuery(query: string): Promise<{ embeddings: number[][] }> {
-    const payload = {
-      query,
-    }
-    const { data } = await axios.post('http://127.0.0.1:5000/structure_query', payload, {
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    })
+  async getStructuredQuery(query) {
+    try {
+      const payload = { query }
+      const { url, requestPayload, headers } = this.buildRequestConfig('structure_query', payload)
 
-    return data || {}
+      const { data } = await axios.post(url, requestPayload, { headers })
+
+      return data.output ? data.output : data || {}
+    } catch (error) {
+      console.error('Error en getStructuredQuery:', error.message)
+      return {}
+    }
   }
 
   @MeasureExecutionTime

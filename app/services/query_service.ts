@@ -1,6 +1,8 @@
 // @ts-nocheck
 
+import withCost from '../decorators/withCost.js'
 import {
+  SYSTEM_MESSAGE_CULTURAL_ENRICHMENT,
   SYSTEM_MESSAGE_QUERY_ENRICHMENT,
   SYSTEM_MESSAGE_QUERY_ENRICHMENT_CREATIVE,
   SYSTEM_MESSAGE_QUERY_REQUIRE_SOURCE,
@@ -25,15 +27,62 @@ export default class QueryService {
     this.analyzerService = new AnalyzerService()
   }
 
+  withCost()
   public async structureQuery(searchType: 'logical' | 'semantic' | 'creative', query) {
+    let expansionCost
     let structuredResult = await this.modelsService.getStructuredQuery(query.description)
-    let sourceResult = { requireSource: 'description ' } // llamada a un clasificador que diga si la query requiere imagen o desc
+    let sourceResult = { requireSource: 'description ' } // Classifier call to determine if query requires an image or text description
 
     structuredResult.original = query.description
 
-    // Por si se incluyen insights, en principio solo para creative o busqueda con imagen por GPT
-    let searchModelMessage
+    let referencesToExpand = structuredResult.positive_segments.filter(
+      (_, i) =>
+        structuredResult.types[i] === 'MISC' ||
+        structuredResult.types[i] === 'PER' ||
+        structuredResult.types[i] === 'ORG'
+    )
 
+    let expandedTermsMap = {} // Stores expanded terms from GPT
+    let clearExpanded = structuredResult.clear // Default: same as 'clear' unless expanded
+
+    if (referencesToExpand.length > 0) {
+      // Call GPT for cultural expansion
+      const { result: culturalExpansion, cost } = await this.modelsService.getGPTResponse(
+        SYSTEM_MESSAGE_CULTURAL_ENRICHMENT,
+        JSON.stringify({ references: referencesToExpand }),
+        'gpt-4o-mini'
+      )
+
+      expansionCost = cost
+
+      // Parse response and integrate expanded terms
+      if (culturalExpansion) {
+        // Replace original terms with their expanded versions
+        clearExpanded = structuredResult.clear
+          .split(' | ') // Split into segments
+          .map((segment) =>
+            culturalExpansion[segment]
+              ? segment + ', ' + culturalExpansion[segment].join(', ')
+              : segment
+          )
+          .join(' | ')
+
+        structuredResult.positive_segments = structuredResult.positive_segments.map((segment) =>
+          culturalExpansion[segment]
+            ? segment + ', ' + culturalExpansion[segment].join(', ')
+            : segment
+        )
+      }
+      structuredResult.clear_original = structuredResult.clear
+      structuredResult.clear = clearExpanded
+      structuredResult.no_prefix = clearExpanded
+      structuredResult.has_expansion = true
+    }
+
+    // Attach expansion to structured result
+
+    // Handle creative search case
+    let searchModelMessage
     if (searchType === 'creative') {
       searchModelMessage =
         sourceResult.requireSource === 'image'
@@ -49,6 +98,7 @@ export default class QueryService {
       searchModelMessage,
       sourceResult,
       structuredResult,
+      expansionCost,
     }
   }
 

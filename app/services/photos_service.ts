@@ -64,14 +64,8 @@ export default class PhotosService {
       })
     )
 
-    const {
-      structuredResult,
-      sourceResult,
-      useImage,
-      searchModelMessage,
-      cost1: enrichmentCost,
-      cost2: sourceCost,
-    } = await this.queryService.structureQuery(searchType, query)
+    const { structuredResult, sourceResult, useImage, searchModelMessage, expansionCost } =
+      await this.queryService.structureQuery(searchType, query)
 
     const pageSize = 9
     const batchSize = 3
@@ -103,6 +97,7 @@ export default class PhotosService {
               photos: paginatedPhotos.map((item) => item.photo),
             },
           },
+          cost: { expansionCost },
           iteration: query.iteration,
           structuredResult,
           scores: embeddingScoredPhotos?.slice(0, 1000),
@@ -156,7 +151,7 @@ export default class PhotosService {
         data: {
           results: { [query.iteration - 1]: { photos: photosResult } },
           hasMore,
-          cost: { enrichmentCost, sourceCost, modelCosts },
+          cost: { expansionCost, modelCosts },
           iteration: query.iteration - 1,
           structuredResult,
           requireSource: { source: sourceResult.requireSource, useImage },

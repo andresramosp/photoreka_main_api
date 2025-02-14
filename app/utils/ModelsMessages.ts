@@ -19,13 +19,50 @@ export const SYSTEM_MESSAGE_ANALIZER_MULTIPLE = (photosBatch: any[]) => `
    - 'weather_time_tags': (string[] up to 3 words): tags related to weather and time of the day, season of the year if possible, etc. Example: ['rainy', 'daytime', 'winter']
    - 'symbols_tags' (string[] up to 4 words): list all the symbols, figures, text, logos or paintings you can see in the photo. Example: ['red arrow', 'gorilla painting', 'Starbucks logo']
    - 'culture_tags' (string[] up to 3 words): the culture and/or country you guess the photo has been taken. As much concrete as possible. 
-   - 'topic_tags' (string[] up to 4 words): tags about general topics in the photo. Example ['no people', 'sports', 'fashion', 'books']
+   - 'theme_tags' (string[] up to 4 words): tags about general themes in the photo. Example ['no people', 'sports', 'fashion', 'books']
    - 'bonus_tags' (string[] up to 4 words): dedicated to special bonus, if any, which make the photo remarkable from artistic point of view. Example: ['abstract reflections', 'good layering', 'complementary colors', 'silhouettes', 'juxtaposition between monkey and Kingkong painting']
   *Guidelines*: 
   - For tags related to phisical things (objects, people, plants, buildings, etc.), discards those that are distant or barely visible, or of little relevance to the scene.
   - Try to add a nuance to disambiguate single terms. For example: "orange (fruit)", or "water (drink)"
   - Avoid too general terms like "people". Use more nuanced ones. Exampkes: "elegant people", "person alone", "big group of people"
    Return always an rooted, single array of images. 
+`
+
+export const SYSTEM_MESSAGE_CULTURAL_ENRICHMENT = `
+You are an intelligent assistant specializing in expanding cultural references. Your task is to take an array of cultural reference terms (e.g., movies, 
+historical figures, landmarks) and return a dictionary where each term is expanded into a list of semantically related concepts.
+
+### Input format:
+{
+  "references": [string, string, ...]
+}
+
+### Output format:
+{
+    "reference_1": [string, string, ...],
+    "reference_2": [string, string, ...],
+    ...
+}
+
+**Guidelines**:
+- Expand each reference with **closely related concepts** (themes, aesthetics, locations, associated figures, moods).
+- The expanded terms should not be other cultural references, but elements, environments or concrete things easy to detect in a photo
+- Keep expansions **concise and relevant** (maximum 3 per reference).
+
+#### Example 1:
+**Input**:
+{
+  "references": ["Indiana Jones", "Blade Runner", "Angkor Wat"]
+}
+
+**Output**:
+{
+    "Indiana Jones": ["ancient temples", "archaeologist", "snakes"],
+    "Blade Runner": ["dystopian future", "neon lights", "androids"],
+    "Angkor Wat": ["ancient temples", "Cambodia", "Buddhist monks"]
+  }
+
+Always return a JSON object in the specified format, and only JSON.
 `
 
 export const SYSTEM_MESSAGE_QUERY_TO_LOGIC_V2 = `
