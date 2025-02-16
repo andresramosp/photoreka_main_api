@@ -305,13 +305,32 @@ export default class EmbeddingsService {
   public async getScoredPhotosByTagsAndDesc(
     photos: Photo[],
     structuredQuery: any,
+    searchType: 'logical' | 'semantic' | 'creative',
     quickSearch: boolean = false
   ): Promise<ScoredPhoto[] | undefined> {
-    const weights = { tags: 0.5, desc: 0.5, fullQuery: 0.5 }
+    const weights = {
+      logical: {
+        tags: 1,
+        desc: 0,
+        fullQuery: 0,
+        embeddingsTagsThreshold: quickSearch ? 0.3 : 0.15,
+      },
+      semantic: {
+        tags: quickSearch ? 1 : 0.5,
+        desc: quickSearch ? 0 : 0.5,
+        fullQuery: quickSearch ? 0 : 0.5,
+        embeddingsTagsThreshold: quickSearch ? 0.3 : 0.15,
+        embeddingsDescsThreshold: quickSearch ? 0.4 : 0.2,
+      },
+      creative: {
+        tags: quickSearch ? 1 : 0.3,
+        desc: quickSearch ? 0 : 0.7,
+        fullQuery: quickSearch ? 0 : 0.7,
+        embeddingsTagsThreshold: quickSearch ? 0.3 : 0.15,
+        embeddingsDescsThreshold: quickSearch ? 0.4 : 0.2,
+      },
+    }
 
-    const allSegmentsNeeded = true
-
-    // Aquí se podría filtrar según segmentos negativos.
     let aggregatedScores: ScoredPhoto[] = photos.map((photo) => ({
       photo,
       tagScore: 0,
@@ -320,60 +339,90 @@ export default class EmbeddingsService {
       matchedSegments: 0,
     }))
 
-    let fullQueryDescScores = await this.getScoredPhotoDescBySegment(
-      aggregatedScores.map((scored) => scored.photo),
-      structuredQuery.no_prefix,
-      0.4
+    // Si hay más de un segmento, lanzamos fullQuery en paralelo usando el array original.
+    const fullQueryPromise: Promise<ScoredPhoto[]> =
+      structuredQuery.positive_segments.length > 1 && weights[searchType].fullQuery > 0
+        ? this.getScoredPhotoDescBySegment(
+            photos,
+            structuredQuery.no_prefix,
+            weights[searchType].embeddingsDescsThreshold * 2
+          )
+        : Promise.resolve([])
+
+    // Procesamos los segmentos secuencialmente en una promesa.
+    const segmentsPromise = (async () => {
+      let scores = aggregatedScores
+      for (const segment of structuredQuery.positive_segments) {
+        scores = await this.processSegment(segment, scores, weights[searchType])
+      }
+      return scores
+    })()
+
+    // Esperamos ambas promesas en paralelo.
+    const [scoresAfterSegments, fullQueryDescScores] = await Promise.all([
+      segmentsPromise,
+      fullQueryPromise,
+    ])
+
+    // Mergeamos el score fullQuery en los resultados finales.
+    const finalScores = this.mergeTagDescScoredPhotos(
+      scoresAfterSegments,
+      [],
+      fullQueryDescScores,
+      { tags: 0, desc: weights[searchType].fullQuery }
     )
 
-    for (let segment of structuredQuery.positive_segments) {
-      // Se revisan solo las fotos que siguen activas.
-      const photosToReview = aggregatedScores.map((scored) => scored.photo)
-
-      const tagPromise =
-        weights.tags > 0
-          ? this.getScoredPhotoTagsBySegment(photosToReview, segment, 0.15)
-          : Promise.resolve([])
-      const descPromise =
-        weights.desc > 0
-          ? this.getScoredPhotoDescBySegment(photosToReview, segment, 0.2)
-          : Promise.resolve([])
-
-      const [newTagScores, newDescScores] = await Promise.all([tagPromise, descPromise])
-
-      const matchingSegmentPhotoIds = Array.from(
-        new Set([...newTagScores.map((t) => t.photo.id), ...newDescScores.map((t) => t.photo.id)])
-      )
-
-      aggregatedScores = this.mergeTagDescScoredPhotos(
-        aggregatedScores,
-        newTagScores,
-        newDescScores,
-        weights
-      )
-
-      // Computamos segmentos matcheados para cada foto
-      aggregatedScores = aggregatedScores.map((agScore) => {
-        if (matchingSegmentPhotoIds.includes(agScore.photo.id)) {
-          return { ...agScore, matchedSegments: agScore.matchedSegments + 1 }
-        } else {
-          return { ...agScore }
-        }
+    return finalScores
+      .sort((a, b) => {
+        if (b.matchedSegments === a.matchedSegments) return b.totalScore - a.totalScore
+        return b.matchedSegments - a.matchedSegments
       })
+      .map((score) => ({
+        ...score,
+        queryMatched: score.matchedSegments == structuredQuery.positive_segments.length,
+      }))
+  }
 
-      aggregatedScores = aggregatedScores.filter((scored) => scored.totalScore > 0)
-    }
+  private async processSegment(
+    segment: any,
+    aggregatedScores: ScoredPhoto[],
+    weights: { tags: number; desc: number; fullQuery: number }
+  ): Promise<ScoredPhoto[]> {
+    const photosToReview = aggregatedScores.map((s) => s.photo)
+    const tagPromise =
+      weights.tags > 0
+        ? this.getScoredPhotoTagsBySegment(photosToReview, segment, weights.embeddingsTagsThreshold)
+        : Promise.resolve([])
+    const descPromise =
+      weights.desc > 0
+        ? this.getScoredPhotoDescBySegment(
+            photosToReview,
+            segment,
+            weights.embeddingsDescsThreshold
+          )
+        : Promise.resolve([])
 
-    // Mergeamos también score por match de query completa sobre descripcion
-    aggregatedScores = this.mergeTagDescScoredPhotos(aggregatedScores, [], fullQueryDescScores, {
-      tags: 0,
-      desc: weights.fullQuery,
+    const [newTagScores, newDescScores] = await Promise.all([tagPromise, descPromise])
+
+    const matchingSegmentPhotoIds = Array.from(
+      new Set([...newTagScores.map((t) => t.photo.id), ...newDescScores.map((t) => t.photo.id)])
+    )
+
+    let updatedScores = this.mergeTagDescScoredPhotos(
+      aggregatedScores,
+      newTagScores,
+      newDescScores,
+      weights
+    )
+
+    updatedScores = updatedScores.map((score) => {
+      if (matchingSegmentPhotoIds.includes(score.photo.id)) {
+        return { ...score, matchedSegments: score.matchedSegments + 1 } // TODO: matchedSegments incrementa solo con un threshold (conservar en el matchingSegmentPhotoIds)
+      }
+      return score
     })
 
-    return aggregatedScores.sort((a, b) => {
-      if (b.matchedSegments == a.matchedSegments) return b.totalScore - a.totalScore
-      return b.matchedSegments - a.matchedSegments
-    })
+    return updatedScores.filter((score) => score.totalScore > 0)
   }
 
   // TODO: hay que penalizar un poco matcheos negativos
@@ -525,8 +574,6 @@ export default class EmbeddingsService {
       remainingTags.map((t) => t.id) // Solo considerar los tags que no coincidieron por string
     )
 
-    let semanticMatches
-
     // < 0 Contradiction
     // == 0 Neutral
     // > 0 Entailment
@@ -536,7 +583,7 @@ export default class EmbeddingsService {
       'tag'
     )
 
-    semanticMatches = adjustedSimilarTags.map((tag) => {
+    let semanticMatches = adjustedSimilarTags.map((tag) => {
       return {
         name: tag.name,
         proximity: tag.proximity,

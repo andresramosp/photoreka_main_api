@@ -56,13 +56,14 @@ export default class QueryService {
       expansionCost = cost
 
       // Parse response and integrate expanded terms
-      if (culturalExpansion) {
+      if (false) {
+        //} (culturalExpansion) {
         // Replace original terms with their expanded versions
         clearExpanded = structuredResult.clear
           .split(' | ') // Split into segments
           .map((segment) =>
             culturalExpansion[segment]
-              ? segment + ', ' + culturalExpansion[segment].join(', ')
+              ? segment + '| ' + culturalExpansion[segment].join(', ')
               : segment
           )
           .join(' | ')
