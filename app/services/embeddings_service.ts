@@ -13,14 +13,15 @@ const pluralize = require('pluralize')
 const cache = new NodeCache({ stdTTL: 3600 })
 
 interface ScoredPhoto {
-  tagScore: number // Puntuación por tags
-  // descScore: number // Puntuación por embeddings
-  totalScore: number // Puntaje total calculado
+  photo: Photo
+  tagScore?: number // Puntuación por tags
+  descScore?: number // Puntuación por embeddings
+  totalScore?: number // Puntaje total calculado
 }
 
-interface ChunkedPhoto extends ScoredPhoto {
-  chunks?: { proximity: number; text_chunk: string }[] // Chunks asociados a la foto
-}
+// interface ChunkedPhoto extends ScoredPhoto {
+//   chunks?: { proximity: number; text_chunk: string }[] // Chunks asociados a la foto
+// }
 
 export default class EmbeddingsService {
   public modelsService: ModelsService = null
@@ -244,284 +245,205 @@ export default class EmbeddingsService {
     return embeddings[0] || null
   }
 
-  @MeasureExecutionTime
-  public async getScoredDescPhotos(
-    photos: Photo[],
-    description: string,
-    applyZeroLogicAdjustment: boolean = true
-  ): Promise<{ photo: Photo; descScore: number }[]> {
-    const matchingChunks = await this.findSimilarChunksToText(
-      description,
-      0.2,
-      2000,
-      'cosine_similarity'
+  public mergeTagDescScoredPhotos(
+    scoredTagsPhotos: ScoredPhoto[],
+    scoredDescsPhotos: ScoredPhoto[],
+    weights: any
+  ): ScoredPhoto[] {
+    // Mapear por id para acceso rápido
+    const tagScoresMap = new Map(
+      scoredTagsPhotos.map((item) => [
+        item.photo.id,
+        { tagScore: item.tagScore, matchingTags: item.photo.matchingTags, photo: item.photo },
+      ])
+    )
+    const descScoresMap = new Map(
+      scoredDescsPhotos.map((item) => [
+        item.photo.id,
+        { descScore: item.descScore, matchingChunks: item.photo.matchingChunks, photo: item.photo },
+      ])
     )
 
-    let adjustedSimilarChunks = await this.modelsService.adjustProximitiesByContextInference(
-      description,
-      matchingChunks.map((mc) => ({ name: mc.chunk, proximity: mc.proximity, id: mc.id })),
-      'desc'
-    )
+    // Unión de todos los IDs presentes en cualquiera de los dos maps
+    const allPhotoIds = new Set([...tagScoresMap.keys(), ...descScoresMap.keys()])
 
-    const matchingChunkMap: Map<string | number, number> = new Map(
-      adjustedSimilarChunks.map((chunk: any) => [chunk.id, chunk.proximity])
-    )
+    return Array.from(allPhotoIds).map((id) => {
+      const tagData = tagScoresMap.get(id)
+      const descData = descScoresMap.get(id)
+      const photo = tagData?.photo || descData?.photo
+      const tagScore = tagData ? tagData.tagScore : 0
+      const descScore = descData ? descData.descScore : 0
+      const matchingTags = tagData ? tagData.matchingTags : []
+      const matchingChunks = descData ? descData.matchingChunks : []
 
-    const relevantPhotos = photos.filter((photo) =>
-      photo.descriptionChunks?.some((chunk) => matchingChunkMap.has(chunk.id))
-    )
-
-    const scoredPhotos = relevantPhotos.map((photo) => {
-      photo.matchingChunks = photo.matchingChunks || []
-      const photoMatchingChunks =
-        photo.descriptionChunks?.filter((chunk) => matchingChunkMap.has(chunk.id)) || []
-
-      // Agregamos la proximidad a cada chunk
-      const enrichedMatchingChunks = photoMatchingChunks.map((chunk) => {
-        const proximity = matchingChunkMap.get(chunk.id) || 0
-        return {
-          id: chunk.id,
-          chunk: chunk.chunk,
-          proximity,
-          matchType: proximity >= 0 ? 'positive' : 'negative',
-        }
-      })
-
-      photo.matchingChunks.push(...enrichedMatchingChunks)
-
-      // Si tiene tanto proximidades positivas como negativas, asignamos score 0
-      const hasPositive = enrichedMatchingChunks.some((chunk) => chunk.proximity > 0)
-      const hasNegative = enrichedMatchingChunks.some((chunk) => chunk.proximity < 0)
-      if (hasPositive && hasNegative) {
-        return { photo, descScore: 0.1 }
-      } else if (hasNegative) {
-        return { photo, descScore: -0.5 }
+      // Actualizamos el objeto photo, si es necesario
+      if (photo) {
+        photo.matchingTags = matchingTags
+        photo.matchingChunks = matchingChunks
       }
 
-      // Calcula las proximidades relevantes con ponderación exponencial
-      const proximities = enrichedMatchingChunks.map((chunk) => Math.exp(chunk.proximity - 0.5))
-
-      // Máximo y media ponderada
-      const maxProximity = Math.max(...proximities, 0)
-      const averageProximity =
-        proximities.reduce((sum, proximity) => sum + proximity, 0) / (proximities.length || 1)
-
-      // Score combinado
-      const descScore = 0.75 * maxProximity + 0.25 * averageProximity
-
-      return { photo, descScore }
-    })
-
-    const maxScore = Math.max(
-      ...scoredPhotos.map(({ descScore }) => (descScore > 0 ? descScore : 0)),
-      1
-    )
-
-    return scoredPhotos
-      .map(({ photo, descScore }) => ({
+      return {
         photo,
-        descScore: descScore > 0 ? descScore / maxScore : 0, // Normalización
-      }))
-      .sort((a, b) => b.descScore - a.descScore)
-      .filter(({ descScore }) => descScore > 0 || (!applyZeroLogicAdjustment && descScore === 0))
+        tagScore,
+        descScore,
+        totalScore: tagScore * weights.tags + descScore * weights.desc,
+      }
+    })
   }
 
   @MeasureExecutionTime
   public async getScoredPhotosByTagsAndDesc(
     photos: Photo[],
     structuredQuery: any,
-    searchType: 'logical' | 'semantic' | 'creative',
     quickSearch: boolean = false
-  ): Promise<ChunkedPhoto[] | undefined> {
-    let weights = {
-      tags: 0,
-      desc: 0,
-    }
-    // TODO: esto vendrá determinado por la evaluacion de la query con zero-shot clasification, como "conceptual" o similar. De esa forma
-    // podremos incluir tambien queries como "photos evoking cats...", que no son PER ni MISC. Creative siempre.
-    let applyZeroLogicAdjustment = !structuredQuery.has_expansion && searchType !== 'creative'
+  ): Promise<ScoredPhoto[] | undefined> {
+    const weights = { tags: 0.5, desc: 0.5 } // Ajusta estos valores según necesites
 
-    let scoreFunc: Function
-    if (searchType === 'logical' || quickSearch) {
-      scoreFunc = (tagScore, descScore) => tagScore
-    } else if (searchType === 'semantic') {
-      // scoreFunc = (tagScore, descScore) => Math.max(tagScore, descScore)
-      scoreFunc = (tagScore, descScore) => tagScore * 0.5 + descScore * 0.5
-    } else {
-      scoreFunc = (tagScore, descScore) => tagScore * 0.3 + descScore * 0.7
-    }
+    // let applyZeroLogicAdjustment = !structuredQuery.has_expansion && searchType !== 'creative'
 
-    let scoredTagsPhotos: { photo: Photo; tagScore: number }[] = []
-    let scoredDescPhotosChunked: { photo: Photo; descScore: number }[] = []
+    // usar distitna proximity inicial para embeddings si quickSearch ? 0.4 : 0.15
 
-    if (quickSearch || searchType == 'logical') {
-      // solo tags, con threshols de embeddings muy alto para reducir resultados
-      scoredTagsPhotos = await this.getScoredTagsByQuerySegments(
-        photos,
-        structuredQuery,
-        applyZeroLogicAdjustment,
-        quickSearch ? 0.4 : 0.15
-      )
-    } else {
-      ;[scoredTagsPhotos, scoredDescPhotosChunked] = await Promise.all([
-        this.getScoredTagsByQuerySegments(photos, structuredQuery, applyZeroLogicAdjustment),
-        this.getScoredDescPhotos(photos, structuredQuery.no_prefix, applyZeroLogicAdjustment),
-      ])
+    let scoredPhotos: ScoredPhoto[] = photos.map((photo) => ({
+      photo,
+      descScore: 0,
+      tagScore: 0,
+      totalScore: 0,
+    }))
+
+    // Procesar segmentos negativos (eliminar fotos según thresholds)
+    for (let segment of structuredQuery.negative_segments) {
+      // Implementa aquí la lógica para eliminar fotos que matcheen según thresholds: 0.8, 0.6, etc.
     }
 
-    const tagScoresMap = new Map(
-      scoredTagsPhotos.map((item) => [
-        item.photo.id,
-        { tagScore: item.tagScore, matchingTags: item.photo.matchingTags },
+    for (let segment of structuredQuery.positive_segments) {
+      const photosToReview = scoredPhotos.map((sc) => sc.photo)
+      const tagPromise =
+        weights.tags > 0
+          ? this.getScoredPhotoTagsBySegment(photosToReview, segment)
+          : Promise.resolve([])
+      const descPromise =
+        weights.desc > 0
+          ? this.getScoredPhotoDescBySegment(photosToReview, segment)
+          : Promise.resolve([])
+
+      const [scoredTagsPhotosForSegment, scoredDescPhotosChunkedForSegment] = await Promise.all([
+        tagPromise,
+        descPromise,
       ])
-    )
-    const descScoresMap = new Map(
-      scoredDescPhotosChunked.map((item) => [
-        item.photo.id,
-        { descScore: item.descScore, matchingChunks: item.photo.matchingChunks },
-      ])
-    )
 
-    const scoredPhotos: ChunkedPhoto[] = photos.map((photo) => {
-      const { tagScore = 0, matchingTags = [] } = tagScoresMap.get(photo.id) || {}
-      const { descScore = 0, matchingChunks = [] } = descScoresMap.get(photo.id) || {}
+      scoredPhotos = this.mergeTagDescScoredPhotos(
+        scoredTagsPhotosForSegment,
+        scoredDescPhotosChunkedForSegment,
+        weights
+      ).filter((photo) => photo.totalScore > 0)
+    }
 
-      photo.matchingTags = matchingTags
-      photo.matchingChunks = matchingChunks
-      return {
-        photo,
-        tagScore,
-        descScore,
-        totalScore: scoreFunc(tagScore, descScore),
-      }
-    })
-
-    // Filtrar y ordenar
-    let finalThreshold = searchType !== 'creative' ? 0.5 : 0.2
-    const filteredAndSortedPhotos: ChunkedPhoto[] = scoredPhotos
-      .filter((photo) => photo.totalScore > finalThreshold)
-      .sort((a, b) => b.totalScore - a.totalScore)
-
-    return filteredAndSortedPhotos
+    return scoredPhotos.sort((a, b) => b.totalScore - a.totalScore)
   }
 
-  @MeasureExecutionTime
-  private async getScoredTagsByQuerySegments(
+  // TODO: hay que penalizar un poco matcheos negativos
+  private async getScoredPhotoDescBySegment(
     photos: Photo[],
-    structuredQuery: any,
-    applyZeroLogicAdjustment: boolean = true,
+    segment: string,
+    embeddingsProximityThreshold: number = 0.2
+  ): Promise<{ photo: Photo; descScore: number }[]> {
+    // Obtener los chunks similares para el segmento
+    const matchingChunks = await this.findSimilarChunksToText(
+      segment,
+      embeddingsProximityThreshold,
+      2000,
+      'cosine_similarity'
+    )
+
+    // Ajustar las proximidades mediante inferencia de contexto
+    // < 0 Contradiction
+    // == 0 Neutral
+    // > 0 Entailment
+    const adjustedChunks = await this.modelsService.adjustProximitiesByContextInference(
+      segment,
+      matchingChunks.map((mc) => ({
+        name: mc.chunk,
+        proximity: mc.proximity,
+        id: mc.id,
+      })),
+      'desc'
+    )
+
+    // Crear un mapa de chunk id a proximidad ajustada
+    const chunkMap = new Map<string | number, number>(
+      adjustedChunks.map((chunk) => [chunk.id, chunk.proximity])
+    )
+
+    // Filtrar las fotos que tienen al menos un chunk relevante
+    const relevantPhotos = photos.filter((photo) =>
+      photo.descriptionChunks?.some((chunk) => chunkMap.has(chunk.id))
+    )
+
+    // Calcular el score para cada foto basado en los chunks coincidentes
+    let scoredPhotos = relevantPhotos.map((photo) => {
+      photo.matchingChunks = photo.matchingChunks || []
+      const matchingPhotoChunks =
+        photo.descriptionChunks?.filter((chunk) => chunkMap.has(chunk.id)) || []
+      photo.matchingChunks = [
+        ...photo.matchingChunks,
+        ...matchingPhotoChunks.map((item) => ({
+          chunk: item.chunk,
+          proximity: chunkMap.get(item.id),
+        })),
+      ]
+
+      let descScore = 0
+      const proximities = matchingPhotoChunks.map((chunk) => chunkMap.get(chunk.id)!)
+      const maxProximity = Math.max(...proximities)
+      const totalProximities = proximities.reduce((sum, p) => sum + p, 0)
+      const adjustedProximity = totalProximities / 2
+      descScore = maxProximity + Math.min(adjustedProximity, maxProximity)
+      return { photo, descScore }
+    })
+
+    // Ordenar de mayor a menor y filtrar según la configuración
+    scoredPhotos.sort((a, b) => b.descScore - a.descScore).filter((sc) => sc.descScore >= 0)
+    return scoredPhotos
+  }
+
+  private async getScoredPhotoTagsBySegment(
+    photos: Photo[],
+    segment: string,
     embeddingsProximityThreshold: number = 0.15
   ): Promise<{ photo: Photo; tagScore: number }[]> {
-    const results: Record<string, Map<string, number>> = {}
     const allTags = await Tag.all()
-    let allRelevantTags: string[] = []
-    const logicalSegments: Array<{ segment: string; operator: 'AND' | 'NOT' }> = []
 
-    // Procesar los segmentos positivos (AND)
-    await Promise.all(
-      structuredQuery.positive_segments.map(async (segment) => {
-        logicalSegments.push({ segment, operator: 'AND' })
-        const subSegments = segment.split(',').map((s) => s.trim())
-        results[segment] = new Map<string, number>()
-        await Promise.all(
-          subSegments.map(async (subSegment) => {
-            const { matchingTags } = await this.findMatchingTagsForTerm(
-              subSegment,
-              allTags,
-              embeddingsProximityThreshold
-            )
-            matchingTags.forEach((tag: any) => {
-              const currentProximity = results[segment].get(tag.name) || 0
-              results[segment].set(tag.name, Math.max(currentProximity, tag.proximity))
-            })
-            allRelevantTags = Array.from(
-              new Set([...allRelevantTags, ...matchingTags.map((t) => t.name)])
-            )
-          })
-        )
-      })
+    // Obtenemos los matching tags directamente del segmento
+    const { matchingTags } = await this.findMatchingTagsForTerm(
+      segment,
+      allTags,
+      embeddingsProximityThreshold
     )
-
-    // Procesar los segmentos negativos (NOT)
-    await Promise.all(
-      structuredQuery.negative_segments.map(async (segment) => {
-        logicalSegments.push({ segment, operator: 'NOT' })
-        const subSegments = segment.split(',').map((s) => s.trim())
-        results[segment] = new Map<string, number>()
-        await Promise.all(
-          subSegments.map(async (subSegment) => {
-            const { matchingTags } = await this.findMatchingTagsForTerm(
-              subSegment,
-              allTags,
-              embeddingsProximityThreshold
-            )
-            matchingTags.forEach((tag: any) => {
-              const currentProximity = results[segment].get(tag.name) || 0
-              results[segment].set(tag.name, Math.max(currentProximity, tag.proximity))
-            })
-            allRelevantTags = Array.from(
-              new Set([...allRelevantTags, ...matchingTags.map((t) => t.name)])
-            )
-          })
-        )
-      })
-    )
-
-    const totalSegments = logicalSegments.filter(({ operator }) => operator !== 'NOT').length
-
-    const relevantPhotos = photos.filter((photo) => {
-      return photo.tags?.some((tag) => allRelevantTags.includes(tag.name))
+    const tagMap = new Map<string, number>()
+    matchingTags.forEach((tag: any) => {
+      const current = tagMap.get(tag.name) || 0
+      tagMap.set(tag.name, Math.max(current, tag.proximity))
     })
 
-    const scoredPhotos = relevantPhotos.map((photo) => {
+    // Calcular el score para cada foto basándonos en los tags coincidentes
+    let scoredPhotos = photos.map((photo) => {
       photo.matchingTags = photo.matchingTags || []
-      let totalScore = 0
-      let matchedSegments = 0
-      let hasNotSegmentMatched = false
-
-      for (const { segment, operator } of logicalSegments) {
-        const tagMap = results[segment]
-        const matchingTags = photo.tags?.filter((tag) => tagMap.has(tag.name)) || []
-
-        if (matchingTags.length > 0) {
-          if (operator === 'AND') matchedSegments++
-          if (operator === 'NOT') hasNotSegmentMatched = true
-          photo.matchingTags.push(...matchingTags.map((t) => t.name))
-
-          const proximities = matchingTags.map((tag) => tagMap.get(tag.name) || 0)
-          const maxProximity = Math.max(...proximities)
-          const totalProximities = proximities.reduce((sum, proximity) => sum + proximity, 0)
-          const adjustedProximities = totalProximities / 2
-
-          totalScore +=
-            (maxProximity + Math.min(adjustedProximities, maxProximity)) *
-            (operator === 'NOT' ? -0.5 : 1)
-        }
+      const matchingPhotoTags = photo.tags?.filter((tag) => tagMap.has(tag.name)) || []
+      photo.matchingTags = [...photo.matchingTags, ...matchingPhotoTags.map((tag) => tag.name)]
+      let tagScore = 0
+      if (matchingPhotoTags.length > 0) {
+        const proximities = matchingPhotoTags.map((tag) => tagMap.get(tag.name)!)
+        const maxProximity = Math.max(...proximities)
+        const totalProximities = proximities.reduce((sum, p) => sum + p, 0)
+        const adjustedProximity = totalProximities / 2
+        tagScore = maxProximity + Math.min(adjustedProximity, maxProximity)
       }
-
-      photo.queryMatched = matchedSegments === totalSegments && !hasNotSegmentMatched
-      const totalTagsScore = !hasNotSegmentMatched ? Math.min(totalScore, totalSegments) : 0
-      return {
-        photo,
-        tagScore: photo.queryMatched ? totalSegments + 1 : totalTagsScore,
-      }
+      return { photo, tagScore }
     })
 
-    const maxScore = Math.max(
-      ...scoredPhotos.map(({ tagScore }) => (tagScore > 0 ? tagScore : 0)),
-      1
-    )
+    // Ordenamos y filtramos según la lógica aplicada
+    scoredPhotos.sort((a, b) => b.tagScore - a.tagScore).filter((sc) => sc.tagScore >= 0)
     return scoredPhotos
-      .map(({ photo, tagScore }) => ({
-        photo,
-        tagScore: tagScore > 0 ? tagScore / maxScore : 0,
-      }))
-      .sort((a, b) => {
-        if (a.tagScore === 0 && b.tagScore !== 0) return 1
-        if (a.tagScore !== 0 && b.tagScore === 0) return -1
-        return b.tagScore - a.tagScore
-      })
-      .filter(({ tagScore }) => tagScore > 0 || (!applyZeroLogicAdjustment && tagScore === 0))
   }
 
   public async findMatchingTagsForTerm(term, tags, embeddingsProximityThreshold: number) {
@@ -566,6 +488,9 @@ export default class EmbeddingsService {
 
     let semanticMatches
 
+    // < 0 Contradiction
+    // == 0 Neutral
+    // > 0 Entailment
     let adjustedSimilarTags = await this.modelsService.adjustProximitiesByContextInference(
       term,
       similarTags,
