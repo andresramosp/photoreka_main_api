@@ -27,6 +27,7 @@ import AnalyzerService from './analyzer_service.js'
 import withCost from '../decorators/withCost.js'
 import QueryService from './query_service.js'
 import withCostWS from '../decorators/withCostWs.js'
+import ScoringService from './scoring_service.js'
 
 export default class PhotosService {
   sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -35,12 +36,14 @@ export default class PhotosService {
   public embeddingsService: EmbeddingsService = null
   public analyzerService: AnalyzerService = null
   public queryService: QueryService = null
+  public scoringService: ScoringService = null
 
   constructor() {
     this.modelsService = new ModelsService()
     this.embeddingsService = new EmbeddingsService()
     this.analyzerService = new AnalyzerService()
     this.queryService = new QueryService()
+    this.scoringService = new ScoringService()
   }
 
   public async getPhotosByIds(photoIds: string[]) {
@@ -76,7 +79,7 @@ export default class PhotosService {
     let attempts = 0
     let hasMore
 
-    let embeddingScoredPhotos = await this.embeddingsService.getScoredPhotosByTagsAndDesc(
+    let embeddingScoredPhotos = await this.scoringService.getScoredPhotosByTagsAndDesc(
       photos,
       structuredResult,
       searchType,
@@ -195,7 +198,7 @@ export default class PhotosService {
           tags: similarTags.map((nt) => nt.name),
         }
       } else {
-        const descChunks = await this.embeddingsService.getNearChunksFromDesc(
+        const descChunks = await this.scoringService.getNearChunksFromDesc(
           batchedPhoto.photo,
           structuredResult.clear,
           0.1

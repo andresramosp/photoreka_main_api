@@ -1,5 +1,5 @@
 export const SYSTEM_MESSAGE_ANALIZER_MULTIPLE = (photosBatch: any[]) => `
- You are a bot in charge of analyzing photographs and returning lists with all the things and details you see in the photos.
+ You are a bot in charge of analyzing photographs and returning lists with all the things you see in the photos.
    Return a JSON array, and only a JSON array, where each element in the array contains information about one image. 
    Output format: 
    json [
@@ -10,7 +10,7 @@ export const SYSTEM_MESSAGE_ANALIZER_MULTIPLE = (photosBatch: any[]) => `
    For each image, include following properties:
    - 'id': id of the image, using this comma-separated, ordered list: ${photosBatch.map((img: any) => img.id).join(',')}
    - 'description' (minimum 250 words per photo): describes the image in detail, and trying to capture the general meaning of the scene, storytelling 
-      if any, and interactions. Pay attention to special bonus like: reflections, quirky juxtapositions of elements, good layering, optical illusions or potential methaphoric meanings.
+      if any, and interactions. Pay attention to metaphorical aspects that may make this photo special.
    - 'objects_tags' (string[] up to 7 words): list the physical objects you can see in the photo, prioritizing those with a relevant presence. Example ['big tree', 'big umbrella', 'old building']
    - 'persons_tags' (string[] up to 7 words): list the people you see in the photo and who have a relevant presence. Try to specify gender, age and clothing. Example: ['man in suits', 'funny kid', 'waiter with red hat']
    - 'action_tags' (string[] up to 5 words): similiar to 'persons_tags', but enphatizing the actions and gestures of each person. Include the subject of the action.  Example: ['waiter playing football', 'policeman waiting bus', 'cross-legged girl']
@@ -20,6 +20,7 @@ export const SYSTEM_MESSAGE_ANALIZER_MULTIPLE = (photosBatch: any[]) => `
    - 'symbols_tags' (string[] up to 4 words): list all the symbols, figures, text, logos or paintings you can see in the photo. Example: ['red arrow', 'gorilla painting', 'Starbucks logo']
    - 'culture_tags' (string[] up to 3 words): the culture and/or country you guess the photo has been taken. As much concrete as possible. 
    - 'theme_tags' (string[] up to 4 words): tags about general themes in the photo. Example ['no people', 'sports', 'fashion', 'books']
+   - 'genre_tags' (string[] up to 4 words): the artistic genre of the photo. Example: ['street photography', 'conceptual', 'landscape', 'portrait']
    - 'bonus_tags' (string[] up to 4 words): dedicated to special bonus, if any, which make the photo remarkable from artistic point of view. Example: ['abstract reflections', 'good layering', 'complementary colors', 'silhouettes', 'juxtaposition between monkey and Kingkong painting']
   *Guidelines*: 
   - For tags related to phisical things (objects, people, plants, buildings, etc.), discards those that are distant or barely visible, or of little relevance to the scene.

@@ -27,6 +27,8 @@ export default class QueryService {
     this.analyzerService = new AnalyzerService()
   }
 
+  // Parece que no es estrictamente necesaria la expansión, cuando se consideran los neutrals (strictInference = false)
+  // Pero sí que habría que distinguir cuando una query contiene una referencia o el prefijo evocativo para establecer ese valor
   withCost()
   public async structureQuery(searchType: 'logical' | 'semantic' | 'creative', query) {
     let expansionCost
@@ -73,11 +75,11 @@ export default class QueryService {
             ? segment + ', ' + culturalExpansion[segment].join(', ')
             : segment
         )
+        structuredResult.evocative = true
       }
       structuredResult.clear_original = structuredResult.clear
       structuredResult.clear = clearExpanded
       structuredResult.no_prefix = clearExpanded
-      structuredResult.has_expansion = true
     }
 
     // Attach expansion to structured result
