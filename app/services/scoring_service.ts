@@ -31,14 +31,14 @@ const getWeights = (quickSearch) => {
     semantic: {
       tags: quickSearch ? 1 : 0.5,
       desc: quickSearch ? 0 : 0.5,
-      fullQuery: quickSearch ? 0 : 0.5,
+      fullQuery: quickSearch ? 0 : 1,
       embeddingsTagsThreshold: quickSearch ? 0.3 : 0.15,
       embeddingsDescsThreshold: quickSearch ? 0.4 : 0.2,
     },
     creative: {
       tags: quickSearch ? 1 : 0.3,
       desc: quickSearch ? 0 : 0.7,
-      fullQuery: quickSearch ? 0 : 0.7,
+      fullQuery: quickSearch ? 0 : 1,
       embeddingsTagsThreshold: quickSearch ? 0.3 : 0.15,
       embeddingsDescsThreshold: quickSearch ? 0.4 : 0.2,
     },
@@ -72,6 +72,7 @@ export default class ScoringService {
   }
 
   // TODO: cache
+  // Sumando ambos, el máximo teórico es 5.6 + 2.8 + 2.4 = 10.8.
   @MeasureExecutionTime
   public async getScoredPhotosByTagsAndDesc(
     photos: Photo[],
@@ -85,7 +86,6 @@ export default class ScoringService {
       tagScore: 0,
       descScore: 0,
       totalScore: 0,
-      matchedSegments: 0,
     }))
 
     const strictInference = searchType !== 'creative' && !structuredQuery.evocative
@@ -124,17 +124,14 @@ export default class ScoringService {
       { tags: 0, desc: weights[searchType].fullQuery }
     )
 
-    // De momento matchedSegments no sirve, porque siempre será el total. Para determinar qué es un matchedSegment habría que establecer
-    // un umbral mínimo de score para un segmento, y así se podría afinar más.
     return finalScores
       .filter((scores) => scores.totalScore > 0)
       .sort((a, b) => {
-        if (b.matchedSegments === a.matchedSegments) return b.totalScore - a.totalScore
-        return b.matchedSegments - a.matchedSegments
+        return b.totalScore - a.totalScore
       })
       .map((score) => ({
         ...score,
-        queryMatched: score.matchedSegments == structuredQuery.positive_segments.length,
+        matchPercent: (score.totalScore * 100) / (6 * structuredQuery.positive_segments.length),
       }))
   }
 
@@ -233,9 +230,7 @@ export default class ScoringService {
       weights
     )
 
-    return updatedScores
-      .filter((score) => matchingSegmentPhotoIds.includes(score.photo.id))
-      .map((score) => ({ ...score, matchedSegments: score.matchedSegments + 1 })) //.filter((score) => score.totalScore > 0)
+    return updatedScores.filter((score) => matchingSegmentPhotoIds.includes(score.photo.id))
   }
 
   // TODO: hay que penalizar un poco matcheos negativos

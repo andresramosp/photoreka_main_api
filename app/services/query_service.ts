@@ -33,7 +33,7 @@ export default class QueryService {
   public async structureQuery(searchType: 'logical' | 'semantic' | 'creative', query) {
     let expansionCost
     let structuredResult = await this.modelsService.getStructuredQuery(query.description)
-    let sourceResult = { requireSource: 'description ' } // Classifier call to determine if query requires an image or text description
+    let sourceResult = { requireSource: 'description' } // Classifier call to determine if query requires an image or text description
 
     structuredResult.original = query.description
 
@@ -47,46 +47,44 @@ export default class QueryService {
     let expandedTermsMap = {} // Stores expanded terms from GPT
     let clearExpanded = structuredResult.clear // Default: same as 'clear' unless expanded
 
-    if (referencesToExpand.length > 0) {
-      // Call GPT for cultural expansion
-      const { result: culturalExpansion, cost } = await this.modelsService.getGPTResponse(
-        SYSTEM_MESSAGE_CULTURAL_ENRICHMENT,
-        JSON.stringify({ references: referencesToExpand }),
-        'gpt-4o-mini'
-      )
+    // if (referencesToExpand.length > 0) {
+    //   // Call GPT for cultural expansion
+    //   const { result: culturalExpansion, cost } = await this.modelsService.getGPTResponse(
+    //     SYSTEM_MESSAGE_CULTURAL_ENRICHMENT,
+    //     JSON.stringify({ references: referencesToExpand }),
+    //     'gpt-4o-mini'
+    //   )
 
-      expansionCost = cost
+    //   expansionCost = cost
 
-      // Parse response and integrate expanded terms
-      if (false) {
-        //} (culturalExpansion) {
-        // Replace original terms with their expanded versions
-        clearExpanded = structuredResult.clear
-          .split(' | ') // Split into segments
-          .map((segment) =>
-            culturalExpansion[segment]
-              ? segment + '| ' + culturalExpansion[segment].join(', ')
-              : segment
-          )
-          .join(' | ')
+    //   if (culturalExpansion) {
+    //     clearExpanded = structuredResult.clear
+    //       .split(' | ')
+    //       .map((segment) =>
+    //         culturalExpansion[segment]
+    //           ? segment + '| ' + culturalExpansion[segment].join(', ')
+    //           : segment
+    //       )
+    //       .join(' | ')
 
-        structuredResult.positive_segments = structuredResult.positive_segments.map((segment) =>
-          culturalExpansion[segment]
-            ? segment + ', ' + culturalExpansion[segment].join(', ')
-            : segment
-        )
-        structuredResult.evocative = true
-      }
-      structuredResult.clear_original = structuredResult.clear
-      structuredResult.clear = clearExpanded
-      structuredResult.no_prefix = clearExpanded
-    }
+    //     structuredResult.positive_segments = structuredResult.positive_segments.map((segment) =>
+    //       culturalExpansion[segment]
+    //         ? segment + ', ' + culturalExpansion[segment].join(', ')
+    //         : segment
+    //     )
+    //     structuredResult.evocative = true
+    //   }
+    //   structuredResult.clear_original = structuredResult.clear
+    //   structuredResult.clear = clearExpanded
+    //   structuredResult.no_prefix = clearExpanded
+    // }
 
     // Attach expansion to structured result
 
     // Handle creative search case
     let searchModelMessage
-    if (searchType === 'creative') {
+    if (searchType === 'creative' || searchType === 'semantic') {
+      // TODO: crear prompt para semantic?
       searchModelMessage =
         sourceResult.requireSource === 'image'
           ? SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE_ONLY_IMAGE

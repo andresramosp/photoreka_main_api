@@ -70,14 +70,12 @@ export default class PhotosService {
     const { structuredResult, sourceResult, useImage, searchModelMessage, expansionCost } =
       await this.queryService.structureQuery(searchType, query)
 
-    const pageSize = 9
     const batchSize = 3
     const maxPageAttempts = 3
 
     let photosResult = []
     let modelCosts = []
     let attempts = 0
-    let hasMore
 
     let embeddingScoredPhotos = await this.scoringService.getScoredPhotosByTagsAndDesc(
       photos,
@@ -87,23 +85,22 @@ export default class PhotosService {
     )
 
     do {
-      const offset = (query.iteration - 1) * pageSize
-      const paginatedPhotos = embeddingScoredPhotos.slice(offset, offset + pageSize)
-      hasMore = offset + pageSize < embeddingScoredPhotos.length
+      const { paginatedPhotos, hasMore } = this.getPaginatedPhotosByPage(
+        embeddingScoredPhotos,
+        6,
+        query.iteration
+      )
 
       yield {
-        type: 'embeddings',
+        type: 'matches',
         data: {
           hasMore,
           results: {
-            [query.iteration]: {
-              photos: paginatedPhotos.map((item) => item.photo),
-            },
+            [query.iteration]: paginatedPhotos,
           },
           cost: { expansionCost },
           iteration: query.iteration,
           structuredResult,
-          scores: embeddingScoredPhotos?.slice(0, 1000),
         },
       }
 
@@ -137,22 +134,22 @@ export default class PhotosService {
               result?.isIncluded == true || result?.isIncluded == 'true' ? true : false
 
             return reasoning
-              ? { ...item.photo, score: item.tagScore, isIncluded, reasoning }
-              : { ...item.photo, score: item.tagScore, isIncluded }
+              ? { photo: item.photo, score: item.tagScore, isIncluded, reasoning }
+              : { photo: item.photo, score: item.tagScore, isIncluded }
           })
-          .filter((item) => modelResult.find((res) => res.id === item.tempID))
+          .filter((item) => modelResult.find((res) => res.id === item.photo.tempID))
       })
 
       const batchResults = await Promise.all(batchPromises)
-      photosResult = photosResult.concat(...photoBatches, ...batchResults.flat())
+      photosResult = photosResult.concat(...batchResults.flat())
 
       query.iteration++
       attempts++
 
       yield {
-        type: 'result',
+        type: 'insights',
         data: {
-          results: { [query.iteration - 1]: { photos: photosResult } },
+          results: { [query.iteration - 1]: photosResult },
           hasMore,
           cost: { expansionCost, modelCosts },
           iteration: query.iteration - 1,
@@ -172,74 +169,87 @@ export default class PhotosService {
     } while (!photosResult.some((p) => p.isIncluded))
   }
 
+  private getPaginatedPhotosByPage(embeddingScoredPhotos, pageSize, currentIteration) {
+    const offset = (currentIteration - 1) * pageSize
+    const paginatedPhotos = embeddingScoredPhotos.slice(offset, offset + pageSize)
+    const hasMore = offset + pageSize < embeddingScoredPhotos.length
+    return { hasMore, paginatedPhotos }
+  }
+
+  private getPaginatedPhotosByPercent(embeddingScoredPhotos, percent, currentIteration) {
+    const maxMatchPercent = Math.max(...embeddingScoredPhotos.map((photo) => photo.matchPercent))
+
+    // Calcular los límites del intervalo para la iteración actual
+    const upperBound = maxMatchPercent - (currentIteration - 1) * percent
+    const lowerBound = upperBound - 15
+
+    // Filtrar las fotos que caen en el rango definido
+    const paginatedPhotos = embeddingScoredPhotos.filter(
+      (photo) => photo.matchPercent < upperBound && photo.matchPercent >= lowerBound
+    )
+
+    // Determinar si hay más fotos en rangos inferiores
+    const hasMore = embeddingScoredPhotos.some((photo) => photo.matchPercent < lowerBound)
+    return { hasMore, paginatedPhotos }
+  }
+
   public async processBatch(
     batch: any[],
     structuredResult: any,
     sourceResult: any,
     searchModelMessage: any,
-    searchType: 'logical' | 'semantic' | 'creative',
+    searchType: 'semantic' | 'creative',
     paginatedPhotos: any[]
   ) {
     let needImage = sourceResult.requireSource == 'image'
     const method = 'getGPTResponse' // !needImage ? 'getDSResponse' : 'getGPTResponse'
     let chunkPromises = batch.map(async (batchedPhoto) => {
-      if (searchType == 'logical') {
-        const similarTags = await this.queryService.getTagsForLogicalQuery(
-          batchedPhoto.photo,
-          structuredResult.clear,
-          0.05, // 'kids' esta a 0.09 de 'girl smiling' :&
-          20
-        )
-        if (batchedPhoto.photo.id == 'f6096759-8ec6-4e08-888a-b39e83e05c69') {
-          console.log()
-        }
-        return {
-          tempID: batchedPhoto.photo.tempID,
-          tags: similarTags.map((nt) => nt.name),
-        }
-      } else {
-        const descChunks = await this.scoringService.getNearChunksFromDesc(
-          batchedPhoto.photo,
-          structuredResult.clear,
-          0.1
-        )
-        return {
-          tempID: batchedPhoto.photo.tempID,
-          chunkedDesc: descChunks.map((dc) => dc.text_chunk).join(' ... '),
-        }
+      const descChunks = await this.scoringService.getNearChunksFromDesc(
+        batchedPhoto.photo,
+        structuredResult.no_prefix,
+        0.1
+      )
+      return {
+        tempID: batchedPhoto.photo.tempID,
+        chunkedDesc: descChunks.map((dc) => dc.text_chunk).join(' ... '),
       }
     })
     let chunkResults = await Promise.all(chunkPromises)
-    const { result: modelResult, cost: modelCost } = await this.modelsService[method](
-      !needImage ? searchModelMessage : searchModelMessage(chunkResults.map((cp) => cp.tempID)),
-      !needImage
-        ? JSON.stringify({
-            query: searchType == 'logical' ? structuredResult.clear : structuredResult.original,
-            collection: chunkResults.map((chunkedPhoto) => ({
-              id: chunkedPhoto.tempID,
-              description: searchType !== 'logical' ? chunkedPhoto.chunkedDesc : undefined,
-              tags: searchType == 'logical' ? chunkedPhoto.tags : undefined,
-            })),
-          })
-        : [
-            {
-              type: 'text',
-              text: JSON.stringify({ query: structuredResult.original }),
-            },
-            ...(await this.generateImagesPayload(
-              paginatedPhotos.map((pp) => pp.photo),
-              batch.map((cp) => cp.photo.id)
-            )),
-          ],
-      method == 'getGPTResponse' ? 'gpt-4o' : 'deepseek-chat',
-      null,
-      searchType === 'creative' ? 1.3 : searchType === 'semantic' ? 0.3 : 0.1,
-      false
-    )
+    chunkResults = chunkResults.filter((cp) => cp.chunkedDesc)
+    if (chunkResults.length) {
+      const { result: modelResult, cost: modelCost } = await this.modelsService[method](
+        !needImage ? searchModelMessage : searchModelMessage(chunkResults.map((cp) => cp.tempID)),
+        !needImage
+          ? JSON.stringify({
+              query: structuredResult.original,
+              collection: chunkResults.map((chunkedPhoto) => ({
+                id: chunkedPhoto.tempID,
+                description: chunkedPhoto.chunkedDesc,
+                tags: undefined,
+              })),
+            })
+          : [
+              {
+                type: 'text',
+                text: JSON.stringify({ query: structuredResult.original }),
+              },
+              ...(await this.generateImagesPayload(
+                paginatedPhotos.map((pp) => pp.photo),
+                batch.map((cp) => cp.photo.id)
+              )),
+            ],
+        method == 'getGPTResponse' ? 'gpt-4o' : 'deepseek-chat',
+        null,
+        searchType === 'creative' ? 1.1 : 0.5,
+        false
+      )
 
-    return {
-      modelResult,
-      modelCost,
+      return {
+        modelResult,
+        modelCost,
+      }
+    } else {
+      return { modelResult: [], modelCost: 0 }
     }
   }
 
