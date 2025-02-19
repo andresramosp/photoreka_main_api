@@ -19,9 +19,8 @@ interface ScoredPhoto {
   totalScore?: number // Puntaje total calculado
 }
 
-// interface ChunkedPhoto extends ScoredPhoto {
-//   chunks?: { proximity: number; text_chunk: string }[] // Chunks asociados a la foto
-// }
+// Definición para threshold que puede ser número o intervalo
+type Threshold = number | { min: number; max: number }
 
 export default class EmbeddingsService {
   public modelsService: ModelsService = null
@@ -33,7 +32,7 @@ export default class EmbeddingsService {
   // @MeasureExecutionTime
   public async findSimilarTagsToText(
     term: string,
-    threshold: number = 0.3,
+    threshold: Threshold = 0.3,
     limit: number = 10,
     metric: 'distance' | 'inner_product' | 'cosine_similarity' = 'cosine_similarity'
   ) {
@@ -54,14 +53,12 @@ export default class EmbeddingsService {
   // @MeasureExecutionTime
   public async findSimilarChunksToText(
     term: string,
-    threshold: number = 0.3,
+    threshold: Threshold = 0.3,
     limit: number = 10,
     metric: 'distance' | 'inner_product' | 'cosine_similarity' = 'cosine_similarity',
-    photo?: { id: number } // Parámetro opcional para filtrar por photo_id
+    photo?: { id: number }
   ) {
     const modelsService = new ModelsService()
-    let result = null
-
     let { embeddings } = await modelsService.getEmbeddings([term])
     return this.findSimilarChunkToEmbedding(embeddings[0], threshold, limit, metric, photo)
   }
@@ -69,7 +66,7 @@ export default class EmbeddingsService {
   // @MeasureExecutionTime
   public async findSimilarTagsToTag(
     tag: Tag,
-    threshold: number = 0.3,
+    threshold: Threshold = 0.3,
     limit: number = 10,
     metric: 'distance' | 'inner_product' | 'cosine_similarity' = 'cosine_similarity'
   ) {
@@ -81,19 +78,45 @@ export default class EmbeddingsService {
     let whereCondition: string = ''
     let orderBy: string = ''
 
-    if (metric === 'distance') {
-      metricQuery = 't2.embedding <-> t1.embedding AS proximity'
-      whereCondition = 't2.embedding <-> t1.embedding <= :threshold'
-      orderBy = 'proximity ASC'
-    } else if (metric === 'inner_product') {
-      metricQuery = '(t2.embedding <#> t1.embedding) * -1 AS proximity'
-      whereCondition = '(t2.embedding <#> t1.embedding) * -1 >= :threshold'
-      orderBy = 'proximity DESC'
-    } else if (metric === 'cosine_similarity') {
-      metricQuery = '1 - (t2.embedding <=> t1.embedding) AS proximity'
-      whereCondition = '1 - (t2.embedding <=> t1.embedding) >= :threshold'
-      orderBy = 'proximity DESC'
+    // Determinar los parámetros según el tipo de threshold
+    let additionalParams: any = {}
+    let thresholdCondition = ''
+    if (typeof threshold === 'number') {
+      if (metric === 'distance') {
+        metricQuery = 't2.embedding <-> t1.embedding AS proximity'
+        thresholdCondition = 't2.embedding <-> t1.embedding <= :threshold'
+        orderBy = 'proximity ASC'
+      } else if (metric === 'inner_product') {
+        metricQuery = '(t2.embedding <#> t1.embedding) * -1 AS proximity'
+        thresholdCondition = '(t2.embedding <#> t1.embedding) * -1 >= :threshold'
+        orderBy = 'proximity DESC'
+      } else if (metric === 'cosine_similarity') {
+        metricQuery = '1 - (t2.embedding <=> t1.embedding) AS proximity'
+        thresholdCondition = '1 - (t2.embedding <=> t1.embedding) >= :threshold'
+        orderBy = 'proximity DESC'
+      }
+      additionalParams.threshold = threshold
+    } else {
+      if (metric === 'distance') {
+        metricQuery = 't2.embedding <-> t1.embedding AS proximity'
+        thresholdCondition = 't2.embedding <-> t1.embedding BETWEEN :minThreshold AND :maxThreshold'
+        orderBy = 'proximity ASC'
+      } else if (metric === 'inner_product') {
+        metricQuery = '(t2.embedding <#> t1.embedding) * -1 AS proximity'
+        thresholdCondition =
+          '(t2.embedding <#> t1.embedding) * -1 BETWEEN :minThreshold AND :maxThreshold'
+        orderBy = 'proximity DESC'
+      } else if (metric === 'cosine_similarity') {
+        metricQuery = '1 - (t2.embedding <=> t1.embedding) AS proximity'
+        thresholdCondition =
+          '1 - (t2.embedding <=> t1.embedding) BETWEEN :minThreshold AND :maxThreshold'
+        orderBy = 'proximity DESC'
+      }
+      additionalParams.minThreshold = threshold.min
+      additionalParams.maxThreshold = threshold.max
     }
+
+    whereCondition = thresholdCondition
 
     const result = await db.rawQuery(
       `
@@ -106,20 +129,18 @@ export default class EmbeddingsService {
         `,
       {
         id: tag.id,
-        threshold,
         limit,
+        ...additionalParams,
       }
     )
 
     return result.rows
   }
 
-  // Con photo, saca las proximidades de sus chunks con el termino,
-  // sin foto, busca en todos los chunks de descripciones
   // @MeasureExecutionTime
   public async findSimilarChunkToEmbedding(
     embedding: number[],
-    threshold: number = 0.3,
+    threshold: Threshold = 0.3,
     limit: number = 10,
     metric: 'distance' | 'inner_product' | 'cosine_similarity' = 'cosine_similarity',
     photo?: { id: number }
@@ -132,36 +153,57 @@ export default class EmbeddingsService {
     let whereCondition: string = ''
     let orderBy: string = ''
 
-    if (metric === 'distance') {
-      metricQuery = 'embedding <-> :embedding AS proximity'
-      whereCondition = 'embedding <-> :embedding <= :threshold'
-      orderBy = 'proximity ASC'
-    } else if (metric === 'inner_product') {
-      metricQuery = '(embedding <#> :embedding) * -1 AS proximity'
-      whereCondition = '(embedding <#> :embedding) * -1 >= :threshold'
-      orderBy = 'proximity DESC'
-    } else if (metric === 'cosine_similarity') {
-      metricQuery = '1 - (embedding <=> :embedding) AS proximity'
-      whereCondition = '1 - (embedding <=> :embedding) >= :threshold'
-      orderBy = 'proximity DESC'
+    let additionalParams: any = {}
+    let thresholdCondition = ''
+    if (typeof threshold === 'number') {
+      if (metric === 'distance') {
+        metricQuery = 'embedding <-> :embedding AS proximity'
+        thresholdCondition = 'embedding <-> :embedding <= :threshold'
+        orderBy = 'proximity ASC'
+      } else if (metric === 'inner_product') {
+        metricQuery = '(embedding <#> :embedding) * -1 AS proximity'
+        thresholdCondition = '(embedding <#> :embedding) * -1 >= :threshold'
+        orderBy = 'proximity DESC'
+      } else if (metric === 'cosine_similarity') {
+        metricQuery = '1 - (embedding <=> :embedding) AS proximity'
+        thresholdCondition = '1 - (embedding <=> :embedding) >= :threshold'
+        orderBy = 'proximity DESC'
+      }
+      additionalParams.threshold = threshold
+    } else {
+      if (metric === 'distance') {
+        metricQuery = 'embedding <-> :embedding AS proximity'
+        thresholdCondition = 'embedding <-> :embedding BETWEEN :minThreshold AND :maxThreshold'
+        orderBy = 'proximity ASC'
+      } else if (metric === 'inner_product') {
+        metricQuery = '(embedding <#> :embedding) * -1 AS proximity'
+        thresholdCondition =
+          '(embedding <#> :embedding) * -1 BETWEEN :minThreshold AND :maxThreshold'
+        orderBy = 'proximity DESC'
+      } else if (metric === 'cosine_similarity') {
+        metricQuery = '1 - (embedding <=> :embedding) AS proximity'
+        thresholdCondition =
+          '1 - (embedding <=> :embedding) BETWEEN :minThreshold AND :maxThreshold'
+        orderBy = 'proximity DESC'
+      }
+      additionalParams.minThreshold = threshold.min
+      additionalParams.maxThreshold = threshold.max
     }
 
-    // Añadir filtro por photo_id si se proporciona
+    whereCondition = thresholdCondition
+
+    // Filtro por photo_id si se proporciona
     if (photo) {
       whereCondition += ` AND photo_id = :photoId`
+      additionalParams.photoId = photo.id
     }
 
-    // Formatear el embedding para PostgreSQL (pgvector requiere formato de string: '[value1,value2,...]')
     const embeddingString = `[${embedding.join(',')}]`
 
     const queryParameters: any = {
-      embedding: embeddingString, // Embedding en formato pgvector
-      threshold, // Umbral de similitud
-      limit, // Número máximo de resultados
-    }
-
-    if (photo) {
-      queryParameters.photoId = photo.id // Añadir photoId si se proporciona
+      embedding: embeddingString,
+      limit,
+      ...additionalParams,
     }
 
     const result = await db.rawQuery(
@@ -180,10 +222,10 @@ export default class EmbeddingsService {
   // @MeasureExecutionTime
   public async findSimilarTagToEmbedding(
     embedding: number[],
-    threshold: number = 0.3,
+    threshold: Threshold = 0.3,
     limit: number = 10,
     metric: 'distance' | 'inner_product' | 'cosine_similarity' = 'cosine_similarity',
-    tagIds?: number[] // IDs opcionales para filtrar la búsqueda
+    tagIds?: number[]
   ) {
     if (!embedding || embedding.length === 0) {
       throw new Error('Embedding no proporcionado o vacío')
@@ -193,39 +235,63 @@ export default class EmbeddingsService {
     let whereCondition: string = ''
     let orderBy: string = ''
 
-    if (metric === 'distance') {
-      metricQuery = 'embedding <-> :embedding AS proximity'
-      whereCondition = 'embedding <-> :embedding <= :threshold'
-      orderBy = 'proximity ASC'
-    } else if (metric === 'inner_product') {
-      metricQuery = '(embedding <#> :embedding) * -1 AS proximity'
-      whereCondition = '(embedding <#> :embedding) * -1 >= :threshold'
-      orderBy = 'proximity DESC'
-    } else if (metric === 'cosine_similarity') {
-      metricQuery = '1 - (embedding <=> :embedding) AS proximity'
-      whereCondition = '1 - (embedding <=> :embedding) >= :threshold'
-      orderBy = 'proximity DESC'
+    let additionalParams: any = {}
+    let thresholdCondition = ''
+    if (typeof threshold === 'number') {
+      if (metric === 'distance') {
+        metricQuery = 'embedding <-> :embedding AS proximity'
+        thresholdCondition = 'embedding <-> :embedding <= :threshold'
+        orderBy = 'proximity ASC'
+      } else if (metric === 'inner_product') {
+        metricQuery = '(embedding <#> :embedding) * -1 AS proximity'
+        thresholdCondition = '(embedding <#> :embedding) * -1 >= :threshold'
+        orderBy = 'proximity DESC'
+      } else if (metric === 'cosine_similarity') {
+        metricQuery = '1 - (embedding <=> :embedding) AS proximity'
+        thresholdCondition = '1 - (embedding <=> :embedding) >= :threshold'
+        orderBy = 'proximity DESC'
+      }
+      additionalParams.threshold = threshold
+    } else {
+      if (metric === 'distance') {
+        metricQuery = 'embedding <-> :embedding AS proximity'
+        thresholdCondition = 'embedding <-> :embedding BETWEEN :minThreshold AND :maxThreshold'
+        orderBy = 'proximity ASC'
+      } else if (metric === 'inner_product') {
+        metricQuery = '(embedding <#> :embedding) * -1 AS proximity'
+        thresholdCondition =
+          '(embedding <#> :embedding) * -1 BETWEEN :minThreshold AND :maxThreshold'
+        orderBy = 'proximity DESC'
+      } else if (metric === 'cosine_similarity') {
+        metricQuery = '1 - (embedding <=> :embedding) AS proximity'
+        thresholdCondition =
+          '1 - (embedding <=> :embedding) BETWEEN :minThreshold AND :maxThreshold'
+        orderBy = 'proximity DESC'
+      }
+      additionalParams.minThreshold = threshold.min
+      additionalParams.maxThreshold = threshold.max
     }
 
-    // Formatear el embedding para PostgreSQL (pgvector requiere formato de string: '[value1,value2,...]')
-    const embeddingString = `[${embedding.join(',')}]`
-
-    // Agregar condición adicional si `tagIds` está presente
+    // Filtro adicional por tagIds si están presentes
     const tagFilterCondition = tagIds && tagIds.length > 0 ? 'AND id = ANY(:tagIds)' : ''
+
+    whereCondition = `${thresholdCondition} ${tagFilterCondition}`
+
+    const embeddingString = `[${embedding.join(',')}]`
 
     const result = await db.rawQuery(
       `
       SELECT id, name, "group", created_at, updated_at, ${metricQuery}
       FROM tags
-      WHERE ${whereCondition} ${tagFilterCondition}
+      WHERE ${whereCondition}
       ORDER BY ${orderBy}
       LIMIT :limit
       `,
       {
-        embedding: embeddingString, // Embedding en formato pgvector
-        threshold, // Umbral de similitud
-        limit, // Número máximo de resultados
-        tagIds: tagIds || [], // IDs de tags opcionales
+        embedding: embeddingString,
+        limit,
+        tagIds: tagIds || [],
+        ...additionalParams,
       }
     )
 

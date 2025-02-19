@@ -7,7 +7,7 @@ import NodeCache from 'node-cache'
 import MeasureExecutionTime from '../decorators/measureExecutionTime.js'
 import { createRequire } from 'module'
 import EmbeddingsService from './embeddings_service.js'
-import { withScoredPhotosCache } from '../decorators/withCache.js'
+import { withCache } from '../decorators/withCache.js'
 const require = createRequire(import.meta.url)
 const pluralize = require('pluralize')
 
@@ -56,24 +56,62 @@ export default class ScoringService {
 
   private applyBaseThreshold(
     scoredPhotoElements: any[],
-    keyName: 'proximity' | 'descScore' | 'tagScore',
+    segmentIndex: number, // -1 fullquery
     strictInference: boolean
   ) {
-    // Establecemos threshold base sobre tag, chunk, o foto teniendo en cuenta:
+    // Establecemos threshold base sobre tag o chunk.
     // -1 | 0 Contradiction (incluye relaciones opuestas, se podría usar el momdo creativo)
     // 0 | 1  Neutral (incluye relaciones semánticas no estrictas, ideal para búsquedas por "evocación")
     // 1 | 2 Entailment (inferencia estricta, subclases ontologicas y sinonimos)
+    // Ademas, para strict, tenemos en cuenta el numero de segmento, ya que para el primero exigiremos un poco más
+
     if (strictInference) {
-      return scoredPhotoElements.filter((element) => element[keyName] > 1)
+      let maxSegmentOffset = 0.5
+      let segmentOffset = segmentIndex == -1 ? 0 : maxSegmentOffset - segmentIndex * 0.2
+      return scoredPhotoElements.filter((element) => element.proximity > 1 + segmentOffset)
     } else {
-      return scoredPhotoElements.filter((element) => element[keyName] > 0)
+      return scoredPhotoElements.filter((element) => element.proximity > 0)
     }
     // TODO: caso creativo con negativos?
   }
 
-  // TODO: cache
-  // Sumando ambos, el máximo teórico es 5.6 + 2.8 + 2.4 = 10.8.
-  @MeasureExecutionTime
+  private getMaxPotentialScore(structuredQuery, searchType, weights) {
+    // Valores que consideramos un match perfecto
+    const maxProximity = 1.9
+    const maxTagMatches = 0.5
+    const maxChunkMatches = 0.5
+
+    const maxRawScoreForTags = maxProximity + (maxTagMatches * maxProximity) / 2
+
+    const maxRawScoreForChunks = maxProximity + (maxChunkMatches * maxProximity) / 2
+
+    const maxRawScoreForFullQuery = maxRawScoreForChunks
+
+    const currentWeights = weights[searchType]
+
+    // Para cada segmento, el aporte máximo es la suma ponderada de tags y descripción
+    const maxScorePerSegment =
+      (currentWeights.tags > 0 ? maxRawScoreForTags * currentWeights.tags : 0) +
+      (currentWeights.desc > 0 ? maxRawScoreForChunks * currentWeights.desc : 0)
+
+    const segmentsCount = structuredQuery.positive_segments.length
+    let maxPotentialScore = segmentsCount * maxScorePerSegment
+
+    // Si se usa fullQuery (más de un segmento y el peso correspondiente es mayor a 0)
+    if (segmentsCount > 1 && currentWeights.fullQuery > 0) {
+      maxPotentialScore += maxRawScoreForFullQuery * currentWeights.fullQuery
+    }
+
+    return maxPotentialScore
+  }
+
+  // @MeasureExecutionTime
+  // TODO: userid!!
+  @withCache({
+    key: (_, arg2, arg3, arg4) => `${arg2.original}_${arg3}_${arg4}`,
+    provider: 'redis',
+    ttl: 120,
+  })
   public async getScoredPhotosByTagsAndDesc(
     photos: Photo[],
     structuredQuery: any,
@@ -95,7 +133,7 @@ export default class ScoringService {
       structuredQuery.positive_segments.length > 1 && weights[searchType].fullQuery > 0
         ? this.getScoredPhotoDescBySegment(
             photos,
-            structuredQuery.no_prefix,
+            { name: structuredQuery.no_prefix, index: -1 },
             weights[searchType].embeddingsDescsThreshold * 2,
             strictInference
           )
@@ -104,8 +142,13 @@ export default class ScoringService {
     // Procesamos los segmentos secuencialmente en una promesa.
     const segmentsPromise = (async () => {
       let scores = aggregatedScores
-      for (const segment of structuredQuery.positive_segments) {
-        scores = await this.processSegment(segment, scores, weights[searchType], strictInference)
+      for (const [index, segment] of structuredQuery.positive_segments.entries()) {
+        scores = await this.processSegment(
+          { name: segment, index },
+          scores,
+          weights[searchType],
+          strictInference
+        )
       }
       return scores
     })()
@@ -124,6 +167,8 @@ export default class ScoringService {
       { tags: 0, desc: weights[searchType].fullQuery }
     )
 
+    let potentialMaxScore = this.getMaxPotentialScore(structuredQuery, searchType, weights)
+
     return finalScores
       .filter((scores) => scores.totalScore > 0)
       .sort((a, b) => {
@@ -131,7 +176,7 @@ export default class ScoringService {
       })
       .map((score) => ({
         ...score,
-        matchPercent: (score.totalScore * 100) / (6 * structuredQuery.positive_segments.length),
+        matchPercent: Math.min(100, (score.totalScore * 100) / potentialMaxScore),
       }))
   }
 
@@ -192,7 +237,7 @@ export default class ScoringService {
   }
 
   private async processSegment(
-    segment: any,
+    segment: { name: string; index: number },
     aggregatedScores: ScoredPhoto[],
     weights: { tags: number; desc: number; fullQuery: number },
     strictInference: boolean
@@ -236,20 +281,20 @@ export default class ScoringService {
   // TODO: hay que penalizar un poco matcheos negativos
   private async getScoredPhotoDescBySegment(
     photos: Photo[],
-    segment: string,
+    segment: { name: string; index: number },
     embeddingsProximityThreshold: number = 0.2,
     strictInference: boolean
   ): Promise<{ photo: Photo; descScore: number }[]> {
     // Obtener los chunks similares para el segmento
     const matchingChunks = await this.embeddingsService.findSimilarChunksToText(
-      segment,
+      segment.name,
       embeddingsProximityThreshold,
       2000,
       'cosine_similarity'
     )
 
     let adjustedChunks = await this.modelsService.adjustProximitiesByContextInference(
-      segment,
+      segment.name,
       matchingChunks.map((mc) => ({
         name: mc.chunk,
         proximity: mc.proximity,
@@ -259,7 +304,7 @@ export default class ScoringService {
     )
 
     // Establecemos threshold base teniendo en cuenta:
-    adjustedChunks = this.applyBaseThreshold(adjustedChunks, 'proximity', strictInference)
+    adjustedChunks = this.applyBaseThreshold(adjustedChunks, segment.index, strictInference)
 
     // Crear un mapa de chunk id a proximidad ajustada
     const chunkMap = new Map<string | number, number>(
@@ -304,14 +349,14 @@ export default class ScoringService {
 
   private async getScoredPhotoTagsBySegment(
     photos: Photo[],
-    segment: string,
+    segment: { name: string; index: number },
     embeddingsProximityThreshold: number = 0.15,
     strictInference: boolean
   ): Promise<{ photo: Photo; tagScore: number }[]> {
     const allTags = await Tag.all()
 
     // Obtenemos los matching tags directamente del segmento
-    const { matchingTags } = await this.findMatchingTagsForTerm(
+    const { matchingTags } = await this.findMatchingTagsForSegment(
       segment,
       allTags,
       embeddingsProximityThreshold,
@@ -325,6 +370,10 @@ export default class ScoringService {
 
     // Calcular el score para cada foto basándonos en los tags coincidentes
     let scoredPhotos = photos.map((photo) => {
+      if (photo.id == 'dbccd279-d03f-49e9-8e8e-87ef55c72f51') {
+        console.log()
+      }
+
       photo.matchingTags = photo.matchingTags || []
       const matchingPhotoTags = photo.tags?.filter((tag) => tagMap.has(tag.name)) || []
       photo.matchingTags = [...photo.matchingTags, ...matchingPhotoTags.map((tag) => tag.name)]
@@ -340,20 +389,19 @@ export default class ScoringService {
     })
 
     // Ordenamos y filtramos según la lógica aplicada
-    // scoredPhotos = this.applyBaseThreshold(scoredPhotos, 'tagScore', true)
     scoredPhotos = scoredPhotos
       .filter((score) => score.tagScore > 0)
       .sort((a, b) => b.tagScore - a.tagScore)
     return scoredPhotos
   }
 
-  public async findMatchingTagsForTerm(
-    term,
+  public async findMatchingTagsForSegment(
+    segment: { name: string; index: number },
     tags,
     embeddingsProximityThreshold: number,
     strictInference: boolean
   ) {
-    let lematizedTerm = pluralize.singular(term.toLowerCase())
+    let lematizedTerm = pluralize.singular(segment.name.toLowerCase())
     let termWordCount = lematizedTerm.split(' ').length
 
     let lematizedTagNames = []
@@ -398,7 +446,7 @@ export default class ScoringService {
     // == 0 Neutral
     // > 0 Entailment
     let adjustedSimilarTags = await this.modelsService.adjustProximitiesByContextInference(
-      term,
+      segment.name,
       similarTags,
       'tag'
     )
@@ -417,7 +465,11 @@ export default class ScoringService {
       (match, index, self) => index === self.findIndex((t) => t.name === match.name)
     )
 
-    let thresholdBasedMatches = this.applyBaseThreshold(uniqueMatches, 'proximity', strictInference)
+    let thresholdBasedMatches = this.applyBaseThreshold(
+      uniqueMatches,
+      segment.index,
+      strictInference
+    )
 
     return {
       matchingTags: thresholdBasedMatches,

@@ -1,5 +1,6 @@
 // @ts-nocheck
 
+import { withCache } from '../decorators/withCache.js'
 import withCost from '../decorators/withCost.js'
 import {
   SYSTEM_MESSAGE_CULTURAL_ENRICHMENT,
@@ -29,7 +30,13 @@ export default class QueryService {
 
   // Parece que no es estrictamente necesaria la expansión, cuando se consideran los neutrals (strictInference = false)
   // Pero sí que habría que distinguir cuando una query contiene una referencia o el prefijo evocativo para establecer ese valor
-  withCost()
+  // withCost()
+  // TODO: userid!!
+  @withCache({
+    key: (arg1, arg2) => `${arg1}_${arg2.description}`,
+    provider: 'redis',
+    ttl: 60 * 10,
+  })
   public async structureQuery(searchType: 'logical' | 'semantic' | 'creative', query) {
     let expansionCost
     let structuredResult = await this.modelsService.getStructuredQuery(query.description)
