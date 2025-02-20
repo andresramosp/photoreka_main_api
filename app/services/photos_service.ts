@@ -51,10 +51,52 @@ export default class PhotosService {
     return photos
   }
 
+  public async *searchByTags(query: any, options = { quickSearch: false }) {
+    const { quickSearch } = options
+    const photos = (await Photo.query().preload('tags').preload('descriptionChunks')).map(
+      (photo) => ({
+        ...photo.$attributes,
+        tags: photo.tags,
+        descriptionChunks: photo.descriptionChunks,
+        tempID: Math.random().toString(36).substr(2, 4),
+      })
+    )
+
+    const batchSize = 3
+    const maxPageAttempts = 3
+
+    let photosResult = []
+    let attempts = 0
+
+    let embeddingScoredPhotos = await this.scoringService.getScoredPhotosByTags(
+      photos,
+      query.included,
+      query.excluded,
+      quickSearch
+    )
+
+    const { paginatedPhotos, hasMore } = this.getPaginatedPhotosByPage(
+      embeddingScoredPhotos,
+      12,
+      query.iteration
+    )
+
+    yield {
+      type: 'matches',
+      data: {
+        hasMore,
+        results: {
+          [query.iteration]: paginatedPhotos,
+        },
+        iteration: query.iteration,
+      },
+    }
+  }
+
   @withCostWS
   public async *search(
     query: any,
-    searchType: 'logical' | 'semantic' | 'creative',
+    searchType: 'semantic' | 'creative',
     options = { quickSearch: false, withInsights: false }
   ) {
     const { quickSearch, withInsights } = options
@@ -286,324 +328,5 @@ export default class PhotosService {
         detail: 'low',
       },
     }))
-  }
-
-  // Desuso
-  public async filterByTags(tagsAnd: any[][], tagsNot: any[], tagsOr: any[]): Promise<any[]> {
-    if (tagsOr.length) {
-      tagsAnd.push(tagsOr.flat())
-    }
-
-    // Construcción de la query base
-    const query = Photo.query().preload('tags')
-
-    if (tagsAnd.length > 0) {
-      for (const tagGroup of tagsAnd) {
-        query.whereHas('tags', (tagQuery) => {
-          tagQuery.whereIn(
-            'name',
-            tagGroup.map((tag) => tag.tag)
-          )
-        })
-      }
-    }
-
-    // Exclusión de tags NOT
-    if (tagsNot.length > 0) {
-      query.whereDoesntHave('tags', (tagQuery) => {
-        tagQuery.whereIn(
-          'name',
-          tagsNot.map((tag) => tag.tag)
-        )
-      })
-    }
-
-    // Ejecutar la consulta
-    const photos = await query.exec()
-
-    // Agregar matchingTags manualmente después de la consulta
-    return photos.map((photo) => {
-      const matchingTags = photo.tags
-        .filter((tag) => tagsAnd.flat().some((andTag) => andTag.tag === tag.name))
-        .map((tag) => tag.name)
-
-      return { ...photo.toJSON(), matchingTags }
-    })
-  }
-
-  // Desuso
-  public async saveExpandedTags(term: any, tags: any[], expansionResults: any) {
-    const modelsService = new ModelsService()
-
-    try {
-      const similarTags = await this.modelsService.getSynonymTags(
-        term.tagName,
-        tags.map((tag) => tag.name)
-      )
-      if (similarTags.length) {
-        similarTags.forEach(async (similarTag) => {
-          const tagInDB = tags.find((t) => t.name === similarTag)
-          if (tagInDB) {
-            const existingChildren = [...(tagInDB.children?.length ? tagInDB.children : [])]
-
-            const mergedChildren = [...existingChildren, ...expansionResults[term.tagName]].reduce(
-              (acc, item) => {
-                acc[item.tag] = { ...acc[item.tag], ...item }
-                return acc
-              },
-              {}
-            )
-            tagInDB.children = {
-              tags: Object.values(mergedChildren),
-            }
-            tagInDB.save()
-            console.log(
-              `Saved children for existing tag ${tagInDB.name}: ${JSON.stringify(tagInDB.children.tags.map((tag: any) => tag.tag))}`
-            )
-          }
-        })
-      }
-
-      // Create a new tag only if the term itself is not found in similar tags
-      if (!similarTags.includes(term.tagName)) {
-        const newTag = new Tag()
-        const { embeddings } = await this.modelsService.getEmbeddings([term.tagName])
-        newTag.embedding = embeddings[0]
-        newTag.name = term.tagName
-        newTag.children = { tags: expansionResults[term.tagName] }
-        newTag.save()
-        console.log(
-          `Saved children for new tag ${newTag.name}: ${JSON.stringify(newTag.children.tags.map((tag: any) => tag.tag))}`
-        )
-      }
-    } catch (err) {
-      console.error('Error guardando expansores')
-    }
-  }
-
-  // Desuso
-  public async performTagsExpansion(terms: any[], allTags: any[], useModel: boolean = true) {
-    let expansionResults: any = {}
-    const expansionCosts: any[] = []
-
-    await Promise.all(
-      terms.map(async (term) => {
-        let existingTag = allTags.find((tag) => tag.name === term.tagName)
-        if (!existingTag) {
-          const semanticallyCloseTags = await this.embeddingsService.findSimilarTagsToText(
-            term.tagName,
-            0.9,
-            1
-          )
-          if (semanticallyCloseTags.length)
-            console.log(
-              `Found semantically close tag ${semanticallyCloseTags[0].name} for ${term.tagName}`
-            )
-          existingTag = semanticallyCloseTags[0]
-        }
-
-        if (false) {
-          // (existingTag && existingTag.children?.tags.length) {
-          expansionResults[term.tagName] = existingTag.children.tags || []
-          console.log(
-            `Using stored expansors for ${term.tagName}: ${JSON.stringify(existingTag.children.tags.map((t: any) => t.tag))} `
-          )
-        } else {
-          const nearTags = await this.embeddingsService.findSimilarTagsToText(term.tagName, 0.4, 30)
-          if (useModel) {
-            const { result, cost } = await this.modelsService.getDSResponse(
-              term.isAction
-                ? SYSTEM_MESSAGE_TERMS_ACTIONS_EXPANDER_V4
-                : SYSTEM_MESSAGE_TERMS_EXPANDER_V4,
-              JSON.stringify({
-                // operation: 'semanticSubExpansion',
-                term: term.tagName,
-                tagCollection: nearTags.map((tag: any) => tag.name),
-              }),
-              'deepseek-chat',
-              null
-            )
-
-            // Recuperamos la proximidad semántica
-            if (result.length) {
-              for (let tag of result) {
-                tag.proximity = nearTags.find((nearTag: any) => nearTag.name == tag.tag)?.proximity
-              }
-              expansionResults[term.tagName] = result.filter((tag: any) => tag.isSubclass)
-            } else {
-              expansionResults[term.tagName] = []
-            }
-
-            expansionCosts.push(cost)
-            this.saveExpandedTags(term, allTags, expansionResults)
-          } else {
-            expansionResults[term.tagName] = nearTags.map((tag) => {
-              return { tag: tag.name }
-            })
-          }
-        }
-      })
-    )
-
-    return { expansionResults, expansionCosts }
-  }
-
-  // Desuso
-  @withCost
-  public async searchByTags(query: any): Promise<any> {
-    const allTags = await Tag.all()
-    let cost1
-    let queryLogicResult
-
-    // Step 1: Perform initial logic query
-    const { result, cost } = await this.modelsService.getDSResponse(
-      SYSTEM_MESSAGE_QUERY_TO_LOGIC_V2,
-      JSON.stringify({
-        query: query.description,
-      })
-    )
-    queryLogicResult = result
-    cost1 = cost
-
-    if (result === 'NON_TAGGABLE') {
-      return { queryLogicResult }
-    }
-
-    // Step 2: Extract and expand terms
-    const terms = [
-      ...queryLogicResult.tags_and,
-      ...queryLogicResult.tags_not,
-      ...queryLogicResult.tags_or,
-    ]
-
-    const { expansionResults, expansionCosts } = await this.performTagsExpansion(
-      terms,
-      allTags,
-      false
-    )
-
-    // Step 3: Precompute all expansions and initialize tracking
-    const precomputedIterations: Record<string, any[]> = {}
-    const usedPrecomputedIterations: Record<string, any[]> = {}
-    const expansorsPerIteration = 2
-
-    queryLogicResult.tags_and.forEach((tag: any) => {
-      const expandedTerms = expansionResults[tag.tagName]
-      precomputedIterations[tag.tagName] = [...expandedTerms]
-      usedPrecomputedIterations[tag.tagName] = [...expandedTerms.slice(0, 0)]
-    })
-
-    queryLogicResult.tags_or.forEach((tag: any) => {
-      const expandedTerms = expansionResults[tag.tagName]
-      precomputedIterations[tag.tagName] = [...expandedTerms]
-      usedPrecomputedIterations[tag.tagName] = [...expandedTerms.slice(0, 0)]
-    })
-
-    queryLogicResult.tags_not.forEach((tag: any) => {
-      const expandedTerms = expansionResults[tag.tagName]
-      precomputedIterations[tag.tagName] = [...expandedTerms]
-      usedPrecomputedIterations[tag.tagName] = [...expandedTerms.slice(0, 0)]
-    })
-
-    // Perform filtering while tracking used terms
-    let results: Record<number, any> = {}
-    let seenPhotoIds = new Set<number>()
-    let iteration = 1
-
-    while (
-      Object.keys(precomputedIterations).some(
-        (key) => usedPrecomputedIterations[key].length < precomputedIterations[key].length
-      )
-    ) {
-      const tagsAnd = queryLogicResult.tags_and.map((tag: any) => {
-        const remainingTerms = precomputedIterations[tag.tagName].slice(
-          usedPrecomputedIterations[tag.tagName].length,
-          usedPrecomputedIterations[tag.tagName].length + expansorsPerIteration
-        )
-        usedPrecomputedIterations[tag.tagName].push(...remainingTerms)
-        return [{ tag: tag.tagName }, ...usedPrecomputedIterations[tag.tagName]]
-      })
-
-      const tagsOr = queryLogicResult.tags_or.map((tag: any) => {
-        const remainingTerms = precomputedIterations[tag.tagName].slice(
-          usedPrecomputedIterations[tag.tagName].length,
-          usedPrecomputedIterations[tag.tagName].length + expansorsPerIteration
-        )
-        usedPrecomputedIterations[tag.tagName].push(...remainingTerms)
-        return [{ tag: tag.tagName }, ...usedPrecomputedIterations[tag.tagName]]
-      })
-
-      const tagsNot = queryLogicResult.tags_not
-        .map((tag: any) => {
-          const allTerms = precomputedIterations[tag.tagName]
-          precomputedIterations[tag.tagName] = []
-          return [{ tag: tag.tagName }, ...allTerms]
-        })
-        .flat()
-
-      let filteredPhotos = await this.filterByTags([...tagsAnd], [...tagsNot], [...tagsOr])
-
-      filteredPhotos = filteredPhotos.filter((photo: any) => {
-        if (seenPhotoIds.has(photo.id)) {
-          return false
-        }
-        seenPhotoIds.add(photo.id)
-        return true
-      })
-
-      if (filteredPhotos.length) {
-        results[iteration] = {
-          photos: filteredPhotos,
-          tagsAnd,
-          tagsNot,
-          tagsOr,
-        }
-      }
-
-      iteration++
-    }
-
-    // Step 4: Return precomputed expansions and iteration results
-    return {
-      results,
-      cost: { queryToLogic: cost1, expansionCosts },
-      queryLogicResult,
-    }
-  }
-
-  // En desuso, salvo que queramos que GPT evalúe tags como ya hace Roberta
-  public async evaluateBatches(photoBatches, clearQuery, searchType) {
-    return Promise.all(
-      photoBatches.map(async (batch) => {
-        const photoPromises = batch.map(async (photoBatch) => {
-          if (searchType === 'logical' || searchType == 'semantic') {
-            const evaluationResult = await this.queryService.evaluateQueryLogic(
-              clearQuery,
-              photoBatch.photo
-            )
-
-            if (evaluationResult === null) {
-              return { photo: { ...photoBatch.photo, requiresProcessing: true } }
-            } else {
-              return {
-                photo: {
-                  ...photoBatch.photo,
-                  isIncluded: evaluationResult,
-                  reasoning: 'Evaluated directly',
-                  requiresProcessing: false,
-                },
-              }
-            }
-          } else {
-            // For non-logical queries, mark the photo as requiring processing
-            return { photo: { ...photoBatch.photo, requiresProcessing: true } }
-          }
-        })
-
-        const evaluatedPhotos = await Promise.all(photoPromises)
-
-        return evaluatedPhotos // Return the array of evaluated photos for the batch
-      })
-    )
   }
 }

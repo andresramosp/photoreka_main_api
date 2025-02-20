@@ -30,15 +30,21 @@ export default class SearchController {
     }
   }
 
-  public async searchTags({ response, request }: HttpContext) {
+  public async searchByTags({ response, request }: HttpContext) {
     try {
       const photosService = new PhotosService()
 
       const query = request.body()
 
-      const result = await photosService.searchByTags(query)
+      const stream = photosService.searchByTags(query, {
+        quickSearch: query.isQuickSearch,
+      })
 
-      return response.ok(result)
+      for await (const result of stream) {
+        ws.io?.emit(result.type, result.data)
+      }
+
+      return response.ok({ message: 'Search process initiated' })
     } catch (error) {
       console.error('Error fetching photos:', error)
       return response.internalServerError({ message: 'Error fetching photos' })

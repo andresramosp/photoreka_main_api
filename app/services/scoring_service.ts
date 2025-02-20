@@ -22,7 +22,7 @@ interface ScoredPhoto {
 
 const getWeights = (quickSearch) => {
   return {
-    logical: {
+    tags: {
       tags: 1,
       desc: 0,
       fullQuery: 0,
@@ -107,15 +107,15 @@ export default class ScoringService {
 
   // @MeasureExecutionTime
   // TODO: userid!!
-  // @withCache({
-  //   key: (_, arg2, arg3, arg4) => `${arg2.original}_${arg3}_${arg4}`,
-  //   provider: 'redis',
-  //   ttl: 120,
-  // })
+  @withCache({
+    key: (_, arg2, arg3, arg4) => `${arg2.original}_${arg3}_${arg4}`,
+    provider: 'redis',
+    ttl: 120,
+  })
   public async getScoredPhotosByTagsAndDesc(
     photos: Photo[],
     structuredQuery: any,
-    searchType: 'logical' | 'semantic' | 'creative',
+    searchType: 'semantic' | 'creative',
     quickSearch: boolean = false
   ): Promise<ScoredPhoto[] | undefined> {
     let weights = getWeights(quickSearch)
@@ -126,7 +126,7 @@ export default class ScoringService {
       totalScore: 0,
     }))
 
-    const strictInference = searchType !== 'creative' && !structuredQuery.evocative
+    const strictInference = searchType !== 'creative'
 
     // Si hay más de un segmento, lanzamos fullQuery en paralelo usando el array original.
     const fullQueryPromise: Promise<ScoredPhoto[]> =
@@ -168,6 +168,57 @@ export default class ScoringService {
     )
 
     let potentialMaxScore = this.getMaxPotentialScore(structuredQuery, searchType, weights)
+
+    return finalScores
+      .filter((scores) => scores.totalScore > 0)
+      .sort((a, b) => {
+        return b.totalScore - a.totalScore
+      })
+      .map((score) => ({
+        ...score,
+        matchPercent: Math.min(100, (score.totalScore * 100) / potentialMaxScore),
+      }))
+  }
+
+  // TODO: userid!!
+  @withCache({
+    key: (_, arg2, arg3, arg4) => `${JSON.stringify(arg2)}_${JSON.stringify(arg3)}_${arg4}`,
+    provider: 'redis',
+    ttl: 120,
+  })
+  public async getScoredPhotosByTags(
+    photos: Photo[],
+    included: string[],
+    excluded: string[],
+    quickSearch: boolean = false
+  ): Promise<ScoredPhoto[] | undefined> {
+    let weights = getWeights(quickSearch)
+
+    let aggregatedScores: ScoredPhoto[] = photos.map((photo) => ({
+      photo,
+      tagScore: 0,
+      totalScore: 0,
+    }))
+
+    const strictInference = true
+
+    const includedPromise = (async () => {
+      let scores = aggregatedScores
+      for (const [index, segment] of included.entries()) {
+        scores = await this.processSegment(
+          { name: segment, index },
+          scores,
+          weights.tags,
+          strictInference
+        )
+      }
+      return scores
+    })()
+
+    // Esperamos ambas promesas en paralelo.
+    const [finalScores] = await Promise.all([includedPromise])
+
+    let potentialMaxScore = 10 // //this.getMaxPotentialScore(structuredQuery, searchType, weights)
 
     return finalScores
       .filter((scores) => scores.totalScore > 0)

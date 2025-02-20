@@ -7,9 +7,12 @@ export default class TagsController {
     return response.ok({ result })
   }
 
+  // TODO: por usuario!
   public async search({ request, response }: HttpContext) {
     const term = request.input('term', '').toLowerCase()
-    const result = await Tag.query().whereRaw('LOWER(name) LIKE ?', [`%${term}%`])
+    const result = await Tag.query()
+      .whereRaw('LOWER(name) LIKE ?', [`%${term}%`])
+      .orderByRaw('LENGTH(name) ASC')
 
     return response.ok({ result })
   }
