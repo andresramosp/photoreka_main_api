@@ -70,9 +70,9 @@ export default class ScoringService {
       let segmentOffset = segmentIndex == -1 ? 0 : maxSegmentOffset - segmentIndex * 0.2
       return scoredPhotoElements.filter((element) => element.proximity > 1 + segmentOffset)
     } else {
-      return scoredPhotoElements.filter((element) => element.proximity > 0)
+      // Incluimos negativos para descartar casos muy flagrantes opuestos (-0.9)
+      return scoredPhotoElements.filter((element) => element.proximity > -1)
     }
-    // TODO: caso creativo con negativos?
   }
 
   private getMaxPotentialScore(structuredQuery, searchType, weights) {
@@ -107,11 +107,11 @@ export default class ScoringService {
 
   // @MeasureExecutionTime
   // TODO: userid!!
-  @withCache({
-    key: (_, arg2, arg3, arg4) => `${arg2.original}_${arg3}_${arg4}`,
-    provider: 'redis',
-    ttl: 120,
-  })
+  // @withCache({
+  //   key: (_, arg2, arg3, arg4) => `${arg2.original}_${arg3}_${arg4}`,
+  //   provider: 'redis',
+  //   ttl: 120,
+  // })
   public async getScoredPhotosByTagsAndDesc(
     photos: Photo[],
     structuredQuery: any,
@@ -331,12 +331,9 @@ export default class ScoringService {
           })),
       ]
 
-      let descScore = 0
       const proximities = matchingPhotoChunks.map((chunk) => chunkMap.get(chunk.id)!)
-      const maxProximity = Math.max(...proximities)
-      const totalProximities = proximities.reduce((sum, p) => sum + p, 0)
-      const adjustedProximity = totalProximities / 2
-      descScore = maxProximity + Math.min(adjustedProximity, maxProximity)
+      let descScore = this.calculateProximitiesScores(proximities)
+
       return { photo, descScore }
     })
 
@@ -345,6 +342,22 @@ export default class ScoringService {
       .filter((score) => score.descScore > 0)
       .sort((a, b) => b.descScore - a.descScore)
     return scoredPhotos
+  }
+
+  // Dada una lista de scores de tags o chunks, calcula el score.
+  // Añadimos un caso especial para tratar negativos muy fuertes, para el caso de 'creative', que puede matchear muy positivo
+  // en neutrals aun teniendo unos pocos tags/chunks totalmente contradictorios.
+  private calculateProximitiesScores(proximities) {
+    const minProximity = Math.min(...proximities)
+    const countBelowPointEight = proximities.filter((p) => p < 0.9).length
+    if (minProximity < -0.98) {
+      return -1
+    } else {
+      const maxProximity = Math.max(...proximities)
+      const totalProximities = proximities.reduce((sum, p) => sum + p, 0)
+      const adjustedProximity = totalProximities / 2
+      return maxProximity + Math.min(adjustedProximity, maxProximity)
+    }
   }
 
   private async getScoredPhotoTagsBySegment(
@@ -364,26 +377,26 @@ export default class ScoringService {
     )
     const tagMap = new Map<string, number>()
     matchingTags.forEach((tag: any) => {
-      const current = tagMap.get(tag.name) || 0
-      tagMap.set(tag.name, Math.max(current, tag.proximity))
+      // const current = tagMap.get(tag.name) || 0
+      tagMap.set(tag.name, tag.proximity)
     })
 
     // Calcular el score para cada foto basándonos en los tags coincidentes
     let scoredPhotos = photos.map((photo) => {
-      if (photo.id == 'dbccd279-d03f-49e9-8e8e-87ef55c72f51') {
+      if (photo.id == '090da82c-00ef-448c-9c0e-18d468186b68') {
         console.log()
       }
 
       photo.matchingTags = photo.matchingTags || []
       const matchingPhotoTags = photo.tags?.filter((tag) => tagMap.has(tag.name)) || []
-      photo.matchingTags = [...photo.matchingTags, ...matchingPhotoTags.map((tag) => tag.name)]
+      photo.matchingTags = [
+        ...photo.matchingTags,
+        ...matchingPhotoTags.map((tag) => ({ name: tag.name, proximity: tagMap.get(tag.name) })),
+      ]
       let tagScore = 0
       if (matchingPhotoTags.length > 0) {
         const proximities = matchingPhotoTags.map((tag) => tagMap.get(tag.name)!)
-        const maxProximity = Math.max(...proximities)
-        const totalProximities = proximities.reduce((sum, p) => sum + p, 0)
-        const adjustedProximity = totalProximities / 2
-        tagScore = maxProximity + Math.min(adjustedProximity, maxProximity)
+        tagScore = this.calculateProximitiesScores(proximities)
       }
       return { photo, tagScore }
     })
