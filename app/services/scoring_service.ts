@@ -20,27 +20,29 @@ interface ScoredPhoto {
   totalScore?: number // Puntaje total calculado
 }
 
-const getWeights = (quickSearch) => {
+const getWeights = (deepSearch) => {
   return {
     tags: {
       tags: 1,
       desc: 0,
-      fullQuery: 0,
-      embeddingsTagsThreshold: quickSearch ? 0.3 : 0.15,
+      fullQuery: null,
+      embeddingsTagsThreshold: deepSearch ? 0.15 : 0.3,
     },
     semantic: {
-      tags: quickSearch ? 1 : 0.5,
-      desc: quickSearch ? 0 : 0.5,
-      fullQuery: quickSearch ? 0 : 1,
-      embeddingsTagsThreshold: quickSearch ? 0.3 : 0.15,
-      embeddingsDescsThreshold: quickSearch ? 0.4 : 0.2,
+      tags: 0.5,
+      desc: 0.5,
+      fullQuery: 1,
+      embeddingsTagsThreshold: deepSearch ? 0.13 : 0.25,
+      embeddingsDescsThreshold: deepSearch ? 0.17 : 0.35,
+      embeddingsFullQueryThreshold: deepSearch ? 0.35 : 0.55,
     },
     creative: {
-      tags: quickSearch ? 1 : 0.3,
-      desc: quickSearch ? 0 : 0.7,
-      fullQuery: quickSearch ? 0 : 1,
-      embeddingsTagsThreshold: quickSearch ? 0.3 : 0.15,
-      embeddingsDescsThreshold: quickSearch ? 0.4 : 0.2,
+      tags: 0.3,
+      desc: 0.7,
+      fullQuery: 1,
+      embeddingsTagsThreshold: deepSearch ? 0.13 : 0.3,
+      embeddingsDescsThreshold: deepSearch ? 0.17 : 0.35,
+      embeddingsFullQueryThreshold: deepSearch ? 0.35 : 0.55,
     },
   }
 }
@@ -116,9 +118,9 @@ export default class ScoringService {
     photos: Photo[],
     structuredQuery: any,
     searchType: 'semantic' | 'creative',
-    quickSearch: boolean = false
+    deepSearch: boolean = false
   ): Promise<ScoredPhoto[] | undefined> {
-    let weights = getWeights(quickSearch)
+    let weights = getWeights(deepSearch)
     let aggregatedScores: ScoredPhoto[] = photos.map((photo) => ({
       photo,
       tagScore: 0,
@@ -127,19 +129,21 @@ export default class ScoringService {
     }))
 
     const strictInference = searchType !== 'creative'
+    // La fullQuery se hace siempre, salvo cuando es deep search y solo hay un segmento, en cuyo caso sería redundante
+    const performFullQuerySearch = structuredQuery.positive_segments.length > 1 || !deepSearch
 
     // Si hay más de un segmento, lanzamos fullQuery en paralelo usando el array original.
-    const fullQueryPromise: Promise<ScoredPhoto[]> =
-      structuredQuery.positive_segments.length > 1 && weights[searchType].fullQuery > 0
-        ? this.getScoredPhotoDescBySegment(
-            photos,
-            { name: structuredQuery.no_prefix, index: -1 },
-            weights[searchType].embeddingsDescsThreshold * 2,
-            strictInference
-          )
-        : Promise.resolve([])
+    const fullQueryPromise: Promise<ScoredPhoto[]> = performFullQuerySearch
+      ? this.getScoredPhotoDescBySegment(
+          photos,
+          { name: structuredQuery.no_prefix, index: -1 },
+          weights[searchType].embeddingsFullQueryThreshold,
+          strictInference,
+          true
+        )
+      : Promise.resolve([])
 
-    // Procesamos los segmentos secuencialmente en una promesa.
+    // Procesamos los segmentos secuencialmente en una promesa. Con deepSearch, se harán tambien contra la desc.
     const segmentsPromise = (async () => {
       let scores = aggregatedScores
       for (const [index, segment] of structuredQuery.positive_segments.entries()) {
@@ -147,7 +151,8 @@ export default class ScoringService {
           { name: segment, index },
           scores,
           weights[searchType],
-          strictInference
+          strictInference,
+          deepSearch
         )
       }
       return scores
@@ -190,9 +195,9 @@ export default class ScoringService {
     photos: Photo[],
     included: string[],
     excluded: string[],
-    quickSearch: boolean = false
+    deepSearch: boolean = false
   ): Promise<ScoredPhoto[] | undefined> {
-    let weights = getWeights(quickSearch)
+    let weights = getWeights(deepSearch)
 
     let aggregatedScores: ScoredPhoto[] = photos.map((photo) => ({
       photo,
@@ -209,7 +214,8 @@ export default class ScoringService {
           { name: segment, index },
           scores,
           weights.tags,
-          strictInference
+          strictInference,
+          deepSearch
         )
       }
       return scores
@@ -291,7 +297,8 @@ export default class ScoringService {
     segment: { name: string; index: number },
     aggregatedScores: ScoredPhoto[],
     weights: { tags: number; desc: number; fullQuery: number },
-    strictInference: boolean
+    strictInference: boolean,
+    deepSearch: boolean = false
   ): Promise<ScoredPhoto[]> {
     const photosToReview = aggregatedScores.map((s) => s.photo)
     const tagPromise =
@@ -304,7 +311,7 @@ export default class ScoringService {
           )
         : Promise.resolve([])
     const descPromise =
-      weights.desc > 0
+      deepSearch && weights.desc > 0
         ? this.getScoredPhotoDescBySegment(
             photosToReview,
             segment,
@@ -334,7 +341,8 @@ export default class ScoringService {
     photos: Photo[],
     segment: { name: string; index: number },
     embeddingsProximityThreshold: number = 0.2,
-    strictInference: boolean
+    strictInference: boolean,
+    isFullQuery: boolean = false
   ): Promise<{ photo: Photo; descScore: number }[]> {
     // Obtener los chunks similares para el segmento
     const matchingChunks = await this.embeddingsService.findSimilarChunksToText(
@@ -379,6 +387,7 @@ export default class ScoringService {
           .map((item) => ({
             chunk: item.chunk,
             proximity: chunkMap.get(item.id),
+            isFullQuery,
           })),
       ]
 
@@ -434,10 +443,6 @@ export default class ScoringService {
 
     // Calcular el score para cada foto basándonos en los tags coincidentes
     let scoredPhotos = photos.map((photo) => {
-      if (photo.id == '090da82c-00ef-448c-9c0e-18d468186b68') {
-        console.log()
-      }
-
       photo.matchingTags = photo.matchingTags || []
       const matchingPhotoTags = photo.tags?.filter((tag) => tagMap.has(tag.name)) || []
       photo.matchingTags = [

@@ -14,7 +14,7 @@ export default class SearchController {
       const query = request.body()
 
       const stream = photosService.search(query, query.searchType, {
-        quickSearch: query.isQuickSearch,
+        deepSearch: query.deepSearch,
         withInsights: query.withInsights, // solo de pago
       })
 
@@ -37,7 +37,7 @@ export default class SearchController {
       const query = request.body()
 
       const stream = photosService.searchByTags(query, {
-        quickSearch: query.isQuickSearch,
+        deepSearch: query.deepSearch,
       })
 
       for await (const result of stream) {

@@ -28,6 +28,7 @@ import withCost from '../decorators/withCost.js'
 import QueryService from './query_service.js'
 import withCostWS from '../decorators/withCostWs.js'
 import ScoringService from './scoring_service.js'
+import { withCache } from '../decorators/withCache.js'
 
 export default class PhotosService {
   sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -51,16 +52,24 @@ export default class PhotosService {
     return photos
   }
 
-  public async *searchByTags(query: any, options = { quickSearch: false }) {
-    const { quickSearch } = options
-    const photos = (await Photo.query().preload('tags').preload('descriptionChunks')).map(
-      (photo) => ({
-        ...photo.$attributes,
-        tags: photo.tags,
-        descriptionChunks: photo.descriptionChunks,
-        tempID: Math.random().toString(36).substr(2, 4),
-      })
-    )
+  @withCache({
+    key: (arg1) => `getPhotosByUser_${arg1}`,
+    provider: 'redis',
+    ttl: 120,
+  })
+  public async getPhotosByUser(userId: string[]) {
+    let photos = await Photo.query().preload('tags').preload('descriptionChunks')
+    return photos.map((photo) => ({
+      ...photo.$attributes,
+      tags: photo.tags,
+      descriptionChunks: photo.descriptionChunks,
+      tempID: Math.random().toString(36).substr(2, 4),
+    }))
+  }
+
+  public async *searchByTags(query: any, options = { deepSearch: false }) {
+    const { deepSearch } = options
+    const photos = await this.getPhotosByUser('1234')
 
     const batchSize = 3
     const maxPageAttempts = 3
@@ -72,7 +81,7 @@ export default class PhotosService {
       photos,
       query.included,
       query.excluded,
-      quickSearch
+      deepSearch
     )
 
     const { paginatedPhotos, hasMore } = this.getPaginatedPhotosByPage(
@@ -97,17 +106,10 @@ export default class PhotosService {
   public async *search(
     query: any,
     searchType: 'semantic' | 'creative',
-    options = { quickSearch: false, withInsights: false }
+    options = { deepSearch: false, withInsights: false }
   ) {
-    const { quickSearch, withInsights } = options
-    const photos = (await Photo.query().preload('tags').preload('descriptionChunks')).map(
-      (photo) => ({
-        ...photo.$attributes,
-        tags: photo.tags,
-        descriptionChunks: photo.descriptionChunks,
-        tempID: Math.random().toString(36).substr(2, 4),
-      })
-    )
+    const { deepSearch, withInsights } = options
+    const photos = await this.getPhotosByUser('1234')
 
     const { structuredResult, sourceResult, useImage, searchModelMessage, expansionCost } =
       await this.queryService.structureQuery(searchType, query)
@@ -123,7 +125,7 @@ export default class PhotosService {
       photos,
       structuredResult,
       searchType,
-      quickSearch
+      deepSearch
     )
 
     do {
