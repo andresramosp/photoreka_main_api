@@ -30,7 +30,7 @@ export default class AnalyzerController {
 
       // Si el usuario ya tiene un análisis en curso, no iniciar otro
       if (!analysisProcesses.has(userId)) {
-        const process = analyzerService.analyze(photosIds, 2)
+        const process = analyzerService.analyze(photosIds, photosIds.length)
         analysisProcesses.set(userId, process)
 
         // Ejecutar el stream y emitir los eventos por WebSocket

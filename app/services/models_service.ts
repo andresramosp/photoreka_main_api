@@ -96,7 +96,7 @@ export default class ModelsService {
     }
   }
 
-  @MeasureExecutionTime
+  // @MeasureExecutionTime
   async getEmbeddings(tags) {
     try {
       const payload = { tags }
@@ -126,6 +126,102 @@ export default class ModelsService {
     }
   }
 
+  @MeasureExecutionTime
+  public async getHFResponse(imagesItems, prompt) {
+    try {
+      // Se asume que imagesItems es un array de objetos { id, base64 }
+      const imagesArray = imagesItems.map((item) => ({
+        id: item.id,
+        base64: item.base64.startsWith('data:image')
+          ? item.base64
+          : `data:image/jpeg;base64,${item.base64}`,
+      }))
+
+      const response = await fetch(
+        'https://wkuwzwp6m87r9mxb.us-east-1.aws.endpoints.huggingface.cloud',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer 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',
+          },
+          body: JSON.stringify({
+            inputs: {
+              images: imagesArray,
+              prompt: prompt,
+              front_preprocessed: false,
+              batch_size: 16,
+            },
+            generation_config: {
+              temperature: 0.2,
+              max_new_tokens: 500,
+              min_new_tokens: 0,
+            },
+          }),
+        }
+      )
+
+      if (!response.ok) {
+        throw new Error(`Error en la API de HF: ${response.statusText}`)
+      }
+
+      // Se espera que la respuesta sea un array de objetos con los resultados y los ids asociados
+      let parsedResult = await response.json()
+
+      return { result: parsedResult }
+    } catch (error) {
+      console.error('Error al obtener respuesta del endpoint de HF:', error)
+      return null
+    }
+  }
+
+  @MeasureExecutionTime
+  // public async getHFResponse(imageBase64, prompt) {
+  //   try {
+  //     const response = await fetch(
+  //       'https://wkuwzwp6m87r9mxb.us-east-1.aws.endpoints.huggingface.cloud',
+  //       {
+  //         method: 'POST',
+  //         headers: {
+  //           'Content-Type': 'application/json',
+  //           'Authorization': 'Bearer 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',
+  //         },
+  //         body: JSON.stringify({
+  //           inputs: {
+  //             image: `data:image/jpeg;base64,${imageBase64}`,
+  //             prompt: prompt,
+  //           },
+  //         }),
+  //       }
+  //     )
+
+  //     if (!response.ok) {
+  //       throw new Error(`Error en la API de HF: ${response.statusText}`)
+  //     }
+
+  //     let parsedResult
+  //     const { generated_text: rawResult } = await response.json()
+
+  //     try {
+  //       parsedResult = JSON.parse(rawResult.replace(/```(?:json)?\s*/g, '').trim())
+  //     } catch {
+  //       const jsonArrayMatch = rawResult.match(/\[.*?\]/s)
+  //       const jsonObjectMatch = rawResult.match(/\{.*?\}/s)
+  //       if (jsonArrayMatch) {
+  //         parsedResult = JSON.parse(jsonArrayMatch[0])
+  //       } else if (jsonObjectMatch) {
+  //         parsedResult = JSON.parse(jsonObjectMatch[0])
+  //       } else {
+  //         parsedResult = {}
+  //       }
+  //     }
+
+  //     return { result: parsedResult } // Devuelve el texto generado
+  //   } catch (error) {
+  //     console.error('Error al obtener respuesta del endpoint de HF:', error)
+  //     return null
+  //   }
+  // }
   @MeasureExecutionTime
   public async getGPTResponse(
     systemContent: string | null,

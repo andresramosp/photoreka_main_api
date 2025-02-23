@@ -103,7 +103,14 @@ import Photo from '#models/photo'
 import { Exception } from '@adonisjs/core/exceptions'
 import ModelsService from './models_service.js'
 import Tag from '#models/tag'
-import { SYSTEM_MESSAGE_ANALIZER_MULTIPLE } from '../utils/ModelsMessages.js'
+import {
+  SYSTEM_MESSAGE_ANALIZER_MULTIPLE,
+  SYSTEM_MESSAGE_ANALIZER_MULTIPLE_HF,
+  SYSTEM_MESSAGE_ANALYZER_DESC_HF,
+  SYSTEM_MESSAGE_ANALYZER_HF,
+  SYSTEM_MESSAGE_ANALYZER_HF_SHORT,
+  SYSTEM_MESSAGE_ANALYZER_TAGS_HF,
+} from '../utils/ModelsMessages.js'
 import { createRequire } from 'module'
 import EmbeddingsService from './embeddings_service.js'
 import DescriptionChunk from '#models/descriptionChunk'
@@ -112,6 +119,7 @@ import withCost from '../decorators/withCost.js'
 import withCostWS from '../decorators/withCostWs.js'
 import ws from './ws.js'
 import NLPService from './nlp_service.js'
+import { base64 } from '@adonisjs/core/helpers'
 const require = createRequire(import.meta.url)
 const pluralize = require('pluralize')
 
@@ -120,8 +128,7 @@ const lemmatizer = {
 }
 
 export default class AnalyzerService {
-  @withCostWS
-  public async *analyze(photosIds: string[], maxImagesPerBatch = 3) {
+  public async *analyze(photosIds: string[], maxImagesPerBatch) {
     const photosService = new PhotosService()
     const modelsService = new ModelsService()
 
@@ -150,27 +157,35 @@ export default class AnalyzerService {
     }
 
     const batchPromises = []
+
     for (let i = 0; i < validImages.length; i += maxImagesPerBatch) {
       const batch = validImages.slice(i, i + maxImagesPerBatch)
 
-      const batchPromise = modelsService.getGPTResponse(
-        SYSTEM_MESSAGE_ANALIZER_MULTIPLE(batch),
-        [
-          ...batch.map(({ base64 }) => ({
-            type: 'image_url',
-            image_url: {
-              url: `data:image/jpeg;base64,${base64}`,
-              detail: 'low',
-            },
-          })),
-        ],
-        'gpt-4o',
-        null,
-        false
+      // TODO: probar descripcion con GPT (ahorre de input tokens), y tags con Molmo
+
+      // const batchPromise = modelsService.getGPTResponse(
+      //   SYSTEM_MESSAGE_ANALIZER_MULTIPLE(batch),
+      //   [
+      //     ...batch.map(({ base64 }) => ({
+      //       type: 'image_url',
+      //       image_url: {
+      //         url: `data:image/jpeg;base64,${base64}`,
+      //         detail: 'low',
+      //       },
+      //     })),
+      //   ],
+      //   'gpt-4o',
+      //   null,
+      //   false
+      // )
+
+      const batchPromise = modelsService.getHFResponse(
+        batch.map((photo) => ({ id: photo.id, base64: photo.base64 })),
+        SYSTEM_MESSAGE_ANALYZER_HF
       )
 
       batchPromises.push(batchPromise)
-      await new Promise((resolve) => setTimeout(resolve, 750)) // Evitar rate-limits
+      await new Promise((resolve) => setTimeout(resolve, 250)) // Evitar rate-limits
     }
 
     const responses = await Promise.allSettled(batchPromises)
@@ -191,13 +206,103 @@ export default class AnalyzerService {
       }
     })
 
-    await this.addMetadata(results)
+    try {
+      await this.addMetadata(results)
+      yield { type: 'analysisComplete', data: { cost: costs } }
+      return
+    } catch (err) {}
+  }
 
-    yield { type: 'analysisComplete', data: { cost: costs } }
+  // El split de desc y tags solo tiene sentido con dos endpoints o 2 replicas
+  public async *analyze_v2(photosIds: string[], maxImagesPerBatch) {
+    const photosService = new PhotosService()
+    const modelsService = new ModelsService()
 
-    // this.compressPhotos(photos)
+    const photos = await photosService.getPhotosByIds(photosIds)
+    const uploadPath = path.join(process.cwd(), 'public/uploads/photos')
 
-    return
+    const validImages = []
+    for (const photo of photos) {
+      const filePath = path.join(uploadPath, `${photo.name}`)
+
+      try {
+        await fs.access(filePath)
+        const resizedBuffer = await sharp(filePath).toBuffer()
+
+        validImages.push({
+          id: photo.id,
+          base64: resizedBuffer.toString('base64'),
+        })
+      } catch (error) {
+        console.warn(`No se pudo procesar la imagen con ID: ${photo.id}`, error)
+      }
+    }
+
+    if (validImages.length === 0) {
+      throw new Exception('No valid images found for the provided IDs')
+    }
+
+    const batchPromises = []
+
+    for (let i = 0; i < validImages.length; i += maxImagesPerBatch) {
+      const batch = validImages.slice(i, i + maxImagesPerBatch)
+
+      // Lanzamos ambas peticiones en paralelo para cada batch
+      const descPromise = modelsService.getHFResponse(
+        batch.map((photo) => ({ id: photo.id, base64: photo.base64 })),
+        SYSTEM_MESSAGE_ANALYZER_DESC_HF
+      )
+      const tagsPromise = modelsService.getHFResponse(
+        batch.map((photo) => ({ id: photo.id, base64: photo.base64 })),
+        SYSTEM_MESSAGE_ANALYZER_TAGS_HF
+      )
+
+      // Combinamos ambos resultados cuando se resuelven
+      const combinedPromise = Promise.all([descPromise, tagsPromise]).then(([descRes, tagsRes]) => {
+        const mergedBatch = batch.map((photo) => {
+          const descResult = descRes.result.find((r: any) => r.id === photo.id)
+          const tagsResult = tagsRes.result.find((r: any) => r.id === photo.id)
+          return {
+            id: photo.id,
+            description: descResult ? descResult.description : null,
+            ...tagsResult,
+          }
+        })
+        return {
+          result: mergedBatch,
+          cost: { descCost: descRes.cost, tagsCost: tagsRes.cost },
+        }
+      })
+
+      batchPromises.push(combinedPromise)
+      await new Promise((resolve) => setTimeout(resolve, 250)) // Evitar rate-limits
+    }
+
+    const responses = await Promise.allSettled(batchPromises)
+
+    const results: any[] = []
+    const costs: any[] = []
+
+    responses.forEach((response) => {
+      if (response.status === 'fulfilled') {
+        try {
+          results.push(...response.value.result)
+          costs.push(response.value.cost)
+        } catch (err) {
+          console.log(err)
+        }
+      } else {
+        console.warn('Batch processing failed:', response.reason)
+      }
+    })
+
+    try {
+      await this.addMetadata(results)
+      yield { type: 'analysisComplete', data: { cost: costs } }
+      return
+    } catch (err) {
+      console.error(err)
+    }
   }
 
   private async compressPhotos(photos) {
@@ -392,7 +497,7 @@ export default class AnalyzerService {
           const { embeddings } = await modelsService.getEmbeddings([tagName])
           tag = await Tag.create({ name: tagName, group, embedding: embeddings[0] })
           tagMap.set(lemmatizedTagName, tag)
-          console.log('Adding new tag: ', lemmatizedTagName)
+          // console.log('Adding new tag: ', lemmatizedTagName)
         } catch (err) {
           if (err.code === '23505') {
             console.log(`Tag ${tagName} already exists, fetching existing one.`)
