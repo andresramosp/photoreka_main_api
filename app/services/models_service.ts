@@ -143,7 +143,7 @@ export default class ModelsService {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': 'Bearer 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',
+            'Authorization': 'Bearer xxx',
           },
           body: JSON.stringify({
             inputs: {
@@ -184,7 +184,7 @@ export default class ModelsService {
   //         method: 'POST',
   //         headers: {
   //           'Content-Type': 'application/json',
-  //           'Authorization': 'Bearer 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',
+  //           'Authorization': 'Bearer xxx',
   //         },
   //         body: JSON.stringify({
   //           inputs: {
