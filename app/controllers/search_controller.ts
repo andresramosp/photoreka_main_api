@@ -16,6 +16,7 @@ export default class SearchController {
       const stream = photosService.search(query, query.searchType, {
         deepSearch: query.deepSearch,
         withInsights: query.withInsights, // solo de pago
+        pageSize: query.pageSize,
       })
 
       for await (const result of stream) {
@@ -38,6 +39,7 @@ export default class SearchController {
 
       const stream = photosService.searchByTags(query, {
         deepSearch: query.deepSearch,
+        pageSize: query.pageSize,
       })
 
       for await (const result of stream) {

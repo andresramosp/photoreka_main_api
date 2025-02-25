@@ -112,7 +112,7 @@ export default class ScoringService {
   @withCache({
     key: (_, arg2, arg3, arg4) => `${arg2.original}_${arg3}_${arg4}`,
     provider: 'redis',
-    ttl: 120,
+    ttl: 60 * 5,
   })
   public async getScoredPhotosByTagsAndDesc(
     photos: Photo[],
@@ -185,12 +185,32 @@ export default class ScoringService {
       }))
   }
 
+  private async filterExcludedPhotosByTags(
+    photos: Photo[],
+    excluded: string[],
+    deepSearch: boolean = false
+  ) {
+    const proximityThreshold = 0.6 + 1 // 0.8 de Entailment
+    const allTags = await Tag.all()
+
+    const matchingPromises = excluded.map((tag) =>
+      this.findMatchingTagsForSegment({ name: tag, index: 1 }, allTags, 0.2, true)
+    )
+    const matchingResults = await Promise.all(matchingPromises)
+    const allExcludedTags = matchingResults.map((mr) => mr.matchingTags).flat()
+    const excludedTagNames = allExcludedTags
+      .filter((t) => t.proximity > proximityThreshold)
+      .map((t) => t.name)
+
+    return photos.filter((photo) => !photo.tags?.some((tag) => excludedTagNames.includes(tag.name)))
+  }
+
   // TODO: userid!!
-  @withCache({
-    key: (_, arg2, arg3, arg4) => `${JSON.stringify(arg2)}_${JSON.stringify(arg3)}_${arg4}`,
-    provider: 'redis',
-    ttl: 120,
-  })
+  // @withCache({
+  //   key: (_, arg2, arg3, arg4) => `${JSON.stringify(arg2)}_${JSON.stringify(arg3)}_${arg4}`,
+  //   provider: 'redis',
+  //   ttl: 120,
+  // })
   public async getScoredPhotosByTags(
     photos: Photo[],
     included: string[],
@@ -199,13 +219,13 @@ export default class ScoringService {
   ): Promise<ScoredPhoto[] | undefined> {
     let weights = getWeights(deepSearch)
 
-    let aggregatedScores: ScoredPhoto[] = photos.map((photo) => ({
+    let filteredPhotos = await this.filterExcludedPhotosByTags(photos, excluded)
+
+    let aggregatedScores: ScoredPhoto[] = filteredPhotos.map((photo) => ({
       photo,
       tagScore: 0,
-      totalScore: 0,
+      totalScore: 1, // Para que devuelva algo si solo hay negativos
     }))
-
-    const strictInference = true
 
     const includedPromise = (async () => {
       let scores = aggregatedScores
@@ -214,7 +234,7 @@ export default class ScoringService {
           { name: segment, index },
           scores,
           weights.tags,
-          strictInference,
+          true,
           deepSearch
         )
       }
@@ -426,7 +446,7 @@ export default class ScoringService {
     embeddingsProximityThreshold: number = 0.15,
     strictInference: boolean
   ): Promise<{ photo: Photo; tagScore: number }[]> {
-    const allTags = await Tag.all()
+    const allTags = await Tag.all() // By user!
 
     // Obtenemos los matching tags directamente del segmento
     const { matchingTags } = await this.findMatchingTagsForSegment(

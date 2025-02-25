@@ -55,7 +55,7 @@ export default class PhotosService {
   @withCache({
     key: (arg1) => `getPhotosByUser_${arg1}`,
     provider: 'redis',
-    ttl: 120,
+    ttl: 50 * 5,
   })
   public async getPhotosByUser(userId: string[]) {
     let photos = await Photo.query().preload('tags').preload('descriptionChunks')
@@ -67,15 +67,9 @@ export default class PhotosService {
     }))
   }
 
-  public async *searchByTags(query: any, options = { deepSearch: false }) {
-    const { deepSearch } = options
+  public async *searchByTags(query: any, options = { deepSearch: false, pageSize: 8 }) {
+    const { deepSearch, pageSize } = options
     const photos = await this.getPhotosByUser('1234')
-
-    const batchSize = 3
-    const maxPageAttempts = 3
-
-    let photosResult = []
-    let attempts = 0
 
     let embeddingScoredPhotos = await this.scoringService.getScoredPhotosByTags(
       photos,
@@ -86,7 +80,7 @@ export default class PhotosService {
 
     const { paginatedPhotos, hasMore } = this.getPaginatedPhotosByPage(
       embeddingScoredPhotos,
-      12,
+      pageSize,
       query.iteration
     )
 
@@ -106,7 +100,7 @@ export default class PhotosService {
   public async *search(
     query: any,
     searchType: 'semantic' | 'creative',
-    options = { deepSearch: false, withInsights: false }
+    options = { deepSearch: false, withInsights: false, pageSize: 18 }
   ) {
     const { deepSearch, withInsights } = options
     const photos = await this.getPhotosByUser('1234')
@@ -131,7 +125,7 @@ export default class PhotosService {
     do {
       const { paginatedPhotos, hasMore } = this.getPaginatedPhotosByPage(
         embeddingScoredPhotos,
-        6,
+        query.pageSize,
         query.iteration
       )
 
