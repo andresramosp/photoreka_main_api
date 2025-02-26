@@ -115,7 +115,7 @@ export default class ModelsService {
   async getStructuredQuery(query) {
     try {
       const payload = { query }
-      const { url, requestPayload, headers } = this.buildRequestConfig('structure_query', payload)
+      const { url, requestPayload, headers } = this.buildRequestConfig('query_segment', payload)
 
       const { data } = await axios.post(url, requestPayload, { headers })
 

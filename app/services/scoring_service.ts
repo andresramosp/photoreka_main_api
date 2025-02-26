@@ -206,11 +206,11 @@ export default class ScoringService {
   }
 
   // TODO: userid!!
-  // @withCache({
-  //   key: (_, arg2, arg3, arg4) => `${JSON.stringify(arg2)}_${JSON.stringify(arg3)}_${arg4}`,
-  //   provider: 'redis',
-  //   ttl: 120,
-  // })
+  @withCache({
+    key: (_, arg2, arg3, arg4) => `${JSON.stringify(arg2)}_${JSON.stringify(arg3)}_${arg4}`,
+    provider: 'redis',
+    ttl: 120,
+  })
   public async getScoredPhotosByTags(
     photos: Photo[],
     included: string[],
