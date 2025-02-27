@@ -106,9 +106,11 @@ import Tag from '#models/tag'
 import {
   SYSTEM_MESSAGE_ANALIZER_MULTIPLE,
   SYSTEM_MESSAGE_ANALIZER_MULTIPLE_HF,
+  SYSTEM_MESSAGE_ANALIZER_MULTIPLE_v2,
   SYSTEM_MESSAGE_ANALYZER_DESC_HF,
   SYSTEM_MESSAGE_ANALYZER_HF,
   SYSTEM_MESSAGE_ANALYZER_HF_SHORT,
+  SYSTEM_MESSAGE_ANALYZER_HF_v2,
   SYSTEM_MESSAGE_ANALYZER_TAGS_HF,
 } from '../utils/ModelsMessages.js'
 import { createRequire } from 'module'
@@ -163,29 +165,29 @@ export default class AnalyzerService {
 
       // TODO: probar descripcion con GPT (ahorre de input tokens), y tags con Molmo
 
-      // const batchPromise = modelsService.getGPTResponse(
-      //   SYSTEM_MESSAGE_ANALIZER_MULTIPLE(batch),
-      //   [
-      //     ...batch.map(({ base64 }) => ({
-      //       type: 'image_url',
-      //       image_url: {
-      //         url: `data:image/jpeg;base64,${base64}`,
-      //         detail: 'low',
-      //       },
-      //     })),
-      //   ],
-      //   'gpt-4o',
-      //   null,
-      //   false
-      // )
-
-      const batchPromise = modelsService.getHFResponse(
-        batch.map((photo) => ({ id: photo.id, base64: photo.base64 })),
-        SYSTEM_MESSAGE_ANALYZER_HF
+      const batchPromise = modelsService.getGPTResponse(
+        SYSTEM_MESSAGE_ANALIZER_MULTIPLE_v2(batch),
+        [
+          ...batch.map(({ base64 }) => ({
+            type: 'image_url',
+            image_url: {
+              url: `data:image/jpeg;base64,${base64}`,
+              detail: 'high',
+            },
+          })),
+        ],
+        'gpt-4o',
+        null,
+        false
       )
 
+      // const batchPromise = modelsService.getHFResponse(
+      //   batch.map((photo) => ({ id: photo.id, base64: photo.base64 })),
+      //   SYSTEM_MESSAGE_ANALYZER_HF_v2
+      // )
+
       batchPromises.push(batchPromise)
-      await new Promise((resolve) => setTimeout(resolve, 250)) // Evitar rate-limits
+      await new Promise((resolve) => setTimeout(resolve, 750)) // Evitar rate-limits
     }
 
     const responses = await Promise.allSettled(batchPromises)

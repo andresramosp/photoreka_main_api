@@ -3,15 +3,9 @@
 import { withCache } from '../decorators/withCache.js'
 import withCost from '../decorators/withCost.js'
 import {
-  SYSTEM_MESSAGE_CULTURAL_ENRICHMENT,
-  SYSTEM_MESSAGE_QUERY_ENRICHMENT,
-  SYSTEM_MESSAGE_QUERY_ENRICHMENT_CREATIVE,
-  SYSTEM_MESSAGE_QUERY_REQUIRE_SOURCE,
+  SYSTEM_MESSAGE_QUERY_STRUCTURE,
   SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE,
   SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE_ONLY_IMAGE,
-  SYSTEM_MESSAGE_SEARCH_MODEL_ONLY_IMAGE,
-  SYSTEM_MESSAGE_SEARCH_SEMANTIC,
-  SYSTEM_MESSAGE_SEARCH_SEMANTIC_LOGICAL_v2,
 } from '../utils/ModelsMessages.js'
 import AnalyzerService from './analyzer_service.js'
 import EmbeddingsService from './embeddings_service.js'
@@ -42,23 +36,47 @@ export default class QueryService {
     let structuredResult = await this.modelsService.getStructuredQuery(query.description)
     let sourceResult = { requireSource: 'description' }
 
-    let searchModelMessage
-    if (searchType === 'creative' || searchType === 'semantic') {
-      searchModelMessage =
-        sourceResult.requireSource === 'image'
-          ? SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE_ONLY_IMAGE
-          : SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE(true)
-    }
-
     console.log(
       `[processQuery]: Result for ${query.description} -> ${JSON.stringify(structuredResult.positive_segments)}`
     )
 
     return {
-      searchModelMessage,
       sourceResult,
       structuredResult,
       expansionCost,
+    }
+  }
+
+  withCost()
+  public async structureQueryLLM(searchType: 'logical' | 'semantic' | 'creative', query) {
+    let expansionCost = 0
+    let sourceResult = { requireSource: 'description' }
+
+    const noPrefixResult = await this.modelsService.getNoPrefixQuery(query.description)
+
+    const { result: modelResult, cost: modelCost } = await this.modelsService.getGPTResponse(
+      SYSTEM_MESSAGE_QUERY_STRUCTURE,
+      JSON.stringify({ query: noPrefixResult }),
+      'gpt-4o-mini'
+    )
+
+    modelResult.original = query.description
+    modelResult.positive_segments = [
+      ...new Set([...modelResult.positive_segments, ...modelResult.named_entities]),
+    ]
+    modelResult.nuances_segments = [
+      ...new Set(Object.values(modelResult.expanded_named_entities).flat()),
+    ]
+    modelResult.no_prefix = noPrefixResult
+
+    console.log(
+      `[processQuery]: Result for ${query.description} -> ${JSON.stringify(modelResult.positive_segments)} | ${JSON.stringify(modelResult.nuances_segments)}`
+    )
+
+    return {
+      sourceResult,
+      structuredResult: modelResult,
+      expansionCost: modelCost,
     }
   }
 

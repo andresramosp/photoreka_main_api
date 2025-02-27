@@ -4,21 +4,6 @@ import Photo from '#models/photo'
 import Tag from '#models/tag'
 import fs from 'fs/promises'
 
-import {
-  SYSTEM_MESSAGE_QUERY_ENRICHMENT,
-  SYSTEM_MESSAGE_QUERY_ENRICHMENT_CREATIVE,
-  SYSTEM_MESSAGE_QUERY_REQUIRE_SOURCE,
-  SYSTEM_MESSAGE_QUERY_TO_LOGIC_V2,
-  SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE,
-  SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE_ONLY_IMAGE,
-  SYSTEM_MESSAGE_SEARCH_MODEL_IMG,
-  SYSTEM_MESSAGE_SEARCH_MODEL_ONLY_IMAGE,
-  SYSTEM_MESSAGE_SEARCH_SEMANTIC,
-  SYSTEM_MESSAGE_SEARCH_SEMANTIC_LOGICAL,
-  SYSTEM_MESSAGE_SEARCH_SEMANTIC_LOGICAL_v2,
-  SYSTEM_MESSAGE_TERMS_ACTIONS_EXPANDER_V4,
-  SYSTEM_MESSAGE_TERMS_EXPANDER_V4,
-} from '../utils/ModelsMessages.js'
 import ModelsService from './models_service.js'
 import path from 'path'
 import sharp from 'sharp'
@@ -29,6 +14,10 @@ import QueryService from './query_service.js'
 import withCostWS from '../decorators/withCostWs.js'
 import ScoringService from './scoring_service.js'
 import { withCache } from '../decorators/withCache.js'
+import {
+  SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE,
+  SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE_ONLY_IMAGE,
+} from '../utils/ModelsMessages.js'
 
 export default class PhotosService {
   sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -105,8 +94,8 @@ export default class PhotosService {
     const { deepSearch, withInsights } = options
     const photos = await this.getPhotosByUser('1234')
 
-    const { structuredResult, sourceResult, useImage, searchModelMessage, expansionCost } =
-      await this.queryService.structureQuery(searchType, query)
+    const { structuredResult, sourceResult, useImage, expansionCost } =
+      await this.queryService.structureQueryLLM(searchType, query)
 
     const batchSize = 3
     const maxPageAttempts = 3
@@ -157,7 +146,6 @@ export default class PhotosService {
           batch,
           structuredResult,
           sourceResult,
-          searchModelMessage,
           searchType,
           paginatedPhotos
         )
@@ -235,10 +223,17 @@ export default class PhotosService {
     batch: any[],
     structuredResult: any,
     sourceResult: any,
-    searchModelMessage: any,
     searchType: 'semantic' | 'creative',
     paginatedPhotos: any[]
   ) {
+    let searchModelMessage
+    if (searchType === 'creative' || searchType === 'semantic') {
+      searchModelMessage =
+        sourceResult.requireSource === 'image'
+          ? SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE_ONLY_IMAGE
+          : SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE(true)
+    }
+
     let needImage = sourceResult.requireSource == 'image'
     const method = 'getGPTResponse' // !needImage ? 'getDSResponse' : 'getGPTResponse'
     let chunkPromises = batch.map(async (batchedPhoto) => {

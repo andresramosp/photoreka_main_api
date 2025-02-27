@@ -127,6 +127,21 @@ export default class ModelsService {
   }
 
   @MeasureExecutionTime
+  async getNoPrefixQuery(query) {
+    try {
+      const payload = { query }
+      const { url, requestPayload, headers } = this.buildRequestConfig('query_no_prefix', payload)
+
+      const { data } = await axios.post(url, requestPayload, { headers })
+
+      return data.output ? data.output : data || {}
+    } catch (error) {
+      console.error('Error en getStructuredQuery:', error.message)
+      return {}
+    }
+  }
+
+  @MeasureExecutionTime
   public async getHFResponse(imagesItems, prompt) {
     try {
       // Se asume que imagesItems es un array de objetos { id, base64 }

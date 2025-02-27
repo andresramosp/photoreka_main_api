@@ -44,6 +44,12 @@ const getWeights = (deepSearch) => {
       embeddingsDescsThreshold: deepSearch ? 0.17 : 0.35,
       embeddingsFullQueryThreshold: deepSearch ? 0.35 : 0.55,
     },
+    nuancesTags: {
+      tags: 1,
+      desc: 0,
+      fullQuery: null,
+      embeddingsTagsThreshold: deepSearch ? 0.35 : 0.65,
+    },
   }
 }
 
@@ -68,9 +74,7 @@ export default class ScoringService {
     // Ademas, para strict, tenemos en cuenta el numero de segmento, ya que para el primero exigiremos un poco más
 
     if (strictInference) {
-      let maxSegmentOffset = 0.5
-      let segmentOffset = segmentIndex == -1 ? 0 : maxSegmentOffset - segmentIndex * 0.2
-      return scoredPhotoElements.filter((element) => element.proximity > 1 + segmentOffset)
+      return scoredPhotoElements.filter((element) => element.proximity > 1)
     } else {
       // Incluimos negativos para descartar casos muy flagrantes opuestos (-0.9)
       return scoredPhotoElements.filter((element) => element.proximity > -1)
@@ -110,7 +114,7 @@ export default class ScoringService {
   // @MeasureExecutionTime
   // TODO: userid!!
   @withCache({
-    key: (_, arg2, arg3, arg4) => `${arg2.original}_${arg3}_${arg4}`,
+    key: (_, arg2, arg3, arg4) => `getScoredPhotosByTagsAndDesc_ ${arg2.original}_${arg3}_${arg4}`,
     provider: 'redis',
     ttl: 60 * 5,
   })
@@ -129,10 +133,9 @@ export default class ScoringService {
     }))
 
     const strictInference = searchType !== 'creative'
-    // La fullQuery se hace siempre, salvo cuando es deep search y solo hay un segmento, en cuyo caso sería redundante
+
     const performFullQuerySearch = structuredQuery.positive_segments.length > 1 || !deepSearch
 
-    // Si hay más de un segmento, lanzamos fullQuery en paralelo usando el array original.
     const fullQueryPromise: Promise<ScoredPhoto[]> = performFullQuerySearch
       ? this.getScoredPhotoDescBySegment(
           photos,
@@ -140,6 +143,23 @@ export default class ScoringService {
           weights[searchType].embeddingsFullQueryThreshold,
           strictInference,
           true
+        )
+      : Promise.resolve([])
+
+    const performNuancesQuerySearch =
+      structuredQuery.nuances_segments.length > 0 && searchType == 'creative'
+
+    const nuancesQuery: Promise<ScoredPhoto[]> = performNuancesQuerySearch
+      ? Promise.all(
+          structuredQuery.nuances_segments.map((nuance_segment, index) =>
+            this.processSegment(
+              { name: nuance_segment, index },
+              aggregatedScores,
+              weights.nuancesTags,
+              strictInference,
+              deepSearch
+            )
+          )
         )
       : Promise.resolve([])
 
@@ -159,18 +179,24 @@ export default class ScoringService {
     })()
 
     // Esperamos ambas promesas en paralelo.
-    const [scoresAfterSegments, fullQueryDescScores] = await Promise.all([
+    const [scoresAfterSegments, fullQueryDescScores, nuancesQueryTagsScore] = await Promise.all([
       segmentsPromise,
       fullQueryPromise,
+      nuancesQuery,
     ])
 
     // Mergeamos el score fullQuery en los resultados finales.
-    const finalScores = this.mergeTagDescScoredPhotos(
-      scoresAfterSegments,
-      [],
-      fullQueryDescScores,
-      { tags: 0, desc: weights[searchType].fullQuery }
-    )
+    let finalScores = this.mergeTagDescScoredPhotos(scoresAfterSegments, [], fullQueryDescScores, {
+      tags: 0,
+      desc: weights[searchType].fullQuery,
+    })
+
+    for (let nuanceTagScore of nuancesQueryTagsScore) {
+      finalScores = this.mergeTagDescScoredPhotos(finalScores, nuanceTagScore, [], {
+        tags: 1,
+        desc: 0,
+      })
+    }
 
     let potentialMaxScore = this.getMaxPotentialScore(structuredQuery, searchType, weights)
 
@@ -206,11 +232,12 @@ export default class ScoringService {
   }
 
   // TODO: userid!!
-  @withCache({
-    key: (_, arg2, arg3, arg4) => `${JSON.stringify(arg2)}_${JSON.stringify(arg3)}_${arg4}`,
-    provider: 'redis',
-    ttl: 120,
-  })
+  // @withCache({
+  //   key: (_, arg2, arg3, arg4) =>
+  //     `getScoredPhotosByTags_${JSON.stringify(arg2)}_${JSON.stringify(arg3)}_${arg4}`,
+  //   provider: 'redis',
+  //   ttl: 120,
+  // })
   public async getScoredPhotosByTags(
     photos: Photo[],
     included: string[],
@@ -463,6 +490,9 @@ export default class ScoringService {
 
     // Calcular el score para cada foto basándonos en los tags coincidentes
     let scoredPhotos = photos.map((photo) => {
+      if (photo.id == '77b61dbd-e99a-4996-a21a-a64467b5651a') {
+        console.log()
+      }
       photo.matchingTags = photo.matchingTags || []
       const matchingPhotoTags = photo.tags?.filter((tag) => tagMap.has(tag.name)) || []
       photo.matchingTags = [
