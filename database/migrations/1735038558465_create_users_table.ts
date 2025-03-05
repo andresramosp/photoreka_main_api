@@ -4,6 +4,10 @@ export default class extends BaseSchema {
   protected tableName = 'users'
 
   async up() {
+    this.schema.raw(`
+      CREATE EXTENSION IF NOT EXISTS vector;
+    `)
+
     this.schema.createTable(this.tableName, (table) => {
       table.increments('id')
       table.string('name', 255).notNullable()

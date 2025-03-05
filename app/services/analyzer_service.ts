@@ -104,24 +104,18 @@ import { Exception } from '@adonisjs/core/exceptions'
 import ModelsService from './models_service.js'
 import Tag from '#models/tag'
 import {
-  SYSTEM_MESSAGE_ANALIZER_MULTIPLE,
-  SYSTEM_MESSAGE_ANALIZER_MULTIPLE_HF,
-  SYSTEM_MESSAGE_ANALIZER_MULTIPLE_v2,
-  SYSTEM_MESSAGE_ANALYZER_DESC_HF,
-  SYSTEM_MESSAGE_ANALYZER_HF,
-  SYSTEM_MESSAGE_ANALYZER_HF_SHORT,
-  SYSTEM_MESSAGE_ANALYZER_HF_v2,
-  SYSTEM_MESSAGE_ANALYZER_TAGS_HF,
+  SYSTEM_MESSAGE_ANALYZER_GPT_CONTEXT_AND_STORY_FOR_PRETRAIN,
+  SYSTEM_MESSAGE_ANALYZER_GPT_DESC,
+  SYSTEM_MESSAGE_ANALYZER_MOLMO_STREET_PHOTO_PRETRAINED,
+  SYSTEM_MESSAGE_ANALYZER_MOLMO_TOPOLOGIC_PRETRAINED,
+  SYSTEM_MESSAGE_TAGS_TEXT_EXTRACTION_GPT,
 } from '../utils/ModelsMessages.js'
 import { createRequire } from 'module'
 import EmbeddingsService from './embeddings_service.js'
 import DescriptionChunk from '#models/descriptionChunk'
 import MeasureExecutionTime from '../decorators/measureExecutionTime.js'
-import withCost from '../decorators/withCost.js'
-import withCostWS from '../decorators/withCostWs.js'
 import ws from './ws.js'
 import NLPService from './nlp_service.js'
-import { base64 } from '@adonisjs/core/helpers'
 const require = createRequire(import.meta.url)
 const pluralize = require('pluralize')
 
@@ -130,14 +124,14 @@ const lemmatizer = {
 }
 
 export default class AnalyzerService {
-  public async *analyze(photosIds: string[], maxImagesPerBatch) {
+  public async *analyzeGPT(photosIds: string[]) {
     const photosService = new PhotosService()
     const modelsService = new ModelsService()
 
     const photos = await photosService.getPhotosByIds(photosIds)
     const uploadPath = path.join(process.cwd(), 'public/uploads/photos')
 
-    const validImages = []
+    let photosToProcess = []
     for (const photo of photos) {
       const filePath = path.join(uploadPath, `${photo.name}`)
 
@@ -145,7 +139,7 @@ export default class AnalyzerService {
         await fs.access(filePath)
         const resizedBuffer = await sharp(filePath).toBuffer()
 
-        validImages.push({
+        photosToProcess.push({
           id: photo.id,
           base64: resizedBuffer.toString('base64'),
         })
@@ -154,76 +148,69 @@ export default class AnalyzerService {
       }
     }
 
-    if (validImages.length === 0) {
+    if (photosToProcess.length === 0) {
       throw new Exception('No valid images found for the provided IDs')
     }
 
-    const batchPromises = []
+    const results = []
 
-    for (let i = 0; i < validImages.length; i += maxImagesPerBatch) {
-      const batch = validImages.slice(i, i + maxImagesPerBatch)
+    // Fase GPT: Extracción de tags, fijación de contexto
 
-      // TODO: probar descripcion con GPT (ahorre de input tokens), y tags con Molmo
+    let photosProcessed = []
+    const maxImagesPerBatchGPT = 6
+    let sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-      const batchPromise = modelsService.getGPTResponse(
-        SYSTEM_MESSAGE_ANALIZER_MULTIPLE_v2(batch),
-        [
-          ...batch.map(({ base64 }) => ({
-            type: 'image_url',
-            image_url: {
-              url: `data:image/jpeg;base64,${base64}`,
-              detail: 'high',
-            },
-          })),
-        ],
+    for (let i = 0; i < photosToProcess.length; i += maxImagesPerBatchGPT) {
+      const batch = photosToProcess.slice(i, i + maxImagesPerBatchGPT)
+
+      const responseGPT = await modelsService.getGPTResponse(
+        SYSTEM_MESSAGE_ANALYZER_GPT_DESC(batch),
+        batch.map(({ base64 }) => ({
+          type: 'image_url',
+          image_url: {
+            url: `data:image/jpeg;base64,${base64}`,
+            detail: 'high',
+          },
+        })),
         'gpt-4o',
         null,
         false
       )
 
-      // const batchPromise = modelsService.getHFResponse(
-      //   batch.map((photo) => ({ id: photo.id, base64: photo.base64 })),
-      //   SYSTEM_MESSAGE_ANALYZER_HF_v2
-      // )
-
-      batchPromises.push(batchPromise)
-      await new Promise((resolve) => setTimeout(resolve, 750)) // Evitar rate-limits
+      photosProcessed.push(...responseGPT.result)
+      await sleep(750)
     }
 
-    const responses = await Promise.allSettled(batchPromises)
+    // PROVISIONAL
 
-    const results: any[] = []
-    const costs: any[] = []
+    photosProcessed = photosProcessed.map((photo) => ({
+      id: photo.id,
+      descriptionGeneric: photo.atmosphere_description,
+      descriptionTopologic: photo.objects_description,
+      descriptionGenre: photo.storytelling_description,
+      descriptionShort: photo.context_description,
+    }))
 
-    responses.forEach((response) => {
-      if (response.status === 'fulfilled') {
-        try {
-          results.push(...response.value.result)
-          costs.push(response.value.cost)
-        } catch (err) {
-          console.log(err)
-        }
-      } else {
-        console.warn('Batch processing failed:', response.reason)
-      }
-    })
+    let { photosWithDescs: photosProcessedWithTags, costs } =
+      await this.addTagsFromDescs(photosProcessed)
+
+    results.push(...photosProcessedWithTags)
 
     try {
-      await this.addMetadata(results)
+      await this.processDescAndTags(results)
       yield { type: 'analysisComplete', data: { cost: costs } }
       return
     } catch (err) {}
   }
 
-  // El split de desc y tags solo tiene sentido con dos endpoints o 2 replicas
-  public async *analyze_v2(photosIds: string[], maxImagesPerBatch) {
+  public async *analyzeGPTAndMolmo(photosIds: string[]) {
     const photosService = new PhotosService()
     const modelsService = new ModelsService()
 
     const photos = await photosService.getPhotosByIds(photosIds)
     const uploadPath = path.join(process.cwd(), 'public/uploads/photos')
 
-    const validImages = []
+    let photosToProcess = []
     for (const photo of photos) {
       const filePath = path.join(uploadPath, `${photo.name}`)
 
@@ -231,7 +218,7 @@ export default class AnalyzerService {
         await fs.access(filePath)
         const resizedBuffer = await sharp(filePath).toBuffer()
 
-        validImages.push({
+        photosToProcess.push({
           id: photo.id,
           base64: resizedBuffer.toString('base64'),
         })
@@ -240,120 +227,134 @@ export default class AnalyzerService {
       }
     }
 
-    if (validImages.length === 0) {
+    if (photosToProcess.length === 0) {
       throw new Exception('No valid images found for the provided IDs')
     }
 
-    const batchPromises = []
+    const results = []
 
-    for (let i = 0; i < validImages.length; i += maxImagesPerBatch) {
-      const batch = validImages.slice(i, i + maxImagesPerBatch)
+    // Fase GPT: Contexto y story telling
 
-      // Lanzamos ambas peticiones en paralelo para cada batch
-      const descPromise = modelsService.getHFResponse(
-        batch.map((photo) => ({ id: photo.id, base64: photo.base64 })),
-        SYSTEM_MESSAGE_ANALYZER_DESC_HF
+    const pretrainTexts = []
+    const maxImagesPerBatchGPT = 6
+    let sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+    for (let i = 0; i < photosToProcess.length; i += maxImagesPerBatchGPT) {
+      const batch = photosToProcess.slice(i, i + maxImagesPerBatchGPT)
+
+      const responseGPT = await modelsService.getGPTResponse(
+        SYSTEM_MESSAGE_ANALYZER_GPT_CONTEXT_AND_STORY_FOR_PRETRAIN(batch),
+        batch.map(({ base64 }) => ({
+          type: 'image_url',
+          image_url: {
+            url: `data:image/jpeg;base64,${base64}`,
+            detail: 'high',
+          },
+        })),
+        'gpt-4o',
+        null,
+        0
       )
-      const tagsPromise = modelsService.getHFResponse(
-        batch.map((photo) => ({ id: photo.id, base64: photo.base64 })),
-        SYSTEM_MESSAGE_ANALYZER_TAGS_HF
-      )
 
-      // Combinamos ambos resultados cuando se resuelven
-      const combinedPromise = Promise.all([descPromise, tagsPromise]).then(([descRes, tagsRes]) => {
-        const mergedBatch = batch.map((photo) => {
-          const descResult = descRes.result.find((r: any) => r.id === photo.id)
-          const tagsResult = tagsRes.result.find((r: any) => r.id === photo.id)
-          return {
-            id: photo.id,
-            description: descResult ? descResult.description : null,
-            ...tagsResult,
-          }
-        })
-        return {
-          result: mergedBatch,
-          cost: { descCost: descRes.cost, tagsCost: tagsRes.cost },
-        }
-      })
-
-      batchPromises.push(combinedPromise)
-      await new Promise((resolve) => setTimeout(resolve, 250)) // Evitar rate-limits
+      pretrainTexts.push(...responseGPT.result)
+      await sleep(750) // Delay antes de iniciar el siguiente batch
     }
 
-    const responses = await Promise.allSettled(batchPromises)
+    const photosWithPretrained = photosToProcess.map((photo) => ({
+      ...photo,
+      descriptionShort: pretrainTexts.find((sd) => sd.id == photo.id).context_description,
+      descriptionGenre: pretrainTexts.find((sd) => sd.id == photo.id).storytelling_description,
+    }))
 
-    const results: any[] = []
-    const costs: any[] = []
+    const batchPromisesMolmo = []
+    const resultsMolmo = []
+    let maxImagesPerBatchMolmo = photosWithPretrained.length
 
-    responses.forEach((response) => {
-      if (response.status === 'fulfilled') {
-        try {
-          results.push(...response.value.result)
-          costs.push(response.value.cost)
-        } catch (err) {
-          console.log(err)
-        }
-      } else {
-        console.warn('Batch processing failed:', response.reason)
-      }
-    })
+    for (let i = 0; i < photosWithPretrained.length; i += maxImagesPerBatchMolmo) {
+      const batch = photosWithPretrained.slice(i, i + maxImagesPerBatchMolmo)
+
+      let { result: photosProcessed } = await modelsService.getMolmoResponse(
+        batch.map((photo) => ({ id: photo.id, base64: photo.base64 })),
+        [],
+        [
+          ...photosWithPretrained.map((photo, index) => ({
+            id: photo.id,
+            prompts: [
+              {
+                id: 'description_topologic',
+                text: SYSTEM_MESSAGE_ANALYZER_MOLMO_TOPOLOGIC_PRETRAINED(photo.descriptionShort),
+              },
+              // {
+              //   id: 'description_generic',
+              //   text: SYSTEM_MESSAGE_ANALYZER_MOLMO_STREET_PHOTO_PRETRAINED(photo.descriptionShort),
+              // },
+            ],
+          })),
+        ]
+      )
+
+      photosProcessed = photosProcessed.map((photo) => ({
+        id: photo.id,
+        descriptionGeneric: '',
+        // photo.descriptions.find((d) => d.id_prompt == 'description_generic')
+        //   .description,
+        descriptionTopologic: photo.descriptions.find((d) => d.id_prompt == 'description_topologic')
+          .description,
+        descriptionGenre: photosWithPretrained.find((p) => photo.id == p.id).descriptionGenre,
+        descriptionShort: photosWithPretrained.find((p) => photo.id == p.id).descriptionShort,
+      }))
+
+      let { photosWithDescs: photosProcessedWithTags, costs } =
+        await this.addTagsFromDescs(photosProcessed)
+
+      results.push(...photosProcessedWithTags)
+    }
 
     try {
-      await this.addMetadata(results)
+      await this.processDescAndTags(results)
       yield { type: 'analysisComplete', data: { cost: costs } }
       return
-    } catch (err) {
-      console.error(err)
-    }
+    } catch (err) {}
   }
 
-  private async compressPhotos(photos) {
-    const uploadPath = path.join(process.cwd(), 'public/uploads/photos')
+  // Función sleep externa
 
-    let minQuality = 30
-    let minSizeKb = 80
+  private async addTagsFromDescs(photosWithDescs: any[]): Promise<any[]> {
+    const modelsService = new ModelsService()
+    let costs: number[] = []
+    const delayMs = 500
 
-    for (const photo of photos) {
-      const filePath = path.join(uploadPath, photo.name)
-      const tempFilePath = path.join(uploadPath, `temp-${photo.name}`)
+    let sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-      try {
-        await fs.access(filePath) // Verifica si el archivo existe
+    const tasks = photosWithDescs.map(async (photo, index) => {
+      await sleep(index * delayMs)
+      const completeDescForTags = `1. Context: ${photo.descriptionShort} | 2. Story: ${photo.descriptionGenre} | 3. Topology: ${photo.descriptionTopologic} `
+      const { result, cost } = await modelsService.getGPTResponse(
+        SYSTEM_MESSAGE_TAGS_TEXT_EXTRACTION_GPT,
+        JSON.stringify({ description: completeDescForTags }),
+        'gpt-4o-mini'
+      )
 
-        let quality = 80 // Calidad inicial (ajustable)
+      // TODO: si no hay ningun grupo "people", añadimos un "no people"!
 
-        while (true) {
-          // Redimensiona la imagen con un ancho fijo de 512px, manteniendo la proporción
-          await sharp(filePath)
-            .resize({ width: 512, fit: 'inside' })
-            .jpeg({ quality, progressive: true }) // Comprime con calidad ajustable
-            .toFile(tempFilePath)
-
-          // Obtiene el tamaño del archivo resultante
-          const stats = await fs.stat(tempFilePath)
-          if (stats.size <= minSizeKb * 1024 || quality <= minQuality) break // Sale si cumple con el tamaño o si la calidad es muy baja
-
-          quality -= 5 // Reduce la calidad y reintenta
+      const tagsDict: { [key: string]: string[] } = {}
+      result.tags.forEach((tagStr: string) => {
+        const [tag, group] = tagStr.split('|').map((item) => item.trim())
+        if (!tagsDict[group]) {
+          tagsDict[group] = []
         }
+        tagsDict[group].push(tag)
+      })
 
-        // Reemplaza el archivo original con el comprimido
-        await fs.rename(tempFilePath, filePath)
-      } catch (error) {
-        console.error(`Error procesando ${photo.name}:`, error)
+      costs.push(cost)
+      Object.assign(photo, tagsDict)
+    })
 
-        // Limpieza: elimina el archivo temporal si existe
-        try {
-          await fs.unlink(tempFilePath)
-        } catch (unlinkError) {
-          if (unlinkError.code !== 'ENOENT') {
-            console.error(`Error eliminando archivo temporal ${tempFilePath}:`, unlinkError)
-          }
-        }
-      }
-    }
+    await Promise.all(tasks)
+    return { photosWithDescs, costs }
   }
 
-  public async addMetadata(metadata: { id: string; [key: string]: any }[]) {
+  public async processDescAndTags(dictionary: { id: string; [key: string]: any }[]) {
     const existingTags = await Tag.all()
     const tagMap = new Map(
       existingTags.map((tag) => [lemmatizer.stem(tag.name.toLowerCase()), tag])
@@ -362,8 +363,16 @@ export default class AnalyzerService {
     const nlpService = new NLPService()
 
     await Promise.all(
-      metadata.map(async (data) => {
-        const { id, description, ...rest } = data
+      dictionary.map(async (data) => {
+        const {
+          id,
+          descriptionShort,
+          descriptionGeneric,
+          descriptionTopologic,
+          descriptionGenre,
+          ...generatedTags
+        } = data
+
         const photo = await Photo.query().where('id', id).first()
 
         if (photo) {
@@ -371,36 +380,36 @@ export default class AnalyzerService {
           const tagInstances: any[] = []
 
           await Promise.all([
-            await this.processDesc(description, photo.id),
-            ...Object.keys(rest)
-              .filter((key) => key.endsWith('_tags'))
-              .map(async (key) => {
-                const group = key.replace('_tags', '')
-                let tags = rest[key] || []
-                for (let tag of tags) {
-                  let sustantivesFromTag = nlpService.getSustantives(tag)
-                  if (sustantivesFromTag?.length) tags.push(...sustantivesFromTag)
-                }
-                await Promise.all(
-                  tags.map((tagName: string) =>
-                    this.processTag(tagName, group, tagMap, tagInstances)
-                  )
-                )
-              }),
+            await this.createDescChunks([descriptionShort, descriptionGenre], photo.id),
+            ...Object.keys(generatedTags).map(async (group) => {
+              let tags = generatedTags[group] || []
+              for (let tag of tags) {
+                let sustantivesFromTag = nlpService.getSustantives(tag)
+                if (sustantivesFromTag?.length) tags.push(...sustantivesFromTag)
+              }
+              await Promise.all(
+                tags.map((tagName: string) => this.processTag(tagName, group, tagMap, tagInstances))
+              )
+            }),
           ])
 
           const fields = Array.from(Photo.$columnsDefinitions.keys())
           fields.forEach((key) => {
-            if (rest[key]) {
-              updateData[key] = rest[key]
-              delete rest[key]
+            if (generatedTags[key]) {
+              updateData[key] = generatedTags[key]
+              delete generatedTags[key]
             }
           })
 
           photo.merge({
             ...updateData,
-            description,
-            metadata: { ...photo.metadata, ...rest },
+            descriptionShort,
+            descriptionGeneric,
+            descriptionGenre: '',
+            descriptionTopologic,
+            descriptionGenre,
+            processed: true,
+            model: 'Molmo',
           })
 
           await photo.save()
@@ -424,11 +433,14 @@ export default class AnalyzerService {
   }
 
   @MeasureExecutionTime
-  public async processDesc(desc: string, photoId: string) {
+  public async createDescChunks(desc: string | string[], photoId: string) {
     const modelsService = new ModelsService()
 
-    // Dividir el texto en 5 fragmentos de tamaño similar, terminando en puntos
-    const splitChunks = this.splitIntoChunks(desc, 5)
+    // Si 'desc' es un array, concatenar sus elementos, sino se usa directamente
+    const fullDesc = Array.isArray(desc) ? desc.join(' | ') : desc
+
+    // Dividir el texto en fragmentos de tamaño similar, terminando en puntos
+    const splitChunks = this.splitIntoChunks(fullDesc, fullDesc.length / 350)
 
     for (const chunk of splitChunks) {
       const { embeddings } = await modelsService.getEmbeddings([chunk])
@@ -496,7 +508,8 @@ export default class AnalyzerService {
 
       if (!tag) {
         try {
-          const { embeddings } = await modelsService.getEmbeddings([tagName])
+          const stringForVector = `${tagName} (${group})` // 'black cat (animals)'
+          const { embeddings } = await modelsService.getEmbeddings([stringForVector])
           tag = await Tag.create({ name: tagName, group, embedding: embeddings[0] })
           tagMap.set(lemmatizedTagName, tag)
           // console.log('Adding new tag: ', lemmatizedTagName)
@@ -512,6 +525,52 @@ export default class AnalyzerService {
       if (tag) tagInstances.push(tag)
     } else {
       console.log('Ignoring tag: ', tagName)
+    }
+  }
+
+  private async compressPhotos(photos) {
+    const uploadPath = path.join(process.cwd(), 'public/uploads/photos')
+
+    let minQuality = 30
+    let minSizeKb = 80
+
+    for (const photo of photos) {
+      const filePath = path.join(uploadPath, photo.name)
+      const tempFilePath = path.join(uploadPath, `temp-${photo.name}`)
+
+      try {
+        await fs.access(filePath) // Verifica si el archivo existe
+
+        let quality = 80 // Calidad inicial (ajustable)
+
+        while (true) {
+          // Redimensiona la imagen con un ancho fijo de 512px, manteniendo la proporción
+          await sharp(filePath)
+            .resize({ width: 512, fit: 'inside' })
+            .jpeg({ quality, progressive: true }) // Comprime con calidad ajustable
+            .toFile(tempFilePath)
+
+          // Obtiene el tamaño del archivo resultante
+          const stats = await fs.stat(tempFilePath)
+          if (stats.size <= minSizeKb * 1024 || quality <= minQuality) break // Sale si cumple con el tamaño o si la calidad es muy baja
+
+          quality -= 5 // Reduce la calidad y reintenta
+        }
+
+        // Reemplaza el archivo original con el comprimido
+        await fs.rename(tempFilePath, filePath)
+      } catch (error) {
+        console.error(`Error procesando ${photo.name}:`, error)
+
+        // Limpieza: elimina el archivo temporal si existe
+        try {
+          await fs.unlink(tempFilePath)
+        } catch (unlinkError) {
+          if (unlinkError.code !== 'ENOENT') {
+            console.error(`Error eliminando archivo temporal ${tempFilePath}:`, unlinkError)
+          }
+        }
+      }
     }
   }
 }

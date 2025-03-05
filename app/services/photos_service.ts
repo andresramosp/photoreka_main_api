@@ -41,17 +41,18 @@ export default class PhotosService {
     return photos
   }
 
-  @withCache({
-    key: (arg1) => `getPhotosByUser_${arg1}`,
-    provider: 'redis',
-    ttl: 50 * 5,
-  })
+  // @withCache({
+  //   key: (arg1) => `getPhotosByUser_${arg1}`,
+  //   provider: 'redis',
+  //   ttl: 50 * 5,
+  // })
   public async getPhotosByUser(userId: string[]) {
     let photos = await Photo.query().preload('tags').preload('descriptionChunks')
     return photos.map((photo) => ({
       ...photo.$attributes,
       tags: photo.tags,
       descriptionChunks: photo.descriptionChunks,
+      description: photo.description,
       tempID: Math.random().toString(36).substr(2, 4),
     }))
   }

@@ -22,12 +22,12 @@ export default class CatalogController {
       const outputPath = path.join(uploadPath, fileName)
 
       await sharp(photoData.buffer)
-        .resize({ width: 2000, fit: 'inside' })
+        .resize({ width: 1500, fit: 'inside' })
         .toFormat('jpeg')
         .toFile(outputPath)
 
       const photo = new Photo()
-      photo.id = crypto.randomUUID()
+      // photo.id = crypto.randomUUID()
       photo.name = fileName
       photo.url = photoData.url
 

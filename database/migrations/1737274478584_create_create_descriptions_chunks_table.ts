@@ -7,8 +7,9 @@ export default class extends BaseSchema {
     this.schema.raw(`
       CREATE TABLE ${this.tableName} (
         id SERIAL PRIMARY KEY,
-        photo_id UUID NOT NULL,
+        photo_id INTEGER NOT NULL,
         chunk TEXT,
+        category VARCHAR(128),
         embedding VECTOR(768),
         CONSTRAINT fk_photo FOREIGN KEY (photo_id) REFERENCES photos(id) ON DELETE CASCADE
       )

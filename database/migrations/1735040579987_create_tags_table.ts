@@ -5,15 +5,10 @@ export default class extends BaseSchema {
 
   async up() {
     this.schema.raw(`
-      CREATE EXTENSION IF NOT EXISTS vector;
-    `)
-
-    this.schema.raw(`
       CREATE TABLE ${this.tableName} (
         id SERIAL PRIMARY KEY,
         name VARCHAR(255) NOT NULL UNIQUE,
         "group" VARCHAR(255),
-        children JSONB,
         embedding VECTOR(768),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP

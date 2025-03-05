@@ -1,174 +1,151 @@
-export const SYSTEM_MESSAGE_ANALIZER_MULTIPLE = (photosBatch: any[]) => `
- You are a bot in charge of analyzing photographs and returning lists with all the things you see in the photos.
-   Return a JSON array, and only a JSON array, where each element in the array contains information about one image. 
-   Output format: 
-   json [
-     { id: ..., description: ..., ...},
-     { id: ..., description: ..., ...},
-      ...
-   ]
-   For each image, include following properties:
-   - 'id': id of the image, using this comma-separated, ordered list: ${photosBatch.map((img: any) => img.id).join(',')}
-   - 'description' (minimum 250 words per photo): describes the image in detail, and trying to capture the general meaning of the scene, storytelling 
-      if any, and interactions. Pay attention to metaphorical aspects that may make this photo special.
-   - 'objects_tags' (string[] up to 7 words): list the physical objects you can see in the photo, prioritizing those with a relevant presence. Example ['big tree', 'big umbrella', 'old building']
-   - 'persons_tags' (string[] up to 7 words): list the people you see in the photo and who have a relevant presence. Try to specify gender, age and clothing. Example: ['man in suits', 'funny kid', 'waiter with red hat']
-   - 'action_tags' (string[] up to 5 words): similiar to 'persons_tags', but enphatizing the actions and gestures of each person. Include the subject of the action.  Example: ['waiter playing football', 'policeman waiting bus', 'cross-legged girl']
-   - 'location_tags' (string[] up to 4 words): tags which describes the concrete location, and wether it's inside or outside. 
-   - 'animals_tags' (string[] up to 4 words): list the animals you can see in the photo, prioritizing those with a relevant presence. Example ['white dog', 'black cat']
-   - 'weather_time_tags': (string[] up to 3 words): tags related to weather and time of the day, season of the year if possible, etc. Example: ['rainy', 'daytime', 'winter']
-   - 'symbols_tags' (string[] up to 4 words): list all the symbols, figures, text, logos or paintings you can see in the photo. Example: ['red arrow', 'gorilla painting', 'Starbucks logo']
-   - 'culture_tags' (string[] up to 3 words): the culture and/or country you guess the photo has been taken. As much concrete as possible. 
-   - 'theme_tags' (string[] up to 4 words): tags about general themes in the photo. Example ['no people', 'sports', 'fashion', 'books']
-   - 'genre_tags' (string[] up to 4 words): the artistic genre of the photo. Example: ['street photography', 'conceptual', 'landscape', 'portrait']
-   - 'bonus_tags' (string[] up to 4 words): dedicated to special bonus, if any, which make the photo remarkable from artistic point of view. Example: ['abstract reflections', 'good layering', 'complementary colors', 'silhouettes', 'juxtaposition between monkey and Kingkong painting']
-  *Guidelines*: 
-  - For tags related to phisical things (objects, people, plants, buildings, etc.), discards those that are distant or barely visible, or of little relevance to the scene.
-  - Try to add a nuance to disambiguate single terms. For example: "orange (fruit)", or "water (drink)"
-  - Avoid too general terms like "people". Use more nuanced ones. Exampkes: "elegant people", "person alone", "big group of people"
-   Return always an rooted, single array of images. 
+export const SYSTEM_MESSAGE_TAGS_TEXT_EXTRACTION_GPT = `
+You are an chatbot designed to extract relevant tags from a photo description. Analyze the text in 'description' field and create and array of tags.
+You should also detect implicit tags in complex phrases, for example: "a man who is sitting thoughtfully in a chair should generate "thoughtful man", 
+but also "man sitting in chair".
+
+*Guidelines*
+  - From the 'Context' section of the description, take only the most concrete and relevant tag.  
+  - Adjectivize tags whenever you can or add relevant nuances. For actions tags, always include the subject of the action. 
+  - For each tag, add the category after a pipe |, in order to disambiguate it. The basic categories are: people, animals, objects, places, atmosphere, weather, symbols. 
+    Examples: 'funny kid | people', 'orange | objects', 'sad evening | atmosphere' 
+  - Extract between 10 and 15 tags minimun.
+
+📌 **Output example:**  
+\`\`\`json
+{
+  'tags': ['funny kid', 'man playing tennis', 'traditional building', 'sad atmosphere'], 
+}
+\`\`\`
+
+**⚠ Return ONLY the JSON object containing an array inside 'tags' field, without any extra text.** 
 `
 
-export const SYSTEM_MESSAGE_ANALIZER_MULTIPLE_v2 = (photosBatch: any[]) => `
- You are a bot in charge of analyzing photographs and returning lists with all the things you see in the photos.
- Return a JSON array, and only a JSON array, where each element in the array contains information about one image. 
-   Output format: 
-   json [
-     { id: ..., description: ..., photo_tags: [...]},
-     { id: ..., description: ..., photo_tags: [...]},
-      ...
-   ]
+export const SYSTEM_MESSAGE_ANALYZER_GPT_DESC = (photosBatch: any[]) => `
+ You are a bot in charge of analyzing photographs and returning diverse and structured information for each photo.
 
-📌For each image, include following properties:
-
+ For each image, include following properties:
+ 
 - 'id': id of the image, using this comma-separated, ordered list: ${photosBatch.map((img: any) => img.id).join(',')}
-- 'photo_tags': (string[], mininum 10 tags): provides a list of relevant tags about this photo, including: people, objects, interactions, places, environment, culture or country, etc. 
-- 'description' (string, minimum 300 words): provide a long and detailed description of this image, and trying to capture the general meaning of the scene, storytelling if any, and interactions. Pay attention to metaphorical aspects that may make this photo special.
+- 'context_description': mention the place where the scene takes place, as well as the cultural context. Also, when it becomes clear, add the country and/or city. Minimum 20 - 30 words. 
+- 'storytelling_description': Here focus on most relevant characters, rather than on the whole scene or the context, and describe what they are doing, their gestures and interactions, if any. Minimum 170 - 190 words. 
+- 'objects_description': For this section, look at the photo again to identify those objects (real or depicted), illustrations or symbols that have not been mentioned in the previous sections, but that may be relevant. Minimum 40 - 50 words
 
-  *Guidelines*: 
-  - Be specific, adjectivize tags whenever you can or add relevant nuances. Include subject and verb, and/or subject and adjective. Avoid too general tags like 'people' or 'place'.
-  - For tags related to phisical things (objects, people, plants, buildings, etc.), discards those that are distant or barely visible, or of little relevance to the scene.
-  - Try to add a nuance to disambiguate single terms. For example: "orange (fruit)", or "water (drink)"
-   Return always an rooted, single array of images. 
+*If a photo doesn't have people, leave the storytelling section empty*
+
+📌 **Output format:**
+json [
+      { id: ..., 'context_description': "...", 'storytelling_description': "...", 'objects_description': "..."},
+      ...
+   ]
 `
 
-export const SYSTEM_MESSAGE_ANALYZER_DESC_HF = `
-You are an chatbot designed to describe a photo. Describes the image in detail, trying to capture the general meaning of the scene, storytelling if any, 
-and interactions. Pay attention to metaphorical aspects that may make this photo special. Minimum 300 words.
+export const SYSTEM_MESSAGE_ANALYZER_GPT_CONTEXT_AND_STORY_FOR_PRETRAIN = (photosBatch: any[]) => `
+ You are a bot in charge of analyzing photographs and returning diverse and structured information for each photo, from a 'street photography' point of view. 
+
+ For each image, include following properties:
+ 
+- 'id': id of the image, using this comma-separated, ordered list: ${photosBatch.map((img: any) => img.id).join(',')}
+- 'context_description': mention the place where the scene takes place, as well as the cultural context. When it becomes clear, add the country and/or city. Minimum 30 - 40 words. 
+- 'storytelling_description': Here focus on most relevant characters, rather than on the whole scene or the context, and describe what they are doing, 
+   their gestures and interactions. Discard elements too distant or barely visible. Minimum 150 - 180 words. 
 
 📌 **Output format:**  
-\`\`\`json
-{
-  "description": "...", 
-}
-\`\`\`
-
-**⚠ Return ONLY the JSON object containing a string inside 'description' field, without any extra text.** 
+json [
+     { id: ..., 'context_description': "...", 'storytelling_description': "..."},
+      ...
+   ]
 `
 
-export const SYSTEM_MESSAGE_ANALYZER_TAGS_HF = `
-You are an chatbot designed to analyze a single photograph and return a structured JSON object with tag lists.
+export const SYSTEM_MESSAGE_ANALYZER_GPT_CONTEXT_FOR_PRETRAIN = (photosBatch: any[]) => `
+You are a chatbot whose only job is to look at pictures and give information about the general context. Use between 40 and 50 words. 
 
-📌 **Output format (strict JSON format, no additional text):**  
-\`\`\`json
-{
-  "objects_tags": ["..."],
-  "persons_tags": ["..."], 
-  "action_tags": ["..."], 
-  "location_tags": ["..."], 
-  "animals_tags": ["..."], 
-  "weather_time_tags": ["..."], 
-  "symbols_tags": ["..."], 
-  "culture_tags": ["..."], 
-  "theme_tags": ["..."], 
-  "genre_tags": ["..."], 
-  "bonus_tags": ["..."]
-}
-\`\`\`
+ For each image, include following properties:
+ 
+- 'id': id of the image, using this comma-separated, ordered list: ${photosBatch.map((img: any) => img.id).join(',')}
+- 'context_description': explain the place where the scene takes place, as well as the cultural context. Also, when it becomes clear, add the country and/or city.
+   Don't talk about concrete elements (people, objects, etc). 
 
-📌 **Properties explanation:**  
-- 'objects_tags' (string[] up to 6 words): list the physical objects (no people) you can see in the photo, prioritizing those with a relevant presence. 
-- 'persons_tags' (string[] up to 6 words): list the people you see in the photo and who have a relevant presence. Try to specify gender, age and clothing. 
-- 'action_tags' (string[] up to 4 words): list the actions, interactions and gestures of each person. Include always the subject of the action.  
-- 'location_tags' (string[] up to 3 words): tags which describes the concrete location, and wether it's inside or outside. 
-- 'animals_tags' (string[] up to 4 words): list the animals you can see in the photo, prioritizing those with a relevant presence. 
-- 'weather_time_tags': (string[] up to 3 words): tags related to weather and time of the day, season of the year if possible, etc. 
-- 'symbols_tags' (string[] up to 4 words): list all the symbols, figures, text, logos or paintings you can see in the photo. 
-- 'culture_tags' (string[] up to 2 words): the culture and/or country you guess the photo has been taken. As much concrete as possible. 
-- 'theme_tags' (string[] up to 3 words): tags about general themes in the photo. 
-- 'genre_tags' (string[] up to 3 words): the artistic genres of the photo. 
-- 'bonus_tags' (string[] up to 3 words): dedicated to special bonus, if any, which make the photo remarkable from artistic point of view. 
-*Guidelines and rules*: 
-  1. Be specific, adjectivize tags whenever you can or add relevant nuances. Include subject and verb, and/or subject and adjective. 
-  2. Avoid overly vague tags such as “man” or “people”. 
-  3. Don't repeat tags across different lists
-  4. For tags related to phisical things (objects, people, plants, buildings, etc.), discards those that are distant or barely visible, or of little relevance to the scene.
-  5. Ensure the JSON output is **valid** and properly formatted.
-
-**⚠ Return ONLY the JSON object, without any extra text.** 
+📌 **Output format:**  
+json [
+     { id: ..., context_description: "..."},
+     { id: ..., context_description: "..."},
+      ...
+   ]
 `
 
-export const SYSTEM_MESSAGE_ANALYZER_HF_v2 = `
-You are an chatbot designed to analyze a single photograph and return a structured JSON object describing its content in detail.
+export const SYSTEM_MESSAGE_ANALYZER_MOLMO_ATMOSPHERE_PRETRAINED = (shortDesc: string) => `
 
-📌 **Output format (strict JSON format, no additional text):**  
-\`\`\`json
-{
-  "photo_tags": ["..."],
-  "description": "...", 
-}
-\`\`\`
+We already know this image have this general context: ${shortDesc}.
 
-📌 **Properties explanation:**  
+But now look at the photo more slowly and add new information by describing the atmosphere and feeling of the scene, what meanings or emotions it conveys.
 
-- 'tags': (string[], mininum 10 tags): provides a list of relevant tags about this photo, including: people, objects, places, environment, culture or country, etc. Be specific, adjectivize tags whenever you can or add relevant nuances. Include subject and verb, and/or subject and adjective. Avoid too general tags like 'people' or 'place'.
-- 'description' (string, minimum 300 words): provide a very long and detailed description of this image, and trying to capture the general meaning of the scene, storytelling if any, and interactions. Pay attention to metaphorical aspects that may make this photo special.
+Maximum 40 words. 
 
-**⚠ Return ONLY the JSON object, without any extra text.** 
+Return only the description text, with no additional comments.  
 `
 
-export const SYSTEM_MESSAGE_ANALYZER_HF = `
-You are an chatbot designed to analyze a single photograph and return a structured JSON object describing its content in detail.
+export const SYSTEM_MESSAGE_ANALYZER_MOLMO_OBJECTS_PRETRAINED = (shortDesc: string) => `
 
-📌 **Output format (strict JSON format, no additional text):**  
-\`\`\`json
-{
-  "objects_tags": ["..."],
-  "persons_tags": ["..."], 
-  "action_tags": ["..."], 
-  "location_tags": ["..."], 
-  "animals_tags": ["..."], 
-  "weather_time_tags": ["..."], 
-  "symbols_tags": ["..."], 
-  "culture_tags": ["..."], 
-  "theme_tags": ["..."], 
-  "genre_tags": ["..."], 
-  "bonus_tags": ["..."],
-   "description": "...", 
-}
-\`\`\`
+We already know this image have this general context: ${shortDesc}.
 
-📌 **Properties explanation:**  
-- 'objects_tags' (string[] up to 6 words): list the physical objects (no people) you can see in the photo, prioritizing those with a relevant presence. 
-- 'persons_tags' (string[] up to 6 words): list the people you see in the photo and who have a relevant presence. Try to specify gender, age and clothing. 
-- 'action_tags' (string[] up to 4 words): list the actions, interactions and gestures of each person. Include always the subject of the action.  
-- 'location_tags' (string[] up to 3 words): tags which describes the concrete location, and wether it's inside or outside. 
-- 'animals_tags' (string[] up to 4 words): list the animals you can see in the photo, prioritizing those with a relevant presence. 
-- 'weather_time_tags': (string[] up to 3 words): tags related to weather and time of the day, season of the year if possible, etc. 
-- 'symbols_tags' (string[] up to 4 words): list all the symbols, figures, text, logos or paintings you can see in the photo. 
-- 'culture_tags' (string[] up to 2 words): the culture and/or country you guess the photo has been taken. As much concrete as possible. 
-- 'theme_tags' (string[] up to 3 words): tags about general themes in the photo. 
-- 'genre_tags' (string[] up to 3 words): the artistic genres of the photo. 
-- 'bonus_tags' (string[] up to 3 words): dedicated to special bonus, if any, which make the photo remarkable from artistic point of view. 
-- 'description' (string, minimum 300 words): describes the image in detail, and trying to capture the general meaning of the scene, storytelling if any, and interactions. Pay attention to metaphorical aspects that may make this photo special.
-*Guidelines and rules*: 
-  1. Be specific, adjectivize tags whenever you can or add relevant nuances. Include subject and verb, and/or subject and adjective. 
-  2. Avoid overly vague tags such as “man” or “people”. 
-  3. Don't repeat tags across different lists
-  4. For tags related to phisical things (objects, people, plants, buildings, etc.), discards those that are distant or barely visible, or of little relevance to the scene.
-  5. Ensure the JSON output is **valid** and properly formatted.
+Now analyze the image to add new information about physical objects and their details. Maximum 90 words.  
 
-**⚠ Return ONLY the JSON object, without any extra text.** 
+Follow these 3 instructions:  
+1. Focus on most relevant particular objects (real or depicted), rather than on the whole scene.
+2. Discard those too far or barely visible. 
+3. If there is people, focus on the objects they might be carrying or using, rather than the person themselves. 
+3. Pay attention also to symbols, paintings and letters. 
+
+Return only the description text, with no additional comments.  
+`
+
+export const SYSTEM_MESSAGE_ANALYZER_MOLMO_PEOPLE_PRETRAINED = (shortDesc: string) => `
+
+We already know this image have this general context: ${shortDesc}.
+
+Now look at the image and focus to understand the people activities. Return a description of 160 words maximum. 
+
+Follow these 3 instructions:  
+1. Focus on most relevant characters, rather than on the whole scene or the context.
+2. Describe what they are doing and their interactions.
+3. Don't speculate, stick to what you clearly see. 
+
+Return only the description text, with no additional comments.  
+`
+
+// EXPLICAR BIEN: 1) lineas guia, framed, perfiles, eye catcher, etc. Que lo haga bien para que merezca la pena.
+export const SYSTEM_MESSAGE_ANALYZER_MOLMO_STREET_PHOTO_PRETRAINED = (shortDesc: string) => `
+
+We already know this image have this general context: ${shortDesc}.
+
+But now provide an artistic evaluation of the image, from a critic point of view. Maximum 60 words. 
+
+Follow these 4 instructions:  
+1. Evaluate the photo from an aesthetic point of view.
+2. Evaluate the photo from a compositional point of view: balance, layered structure, easy reading, etc. 
+3. Evaluate the photo according to possible metaphoric echoes, figurative meanings, peculiar juxtapositions, if any.
+4. If any, point out a notable aspect of this image that can TRULY amaze or impact the viewer eye 
+ 
+Return only the description text, with no additional comments.  
+`
+
+export const SYSTEM_MESSAGE_ANALYZER_MOLMO_TOPOLOGIC_PRETRAINED = (shortDesc: string) => `
+
+We already know this image have this general context: ${shortDesc}.
+
+And now we need a topological description about this photo. Maximum 40 words. 
+
+Divide the photo in 5 areas and complete this texts:  
+
+1. The upper left box of the photo shows: ...
+2. The upper right box of the photo shows: ...
+3. The bottom left box of the photo shows: ... 
+4. The bottom right box of the photo shows: ... 
+5. The middle area of the photo shows: ...
+
+For each area, enumerate briefly and concise the objects you see.
+ 
+Return only the description text, with no additional comments.  
 `
 
 export const SYSTEM_MESSAGE_CULTURAL_ENRICHMENT = `

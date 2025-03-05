@@ -490,7 +490,7 @@ export default class ScoringService {
 
     // Calcular el score para cada foto basándonos en los tags coincidentes
     let scoredPhotos = photos.map((photo) => {
-      if (photo.id == '77b61dbd-e99a-4996-a21a-a64467b5651a') {
+      if (photo.id == '14') {
         console.log()
       }
       photo.matchingTags = photo.matchingTags || []
@@ -594,38 +594,6 @@ export default class ScoringService {
       matchingTags: thresholdBasedMatches,
       lematizedTerm,
     }
-  }
-
-  private async chunkDescriptions(
-    photos: any[],
-    description: string,
-    similarityThresholdDesc: number = 15
-  ): Promise<any[]> {
-    const modelsService = new ModelsService()
-
-    const promises = photos.map(async (photo: Photo) => {
-      if (!photo.description) return null
-
-      // Obtener proximidades de los chunks
-      const chunkProximities = await modelsService.semanticProximitChunks(
-        description,
-        photo.description,
-        description.length * 8
-      )
-
-      // Filtrar chunks por umbral de proximidad y ordenarlos
-      const selectedChunks = chunkProximities
-        .filter(({ proximity }: any) => proximity >= similarityThresholdDesc / 100)
-        .sort((a: any, b: any) => b.proximity - a.proximity)
-
-      return {
-        ...photo,
-        chunks: selectedChunks.map(({ text_chunk }: any) => text_chunk),
-      }
-    })
-
-    // Esperar a que todas las promesas se resuelvan
-    return Promise.all(promises)
   }
 
   public async getNearChunksFromDesc(photo: Photo, query: string, threshold: number = 0.1) {

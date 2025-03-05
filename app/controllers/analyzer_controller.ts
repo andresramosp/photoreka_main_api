@@ -16,7 +16,7 @@ export default class AnalyzerController {
       const { userId } = request.body()
 
       // Aqui sacariamos las photos de este usuario
-      const photos = await Photo.query().where('metadata', null)
+      const photos = await Photo.query().where('processed', false)
 
       if (!Array.isArray(photos) || photos.length === 0) {
         return response.badRequest({ message: 'No image IDs provided' })
@@ -30,7 +30,7 @@ export default class AnalyzerController {
 
       // Si el usuario ya tiene un análisis en curso, no iniciar otro
       if (!analysisProcesses.has(userId)) {
-        const process = analyzerService.analyze(photosIds, 10)
+        const process = analyzerService.analyzeGPTAndMolmo(photosIds)
         analysisProcesses.set(userId, process)
 
         // Ejecutar el stream y emitir los eventos por WebSocket

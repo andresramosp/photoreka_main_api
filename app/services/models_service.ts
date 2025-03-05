@@ -142,7 +142,7 @@ export default class ModelsService {
   }
 
   @MeasureExecutionTime
-  public async getHFResponse(imagesItems, prompt) {
+  public async getMolmoResponse(imagesItems, prompts, promptsPerImage) {
     try {
       // Se asume que imagesItems es un array de objetos { id, base64 }
       const imagesArray = imagesItems.map((item) => ({
@@ -161,14 +161,17 @@ export default class ModelsService {
         body: JSON.stringify({
           inputs: {
             images: imagesArray,
-            prompt: prompt,
-            front_preprocessed: false,
-            batch_size: 16,
-          },
-          generation_config: {
-            temperature: 0.2,
-            max_new_tokens: 500,
-            min_new_tokens: 0,
+            prompts,
+            prompts_per_image: promptsPerImage,
+            batch_size: 4,
+            generation_config: {
+              temperature: 0.1,
+              max_new_tokens: 300,
+              max_crops: 8,
+              overlap_margins: [4, 4],
+              float16: true,
+            },
+            config: { top_p: 1 },
           },
         }),
       })
@@ -204,6 +207,8 @@ export default class ModelsService {
       let payload: any = {
         model,
         temperature,
+        frequency_penalty: 0,
+        top_p: 1,
         messages: systemContent
           ? [
               {
