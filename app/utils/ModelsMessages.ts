@@ -1,19 +1,36 @@
 export const SYSTEM_MESSAGE_TAGS_TEXT_EXTRACTION_GPT = `
 You are an chatbot designed to extract relevant tags from a photo description. Analyze the text in 'description' field and create and array of tags.
-You should also detect implicit tags in complex phrases, for example: "a man who is sitting thoughtfully in a chair should generate "thoughtful man", 
-but also "man sitting in chair".
 
 *Guidelines*
-  - From the 'Context' section of the description, take only the most concrete and relevant tag.  
   - Adjectivize tags whenever you can or add relevant nuances. For actions tags, always include the subject of the action. 
-  - For each tag, add the category after a pipe |, in order to disambiguate it. The basic categories are: people, animals, objects, places, atmosphere, weather, symbols. 
-    Examples: 'funny kid | people', 'orange | objects', 'sad evening | atmosphere' 
-  - Extract between 10 and 15 tags minimun.
+  - Disambiguates problematic terms. Example: orange (fruit), scooter (motorcycle)
+  - Try to detect implicit tags in sentences. For example: "man in the distance who appears to be playing tennis or soccer" -> "man playing sports".
+  - Extract between 12 and 15 tags minimun.
 
 📌 **Output example:**  
 \`\`\`json
 {
-  'tags': ['funny kid', 'man playing tennis', 'traditional building', 'sad atmosphere'], 
+  'tags': ['funny kid', 'women shopping', 'traditional building', ...], 
+}
+\`\`\`
+
+**⚠ Return ONLY the JSON object containing an array inside 'tags' field, without any extra text.** 
+`
+
+export const SYSTEM_MESSAGE_TAGS_TEXT_EXTRACTION_WITH_GROUP_GPT = `
+You are an chatbot designed to extract relevant tags from a photo description. Analyze the text in 'description' field and create and array of tags.
+
+*Guidelines*
+  - Adjectivize tags whenever you can or add relevant nuances. For actions tags, always include the subject of the action. 
+  - Disambiguates problematic terms. Example: orange (fruit), scooter (motorcycle)
+  - For each tag, add the category after a pipe |. The categories are: person, animals, objects, places, atmosphere, weather, symbols. 
+    Examples: 'funny kids | person', 'orange (fruit) | objects', 'sad evening | atmosphere' 
+  - Extract between 12 and 15 tags minimun.
+
+📌 **Output example:**  
+\`\`\`json
+{
+  'tags': ['funny kids | person', 'man playing tennis | person', 'traditional building | place', ...], 
 }
 \`\`\`
 
@@ -26,7 +43,7 @@ export const SYSTEM_MESSAGE_ANALYZER_GPT_DESC = (photosBatch: any[]) => `
  For each image, include following properties:
  
 - 'id': id of the image, using this comma-separated, ordered list: ${photosBatch.map((img: any) => img.id).join(',')}
-- 'context_description': mention the place where the scene takes place, as well as the cultural context. Also, when it becomes clear, add the country and/or city. Minimum 20 - 30 words. 
+- 'context_description': mention the place where the scene takes place, the time of day, as well as the cultural context. Also, when it becomes clear, add the country and/or city. Minimum 30 - 40 words. 
 - 'storytelling_description': Here focus on most relevant characters, rather than on the whole scene or the context, and describe what they are doing, their gestures and interactions, if any. Minimum 170 - 190 words. 
 - 'objects_description': For this section, look at the photo again to identify those objects (real or depicted), illustrations or symbols that have not been mentioned in the previous sections, but that may be relevant. Minimum 40 - 50 words
 
@@ -45,7 +62,7 @@ export const SYSTEM_MESSAGE_ANALYZER_GPT_CONTEXT_AND_STORY_FOR_PRETRAIN = (photo
  For each image, include following properties:
  
 - 'id': id of the image, using this comma-separated, ordered list: ${photosBatch.map((img: any) => img.id).join(',')}
-- 'context_description': mention the place where the scene takes place, as well as the cultural context. When it becomes clear, add the country and/or city. Minimum 30 - 40 words. 
+- 'context_description': mention the place where the scene takes place, the time of day, as well as the cultural context. Also, when it becomes clear, add the country and/or city. Minimum 30 - 40 words. 
 - 'storytelling_description': Here focus on most relevant characters, rather than on the whole scene or the context, and describe what they are doing, 
    their gestures and interactions. Discard elements too distant or barely visible. Minimum 150 - 180 words. 
 
@@ -135,15 +152,15 @@ We already know this image have this general context: ${shortDesc}.
 
 And now we need a topological description about this photo. Maximum 40 words. 
 
-Divide the photo in 5 areas and complete this texts:  
+Divide the photo in 5 areas and complete this texts:
 
-1. The upper left box of the photo shows: ...
-2. The upper right box of the photo shows: ...
-3. The bottom left box of the photo shows: ... 
-4. The bottom right box of the photo shows: ... 
-5. The middle area of the photo shows: ...
+Upper left box shows: ...
+Upper right box shows: ...
+Bottom left box shows: ... 
+Bottom right box shows: ... 
+Middle area shows: ...
 
-For each area, enumerate briefly and concise the objects you see.
+For each area, enumerate briefly and concise the objects you see, including empty spaces when relevant.
  
 Return only the description text, with no additional comments.  
 `
@@ -191,6 +208,7 @@ You are an intelligent assistant for processing user queries about finding photo
 - Identify the segments of the query that represent by themselves a semantic field, and add them to “positive_segments”. 
 - Identify the query segments that represent named entities (movies, books, public figures), and add them to “named_entities”.
 - For each named entity, perform a creative semantic expansion, adding 4 terms to each, inside expanded_named_entities.
+- When there is a strong connector between two different (or even opposite) semantic fields, keep them in a single segment. For example: 'contrast between divinity and human injustice'
 
 #### Example 1:
 **Input**:

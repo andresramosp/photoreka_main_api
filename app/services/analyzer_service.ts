@@ -109,6 +109,7 @@ import {
   SYSTEM_MESSAGE_ANALYZER_MOLMO_STREET_PHOTO_PRETRAINED,
   SYSTEM_MESSAGE_ANALYZER_MOLMO_TOPOLOGIC_PRETRAINED,
   SYSTEM_MESSAGE_TAGS_TEXT_EXTRACTION_GPT,
+  SYSTEM_MESSAGE_TAGS_TEXT_EXTRACTION_WITH_GROUP_GPT,
 } from '../utils/ModelsMessages.js'
 import { createRequire } from 'module'
 import EmbeddingsService from './embeddings_service.js'
@@ -122,6 +123,8 @@ const pluralize = require('pluralize')
 const lemmatizer = {
   stem: (word: string) => pluralize.singular(word.toLowerCase()),
 }
+
+let sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 export default class AnalyzerService {
   public async *analyzeGPT(photosIds: string[]) {
@@ -157,8 +160,7 @@ export default class AnalyzerService {
     // Fase GPT: Extracción de tags, fijación de contexto
 
     let photosProcessed = []
-    const maxImagesPerBatchGPT = 6
-    let sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+    const maxImagesPerBatchGPT = 4
 
     for (let i = 0; i < photosToProcess.length; i += maxImagesPerBatchGPT) {
       const batch = photosToProcess.slice(i, i + maxImagesPerBatchGPT)
@@ -169,7 +171,7 @@ export default class AnalyzerService {
           type: 'image_url',
           image_url: {
             url: `data:image/jpeg;base64,${base64}`,
-            detail: 'high',
+            detail: 'low',
           },
         })),
         'gpt-4o',
@@ -210,38 +212,45 @@ export default class AnalyzerService {
     const photos = await photosService.getPhotosByIds(photosIds)
     const uploadPath = path.join(process.cwd(), 'public/uploads/photos')
 
-    let photosToProcess = []
+    let photosToProcess: any[] = []
+    let photosAlreadyProcessed: any[] = []
+
+    // Revisar cada foto y separar las que ya tienen descripciones
     for (const photo of photos) {
       const filePath = path.join(uploadPath, `${photo.name}`)
-
       try {
         await fs.access(filePath)
         const resizedBuffer = await sharp(filePath).toBuffer()
+        const base64Image = resizedBuffer.toString('base64')
 
-        photosToProcess.push({
-          id: photo.id,
-          base64: resizedBuffer.toString('base64'),
-        })
+        if (photo.descriptionShort && photo.descriptionGenre) {
+          photosAlreadyProcessed.push({
+            id: photo.id,
+            base64: base64Image,
+            descriptionShort: photo.descriptionShort,
+            descriptionGenre: photo.descriptionGenre,
+          })
+        } else {
+          photosToProcess.push({
+            id: photo.id,
+            base64: base64Image,
+          })
+        }
       } catch (error) {
         console.warn(`No se pudo procesar la imagen con ID: ${photo.id}`, error)
       }
     }
 
-    if (photosToProcess.length === 0) {
+    if (photosToProcess.length === 0 && photosAlreadyProcessed.length === 0) {
       throw new Exception('No valid images found for the provided IDs')
     }
 
-    const results = []
-
-    // Fase GPT: Contexto y story telling
-
     const pretrainTexts = []
     const maxImagesPerBatchGPT = 6
-    let sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
+    // Llamada a GPT solo para las fotos sin descripciones
     for (let i = 0; i < photosToProcess.length; i += maxImagesPerBatchGPT) {
       const batch = photosToProcess.slice(i, i + maxImagesPerBatchGPT)
-
       const responseGPT = await modelsService.getGPTResponse(
         SYSTEM_MESSAGE_ANALYZER_GPT_CONTEXT_AND_STORY_FOR_PRETRAIN(batch),
         batch.map(({ base64 }) => ({
@@ -255,19 +264,32 @@ export default class AnalyzerService {
         null,
         0
       )
-
       pretrainTexts.push(...responseGPT.result)
-      await sleep(750) // Delay antes de iniciar el siguiente batch
+      await sleep(750)
     }
 
-    const photosWithPretrained = photosToProcess.map((photo) => ({
-      ...photo,
-      descriptionShort: pretrainTexts.find((sd) => sd.id == photo.id).context_description,
-      descriptionGenre: pretrainTexts.find((sd) => sd.id == photo.id).storytelling_description,
-    }))
+    // Guardado masivo y concurrente de las nuevas descripciones en BD usando Lucid ORM
+    await Promise.all(
+      pretrainTexts.map(({ id, context_description, storytelling_description }) =>
+        Photo.query().where('id', id).update({
+          descriptionShort: context_description,
+          descriptionGenre: storytelling_description,
+        })
+      )
+    )
 
+    // Combinar fotos ya procesadas con las que se acaban de procesar
+    const photosWithPretrained = photosToProcess
+      .map((photo) => ({
+        ...photo,
+        descriptionShort: pretrainTexts.find((sd) => sd.id == photo.id)?.context_description,
+        descriptionGenre: pretrainTexts.find((sd) => sd.id == photo.id)?.storytelling_description,
+      }))
+      .concat(photosAlreadyProcessed)
+
+    // Continuar con la fase Molmo...
+    const results = []
     const batchPromisesMolmo = []
-    const resultsMolmo = []
     let maxImagesPerBatchMolmo = photosWithPretrained.length
 
     for (let i = 0; i < photosWithPretrained.length; i += maxImagesPerBatchMolmo) {
@@ -277,17 +299,13 @@ export default class AnalyzerService {
         batch.map((photo) => ({ id: photo.id, base64: photo.base64 })),
         [],
         [
-          ...photosWithPretrained.map((photo, index) => ({
+          ...photosWithPretrained.map((photo) => ({
             id: photo.id,
             prompts: [
               {
                 id: 'description_topologic',
                 text: SYSTEM_MESSAGE_ANALYZER_MOLMO_TOPOLOGIC_PRETRAINED(photo.descriptionShort),
               },
-              // {
-              //   id: 'description_generic',
-              //   text: SYSTEM_MESSAGE_ANALYZER_MOLMO_STREET_PHOTO_PRETRAINED(photo.descriptionShort),
-              // },
             ],
           })),
         ]
@@ -296,49 +314,84 @@ export default class AnalyzerService {
       photosProcessed = photosProcessed.map((photo) => ({
         id: photo.id,
         descriptionGeneric: '',
-        // photo.descriptions.find((d) => d.id_prompt == 'description_generic')
-        //   .description,
         descriptionTopologic: photo.descriptions.find((d) => d.id_prompt == 'description_topologic')
           .description,
         descriptionGenre: photosWithPretrained.find((p) => photo.id == p.id).descriptionGenre,
         descriptionShort: photosWithPretrained.find((p) => photo.id == p.id).descriptionShort,
       }))
 
-      let { photosWithDescs: photosProcessedWithTags, costs } =
-        await this.addTagsFromDescs(photosProcessed)
-
+      let { photosWithDescs: photosProcessedWithTags, costs } = await this.addTagsFromDescs(
+        photosProcessed,
+        false
+      )
       results.push(...photosProcessedWithTags)
     }
 
     try {
       await this.processDescAndTags(results)
-      yield { type: 'analysisComplete', data: { cost: costs } }
+      yield { type: 'analysisComplete', data: { cost: 0 } } // Asumir 'costs' o ajustarlo según convenga
       return
-    } catch (err) {}
+    } catch (err) {
+      // Manejar error
+    }
   }
 
-  // Función sleep externa
-
-  private async addTagsFromDescs(photosWithDescs: any[]): Promise<any[]> {
+  // TODO: no people
+  private async addTagsFromDescs(
+    photosWithDescs: any[],
+    generateGroup: boolean = true
+  ): Promise<any[]> {
     const modelsService = new ModelsService()
+    const nlpService = new NLPService()
     let costs: number[] = []
     const delayMs = 500
 
-    let sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+    // 1. Limpiar descripciones para todas las fotos de golpe
+    let cleanTextsResult = await modelsService.cleanDescriptions(
+      photosWithDescs.map(
+        (photo) =>
+          `1. Context: ${photo.descriptionShort} | 2. Topology: ${photo.descriptionTopologic} | 3. Story: ${photo.descriptionGenre}`
+      )
+    )
 
     const tasks = photosWithDescs.map(async (photo, index) => {
-      await sleep(index * delayMs)
-      const completeDescForTags = `1. Context: ${photo.descriptionShort} | 2. Story: ${photo.descriptionGenre} | 3. Topology: ${photo.descriptionTopologic} `
+      const tagsDict: { [key: string]: string[] } = {}
+
+      const cleanedDescForTags = cleanTextsResult[index]
+
+      // 2. Extraer tags
       const { result, cost } = await modelsService.getGPTResponse(
-        SYSTEM_MESSAGE_TAGS_TEXT_EXTRACTION_GPT,
-        JSON.stringify({ description: completeDescForTags }),
+        generateGroup
+          ? SYSTEM_MESSAGE_TAGS_TEXT_EXTRACTION_GPT
+          : SYSTEM_MESSAGE_TAGS_TEXT_EXTRACTION_WITH_GROUP_GPT,
+        JSON.stringify({ description: cleanedDescForTags }),
         'gpt-4o-mini'
       )
 
-      // TODO: si no hay ningun grupo "people", añadimos un "no people"!
+      // 3. Sacar sustantivos de tags
+      let sustantivesFromTag = []
+      for (let tag of result.tags) {
+        let tagName = generateGroup ? tag : tag.split('|')[0].trim()
+        let sustantives = nlpService.getSustantives(tagName)
+        if (sustantives?.length) sustantivesFromTag.push(...sustantives)
+      }
 
-      const tagsDict: { [key: string]: string[] } = {}
-      result.tags.forEach((tagStr: string) => {
+      let tagsForDict = []
+
+      // 5. Sacar grupos de tags (desde respuesta de GPT o con BERT)
+      if (generateGroup) {
+        let tagsGroupsResult = await modelsService.generateGroupsForTags([
+          ...sustantivesFromTag,
+          ...result.tags,
+        ])
+        tagsForDict = [...tagsGroupsResult]
+      } else {
+        let tagsGroupsResult = await modelsService.generateGroupsForTags([...sustantivesFromTag])
+        tagsForDict = [...result.tags, ...tagsGroupsResult]
+      }
+
+      // 6. Procesar tags | grupos
+      tagsForDict.forEach((tagStr: string) => {
         const [tag, group] = tagStr.split('|').map((item) => item.trim())
         if (!tagsDict[group]) {
           tagsDict[group] = []
@@ -348,6 +401,8 @@ export default class AnalyzerService {
 
       costs.push(cost)
       Object.assign(photo, tagsDict)
+
+      await sleep(index * delayMs)
     })
 
     await Promise.all(tasks)
@@ -359,8 +414,6 @@ export default class AnalyzerService {
     const tagMap = new Map(
       existingTags.map((tag) => [lemmatizer.stem(tag.name.toLowerCase()), tag])
     )
-
-    const nlpService = new NLPService()
 
     await Promise.all(
       dictionary.map(async (data) => {
@@ -383,13 +436,10 @@ export default class AnalyzerService {
             await this.createDescChunks([descriptionShort, descriptionGenre], photo.id),
             ...Object.keys(generatedTags).map(async (group) => {
               let tags = generatedTags[group] || []
-              for (let tag of tags) {
-                let sustantivesFromTag = nlpService.getSustantives(tag)
-                if (sustantivesFromTag?.length) tags.push(...sustantivesFromTag)
+              for (const tagName of tags) {
+                await this.processTag(tagName, group, tagMap, tagInstances)
+                await sleep(500)
               }
-              await Promise.all(
-                tags.map((tagName: string) => this.processTag(tagName, group, tagMap, tagInstances))
-              )
             }),
           ])
 
@@ -440,7 +490,7 @@ export default class AnalyzerService {
     const fullDesc = Array.isArray(desc) ? desc.join(' | ') : desc
 
     // Dividir el texto en fragmentos de tamaño similar, terminando en puntos
-    const splitChunks = this.splitIntoChunks(fullDesc, fullDesc.length / 350)
+    const splitChunks = this.splitIntoChunks(fullDesc, fullDesc.length / 300)
 
     for (const chunk of splitChunks) {
       const { embeddings } = await modelsService.getEmbeddings([chunk])
@@ -508,11 +558,10 @@ export default class AnalyzerService {
 
       if (!tag) {
         try {
-          const stringForVector = `${tagName} (${group})` // 'black cat (animals)'
-          const { embeddings } = await modelsService.getEmbeddings([stringForVector])
+          // const stringForVector = `${tagName} (${group})` // 'black cat (animals)'
+          const { embeddings } = await modelsService.getEmbeddings([tagName])
           tag = await Tag.create({ name: tagName, group, embedding: embeddings[0] })
           tagMap.set(lemmatizedTagName, tag)
-          // console.log('Adding new tag: ', lemmatizedTagName)
         } catch (err) {
           if (err.code === '23505') {
             console.log(`Tag ${tagName} already exists, fetching existing one.`)

@@ -112,6 +112,51 @@ export default class ModelsService {
   }
 
   @MeasureExecutionTime
+  async generateGroupsForTags(tags) {
+    try {
+      const payload = { tags }
+      const { url, requestPayload, headers } = this.buildRequestConfig(
+        'generate_groups_for_tags',
+        payload
+      )
+
+      const { data } = await axios.post(url, requestPayload, { headers })
+
+      return data.output ? data.output : data || []
+    } catch (error) {
+      console.error('Error en getEmbeddings:', error.message)
+      return []
+    }
+  }
+
+  @MeasureExecutionTime
+  async cleanDescriptions(texts) {
+    try {
+      const payload = {
+        texts,
+        purge_list: [
+          'Upper left box shows',
+          'Bottom left box shows',
+          'Upper right box shows',
+          'Upper left box of the photo shows',
+          'The upper left box of the photo shows',
+          'The upper right box of the photo shows',
+          'The bottom right box of the photo shows',
+          'The bottom left box of the photo shows',
+        ],
+      }
+      const { url, requestPayload, headers } = this.buildRequestConfig('clean_texts', payload)
+
+      const { data } = await axios.post(url, requestPayload, { headers })
+
+      return data.output ? data.output : data || []
+    } catch (error) {
+      console.error('Error en getEmbeddings:', error.message)
+      return []
+    }
+  }
+
+  @MeasureExecutionTime
   async getStructuredQuery(query) {
     try {
       const payload = { query }
