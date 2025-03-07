@@ -10,6 +10,9 @@ export default class DescriptionChunk extends BaseModel {
   declare photoId: string
 
   @column()
+  declare category: string
+
+  @column()
   declare chunk: string
 
   @column({ serializeAs: null })

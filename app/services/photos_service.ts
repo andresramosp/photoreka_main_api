@@ -41,11 +41,34 @@ export default class PhotosService {
     return photos
   }
 
-  // @withCache({
-  //   key: (arg1) => `getPhotosByUser_${arg1}`,
-  //   provider: 'redis',
-  //   ttl: 50 * 5,
-  // })
+  public async updatePhoto(id: string, updates: Partial<Photo>) {
+    const photo = await Photo.find(id)
+    if (!photo) {
+      throw new Error('Photo not found')
+    }
+
+    if (updates.descriptions && typeof updates.descriptions === 'object') {
+      photo.descriptions = {
+        ...(photo.descriptions || {}),
+        ...updates.descriptions,
+      }
+    }
+
+    Object.entries(updates).forEach(([key, value]) => {
+      if (key !== 'descriptions') {
+        ;(photo as any)[key] = value
+      }
+    })
+
+    await photo.save()
+    return photo
+  }
+
+  @withCache({
+    key: (arg1) => `getPhotosByUser_${arg1}`,
+    provider: 'redis',
+    ttl: 50 * 5,
+  })
   public async getPhotosByUser(userId: string[]) {
     let photos = await Photo.query().preload('tags').preload('descriptionChunks')
     return photos.map((photo) => ({
@@ -56,6 +79,8 @@ export default class PhotosService {
       tempID: Math.random().toString(36).substr(2, 4),
     }))
   }
+
+  // TODO: todo esto a search_service.ts
 
   public async *searchByTags(query: any, options = { deepSearch: false, pageSize: 8 }) {
     const { deepSearch, pageSize } = options

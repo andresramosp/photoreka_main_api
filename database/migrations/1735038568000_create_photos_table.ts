@@ -6,10 +6,7 @@ export default class extends BaseSchema {
   async up() {
     this.schema.createTable(this.tableName, (table) => {
       table.increments('id').primary() // ID numérico incremental
-      table.text('description_short')
-      table.text('description_generic')
-      table.text('description_genre')
-      table.text('description_topologic')
+      table.jsonb('descriptions')
       table.string('title')
       table.string('name')
       table.string('model')

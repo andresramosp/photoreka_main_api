@@ -143,6 +143,10 @@ export default class ModelsService {
           'The upper right box of the photo shows',
           'The bottom right box of the photo shows',
           'The bottom left box of the photo shows',
+          'Left half shows',
+          'Right half shows',
+          'Upper half shows',
+          'Bottom half shows',
         ],
       }
       const { url, requestPayload, headers } = this.buildRequestConfig('clean_texts', payload)

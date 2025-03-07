@@ -4,21 +4,14 @@ import type { HasMany, ManyToMany } from '@adonisjs/lucid/types/relations'
 import Tag from './tag.js'
 import DescriptionChunk from './descriptionChunk.js'
 
+export type PhotoDescriptions = Record<'context' | 'story' | 'topology' | 'artistic', string>
+
 export default class Photo extends BaseModel {
   @column({ isPrimary: true })
   declare id: string
 
   @column()
-  declare descriptionShort: string
-
-  @column()
-  declare descriptionGeneric: string
-
-  @column()
-  declare descriptionGenre: string
-
-  @column()
-  declare descriptionTopologic: string
+  declare descriptions: PhotoDescriptions | null
 
   @column()
   declare processed: boolean
@@ -55,14 +48,14 @@ export default class Photo extends BaseModel {
   })
   declare descriptionChunks: HasMany<typeof DescriptionChunk>
 
-  @computed()
-  public get description() {
-    return `CONTEXT: ${this.descriptionShort} | \n TOPOLOGIC: ${this.descriptionTopologic} | STORY \n ${this.descriptionGenre} | ARTISTIC \n ${this.descriptionGeneric}`
-    return [
-      this.descriptionShort,
-      this.descriptionGeneric,
-      this.descriptionGenre,
-      this.descriptionTopologic,
-    ].join('   |   ')
-  }
+  // @computed()
+  // public get description() {
+  //   return `CONTEXT: ${this.descriptionShort} | \n TOPOLOGIC: ${this.descriptionTopologic} | STORY \n ${this.descriptionGenre} | ARTISTIC \n ${this.descriptionGeneric}`
+  //   return [
+  //     this.descriptionShort,
+  //     this.descriptionGeneric,
+  //     this.descriptionGenre,
+  //     this.descriptionTopologic,
+  //   ].join('   |   ')
+  // }
 }

@@ -18,14 +18,17 @@ You are an chatbot designed to extract relevant tags from a photo description. A
 `
 
 export const SYSTEM_MESSAGE_TAGS_TEXT_EXTRACTION_WITH_GROUP_GPT = `
-You are an chatbot designed to extract relevant tags from a photo description. Analyze the text in 'description' field and create and array of tags.
+You are an chatbot designed to extract relevant tags from a photo description. 
+You will receive a long text in 'description', divided in sections (Context, Story, Topology)
 
 *Guidelines*
+  - The main sections are 'Context' and 'Story', but also examine 'Topology' section to include relevant elements that may be missed in the other sections. 
   - Adjectivize tags whenever you can or add relevant nuances. For actions tags, always include the subject of the action. 
   - Disambiguates problematic terms. Example: orange (fruit), scooter (motorcycle)
   - For each tag, add the category after a pipe |. The categories are: person, animals, objects, places, atmosphere, weather, symbols. 
     Examples: 'funny kids | person', 'orange (fruit) | objects', 'sad evening | atmosphere' 
-  - Extract between 12 and 15 tags minimun.
+  - Extract as many tags as needed to cover all the elements in the text.
+  - Maximum words per tag is 5
 
 📌 **Output example:**  
 \`\`\`json
@@ -35,6 +38,40 @@ You are an chatbot designed to extract relevant tags from a photo description. A
 \`\`\`
 
 **⚠ Return ONLY the JSON object containing an array inside 'tags' field, without any extra text.** 
+`
+
+export const SYSTEM_MESSAGE_ANALYZER_GPT_CONTEXT_AND_STORY = (photosBatch: any[]) => `
+ You are a bot in charge of analyzing photographs and returning diverse and structured information for each photo, from a 'street photography' point of view. 
+
+ For each image, include following properties:
+ 
+- 'id': id of the image, using this comma-separated, ordered list: ${photosBatch.map((img: any) => img.id).join(',')}
+- 'context': mention the place where the scene takes place, the time of day, as well as the cultural context. Also, when it becomes clear, add the country and/or city. Minimum 30 - 40 words. 
+- 'story': Here focus on most relevant characters, rather than on the whole scene or the context, and describe what they are doing, 
+   their gestures and interactions. Discard elements too distant or barely visible. Minimum 150 - 180 words. 
+
+📌 **Output format:**  
+json [
+     { id: ..., 'context': "...", 'story': "..."},
+      ...
+   ]
+`
+
+export const SYSTEM_MESSAGE_ANALYZER_GPT_CONTEXT = (photosBatch: any[]) => `
+You are a chatbot whose only job is to look at pictures and give information about the general context. Use between 40 and 50 words. 
+
+ For each image, include following properties:
+ 
+- 'id': id of the image, using this comma-separated, ordered list: ${photosBatch.map((img: any) => img.id).join(',')}
+- 'context_description': explain the place where the scene takes place, as well as the cultural context. Also, when it becomes clear, add the country and/or city.
+   Don't talk about concrete elements (people, objects, etc). 
+
+📌 **Output format:**  
+json [
+     { id: ..., context_description: "..."},
+     { id: ..., context_description: "..."},
+      ...
+   ]
 `
 
 export const SYSTEM_MESSAGE_ANALYZER_GPT_DESC = (photosBatch: any[]) => `
@@ -52,40 +89,6 @@ export const SYSTEM_MESSAGE_ANALYZER_GPT_DESC = (photosBatch: any[]) => `
 📌 **Output format:**
 json [
       { id: ..., 'context_description': "...", 'storytelling_description': "...", 'objects_description': "..."},
-      ...
-   ]
-`
-
-export const SYSTEM_MESSAGE_ANALYZER_GPT_CONTEXT_AND_STORY_FOR_PRETRAIN = (photosBatch: any[]) => `
- You are a bot in charge of analyzing photographs and returning diverse and structured information for each photo, from a 'street photography' point of view. 
-
- For each image, include following properties:
- 
-- 'id': id of the image, using this comma-separated, ordered list: ${photosBatch.map((img: any) => img.id).join(',')}
-- 'context_description': mention the place where the scene takes place, the time of day, as well as the cultural context. Also, when it becomes clear, add the country and/or city. Minimum 30 - 40 words. 
-- 'storytelling_description': Here focus on most relevant characters, rather than on the whole scene or the context, and describe what they are doing, 
-   their gestures and interactions. Discard elements too distant or barely visible. Minimum 150 - 180 words. 
-
-📌 **Output format:**  
-json [
-     { id: ..., 'context_description': "...", 'storytelling_description': "..."},
-      ...
-   ]
-`
-
-export const SYSTEM_MESSAGE_ANALYZER_GPT_CONTEXT_FOR_PRETRAIN = (photosBatch: any[]) => `
-You are a chatbot whose only job is to look at pictures and give information about the general context. Use between 40 and 50 words. 
-
- For each image, include following properties:
- 
-- 'id': id of the image, using this comma-separated, ordered list: ${photosBatch.map((img: any) => img.id).join(',')}
-- 'context_description': explain the place where the scene takes place, as well as the cultural context. Also, when it becomes clear, add the country and/or city.
-   Don't talk about concrete elements (people, objects, etc). 
-
-📌 **Output format:**  
-json [
-     { id: ..., context_description: "..."},
-     { id: ..., context_description: "..."},
       ...
    ]
 `
@@ -130,6 +133,19 @@ Follow these 3 instructions:
 Return only the description text, with no additional comments.  
 `
 
+export const SYSTEM_MESSAGE_ANALYZER_MOLMO_RELEVANCE_CLASSIFIER = (tagList: string[]) => `
+In this photo, classify the following elements as "prominent", "distant" Where:
+Prominent means it is clearly visible looking at the image
+Distant means it is really hard to find in the image and you have to zoom in or use computer tools.
+
+- cellphone
+- red arrow
+- motorbike
+- english lesson poster
+- boy
+
+Just return the classified list without additional comments`
+
 // EXPLICAR BIEN: 1) lineas guia, framed, perfiles, eye catcher, etc. Que lo haga bien para que merezca la pena.
 export const SYSTEM_MESSAGE_ANALYZER_MOLMO_STREET_PHOTO_PRETRAINED = (shortDesc: string) => `
 
@@ -146,11 +162,27 @@ Follow these 4 instructions:
 Return only the description text, with no additional comments.  
 `
 
-export const SYSTEM_MESSAGE_ANALYZER_MOLMO_TOPOLOGIC_PRETRAINED = (shortDesc: string) => `
+export const SYSTEM_MESSAGE_ANALYZER_MOLMO_TOPOLOGIC_AREAS_PRETRAINED = (shortDesc: string) => `
 
 We already know this image have this general context: ${shortDesc}.
 
-And now we need a topological description about this photo. Maximum 40 words. 
+And now we need a topological description about this photo. Maximum 60 words. 
+
+Divide the photo in 4 areas and return a text with this format:
+
+Left half shows: ... | Right half shows: ... | Bottom half shows: ... | Upper half shows: ... 
+
+For each area, describe the elements you see. Consider also empty spaces, if any.
+Pay attention to: people, symbols, paintings, animals, objects...
+ 
+Return only the text in the correct format, with no additional comments.  
+`
+
+export const SYSTEM_MESSAGE_ANALYZER_MOLMO_TOPOLOGIC_SQUARES_PRETRAINED = (shortDesc: string) => `
+
+We already know this image have this general context: ${shortDesc}.
+
+And now we need a topological description about this photo. Maximum 60 words. 
 
 Divide the photo in 5 areas and complete this texts:
 
@@ -160,7 +192,8 @@ Bottom left box shows: ...
 Bottom right box shows: ... 
 Middle area shows: ...
 
-For each area, enumerate briefly and concise the objects you see, including empty spaces when relevant.
+For each area, enumerate briefly the elements you see.
+Relevant elements are: people, symbols, paintings, animals, objects
  
 Return only the description text, with no additional comments.  
 `
