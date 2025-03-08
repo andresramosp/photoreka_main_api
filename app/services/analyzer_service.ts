@@ -130,14 +130,83 @@ export default class AnalyzerService {
   public async *analyzeGPTAndMolmo(photosIds: string[]) {
     const photosService = new PhotosService()
     const modelsService = new ModelsService()
-
-    let photos = await photosService.getPhotosByIds(photosIds)
     const uploadPath = path.join(process.cwd(), 'public/uploads/photos')
 
-    let photosToProcess: any[] = []
-    let photosAlreadyProcessed: any[] = []
+    // 1. Recuperar y separar fotos según si ya tienen descripciones
+    const { photosToProcess, photosAlreadyProcessed } = await this.getPhotosForProcessing(
+      photosIds,
+      uploadPath,
+      photosService
+    )
+    if (photosToProcess.length === 0 && photosAlreadyProcessed.length === 0) {
+      throw new Exception('No valid images found for the provided IDs')
+    }
 
-    // Revisar cada foto y separar las que ya tienen descripciones context y story
+    // 2. Procesar las fotos sin descripciones mediante GPT
+    const GPTResponses = await this.processContextStory(photosToProcess, modelsService)
+    // Actualización inline: actualizar fotos con respuesta GPT
+    await Promise.all(
+      GPTResponses.map(({ id, context, story }) =>
+        photosService.updatePhoto(id, {
+          descriptions: { context, story },
+          processed: { context: true, story: true },
+        })
+      )
+    )
+
+    // Combinar fotos ya procesadas con las recién procesadas
+    const photosWithPretrained = photosToProcess
+      .map((photo) => ({
+        ...photo,
+        context: GPTResponses.find((sd) => sd.id == photo.id)?.context,
+        story: GPTResponses.find((sd) => sd.id == photo.id)?.story,
+      }))
+      .concat(photosAlreadyProcessed)
+
+    const MolmoResponses = await this.processTopology(photosWithPretrained, modelsService)
+    await Promise.all(
+      MolmoResponses.map(({ id, descriptions: molmo_descriptions }) =>
+        photosService.updatePhoto(id, {
+          descriptions: {
+            topology: molmo_descriptions.find((d) => d.id_prompt === 'topology').description,
+          },
+          processed: { topology: true },
+        })
+      )
+    )
+
+    // 4. Procesar descripciones y agregar tags
+    const photos = await photosService.getPhotosByIds(photosIds)
+    const photosWithDescs = photos.map((photo) => ({
+      id: photo.id,
+      context: photo.descriptions?.context,
+      story: photo.descriptions?.story,
+      topology: photo.descriptions?.topology,
+      artistic: photo.descriptions?.artistic,
+    }))
+
+    let { photosWithTags, costs } = await this.addTagsFromDescs(photosWithDescs)
+    await this.processDescAndTags(photosWithTags)
+    await Promise.all(
+      photosWithTags.map(({ id }) =>
+        photosService.updatePhoto(id, {
+          processed: { tags: true },
+        })
+      )
+    )
+
+    yield { type: 'analysisComplete', data: { costs } }
+  }
+
+  private async getPhotosForProcessing(
+    photosIds: string[],
+    uploadPath: string,
+    photosService: PhotosService
+  ) {
+    const photos = await photosService.getPhotosByIds(photosIds)
+    const photosToProcess: any[] = []
+    const photosAlreadyProcessed: any[] = []
+
     for (const photo of photos) {
       const filePath = path.join(uploadPath, `${photo.name}`)
       try {
@@ -145,32 +214,28 @@ export default class AnalyzerService {
         const resizedBuffer = await sharp(filePath).toBuffer()
         const base64Image = resizedBuffer.toString('base64')
 
-        if (photo.processed?.context && photo.processed.story) {
+        if (photo.processed?.context && photo.processed?.story) {
           photosAlreadyProcessed.push({
             id: photo.id,
             base64: base64Image,
             context: photo.descriptions?.context,
-            story: photo.descriptions.story,
+            story: photo.descriptions?.story,
+            processed: photo.processed,
           })
         } else {
-          photosToProcess.push({
-            id: photo.id,
-            base64: base64Image,
-          })
+          photosToProcess.push({ id: photo.id, base64: base64Image })
         }
       } catch (error) {
         console.warn(`No se pudo procesar la imagen con ID: ${photo.id}`, error)
       }
     }
+    return { photosToProcess, photosAlreadyProcessed }
+  }
 
-    if (photosToProcess.length === 0 && photosAlreadyProcessed.length === 0) {
-      throw new Exception('No valid images found for the provided IDs')
-    }
-
+  private async processContextStory(photosToProcess: any[], modelsService: ModelsService) {
     const GPTResponses = []
     const maxImagesPerBatchGPT = 6
 
-    // Llamada a GPT solo para las fotos sin descripciones
     for (let i = 0; i < photosToProcess.length; i += maxImagesPerBatchGPT) {
       const batch = photosToProcess.slice(i, i + maxImagesPerBatchGPT)
       const responseGPT = await modelsService.getGPTResponse(
@@ -189,94 +254,32 @@ export default class AnalyzerService {
       GPTResponses.push(...responseGPT.result)
       await sleep(750)
     }
+    return GPTResponses
+  }
 
-    await Promise.all(
-      GPTResponses.map(({ id, context, story }) =>
-        photosService.updatePhoto(id, {
-          descriptions: {
-            context,
-            story,
-          },
-          processed: {
-            context: true,
-            story: true,
-          },
-        })
-      )
-    )
-
-    // Combinar fotos ya procesadas con las que se acaban de procesar
-    const photosWithPretrained = photosToProcess
-      .map((photo) => ({
-        ...photo,
-        context: GPTResponses.find((sd) => sd.id == photo.id)?.context,
-        story: GPTResponses.find((sd) => sd.id == photo.id)?.story,
-      }))
-      .concat(photosAlreadyProcessed)
-
-    // FASE MOLMO
-
+  private async processTopology(photosWithPretrained: any[], modelsService: ModelsService) {
+    const photosForMolmo = photosWithPretrained //.filter((photo) => !photo.processed?.topology)
     const MolmoResponses = []
-    const batchPromisesMolmo = []
-    let maxImagesPerBatchMolmo = photosWithPretrained.length
-
-    const photosForMolmo = photosWithPretrained.filter((photo) => !photo.processed?.topology)
+    const maxImagesPerBatchMolmo = photosForMolmo.length // Procesamos todas de una vez
 
     for (let i = 0; i < photosForMolmo.length; i += maxImagesPerBatchMolmo) {
       const batch = photosForMolmo.slice(i, i + maxImagesPerBatchMolmo)
-
       let { result: responseMolmo } = await modelsService.getMolmoResponse(
         batch.map((photo) => ({ id: photo.id, base64: photo.base64 })),
         [],
-        [
-          ...photosForMolmo.map((photo) => ({
-            id: photo.id,
-            prompts: [
-              {
-                id: 'topology',
-                text: SYSTEM_MESSAGE_ANALYZER_MOLMO_TOPOLOGIC_AREAS_PRETRAINED(photo.context),
-              },
-            ],
-          })),
-        ]
+        batch.map((photo) => ({
+          id: photo.id,
+          prompts: [
+            {
+              id: 'topology',
+              text: SYSTEM_MESSAGE_ANALYZER_MOLMO_TOPOLOGIC_AREAS_PRETRAINED(photo.context),
+            },
+          ],
+        }))
       )
-
       MolmoResponses.push(...responseMolmo)
     }
-
-    await Promise.all(
-      MolmoResponses.map(({ id, descriptions: molmo_descriptions }) =>
-        photosService.updatePhoto(id, {
-          descriptions: {
-            topology: molmo_descriptions.find((d) => d.id_prompt == 'topology').description,
-          },
-          processed: { topology: true },
-        })
-      )
-    )
-
-    photos = await photosService.getPhotosByIds(photosIds)
-
-    const photosWithDescs = photos.map((photo) => ({
-      id: photo.id,
-      context: photo.descriptions?.context,
-      story: photo.descriptions?.story,
-      topology: photo.descriptions?.topology,
-      artistic: photo.descriptions?.artistic,
-    }))
-
-    let { photosWithTags, costs } = await this.addTagsFromDescs(photosWithDescs, false)
-
-    await this.processDescAndTags(photosWithTags)
-
-    await Promise.all(
-      photosWithTags.map(({ id }) =>
-        photosService.updatePhoto(id, {
-          processed: { tags: true },
-        })
-      )
-    )
-    yield { type: 'analysisComplete', data: { costs } }
+    return MolmoResponses
   }
 
   private async cleanPhotosDescs(photosWithDescs, batchSize = 5, delayMs = 500) {
