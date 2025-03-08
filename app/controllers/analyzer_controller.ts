@@ -16,7 +16,7 @@ export default class AnalyzerController {
       const { userId } = request.body()
 
       // Aqui sacariamos las photos de este usuario
-      const photos = await Photo.query().where('processed', false)
+      const photos = (await Photo.all()).filter((photo) => photo.needProcess)
 
       if (!Array.isArray(photos) || photos.length === 0) {
         return response.badRequest({ message: 'No image IDs provided' })

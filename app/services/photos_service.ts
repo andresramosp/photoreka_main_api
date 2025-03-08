@@ -47,6 +47,14 @@ export default class PhotosService {
       throw new Error('Photo not found')
     }
 
+    // Inicializa 'processed' si es null o undefined
+    photo.processed = photo.processed || {
+      context: false,
+      story: false,
+      topology: false,
+      artistic: false,
+    }
+
     if (updates.descriptions && typeof updates.descriptions === 'object') {
       photo.descriptions = {
         ...(photo.descriptions || {}),
@@ -54,8 +62,15 @@ export default class PhotosService {
       }
     }
 
+    if (updates.processed && typeof updates.processed === 'object') {
+      photo.processed = {
+        ...photo.processed,
+        ...updates.processed,
+      }
+    }
+
     Object.entries(updates).forEach(([key, value]) => {
-      if (key !== 'descriptions') {
+      if (key !== 'descriptions' && key !== 'processed') {
         ;(photo as any)[key] = value
       }
     })

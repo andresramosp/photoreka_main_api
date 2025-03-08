@@ -7,11 +7,11 @@ export default class extends BaseSchema {
     this.schema.createTable(this.tableName, (table) => {
       table.increments('id').primary() // ID numérico incremental
       table.jsonb('descriptions')
+      table.jsonb('processed')
       table.string('title')
       table.string('name')
       table.string('model')
       table.text('url')
-      table.boolean('processed').defaultTo(false)
       table.timestamp('created_at')
       table.timestamp('updated_at')
     })

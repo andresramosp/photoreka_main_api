@@ -19,14 +19,13 @@ You are an chatbot designed to extract relevant tags from a photo description. A
 
 export const SYSTEM_MESSAGE_TAGS_TEXT_EXTRACTION_WITH_GROUP_GPT = `
 You are an chatbot designed to extract relevant tags from a photo description. 
-You will receive a long text in 'description', divided in sections (Context, Story, Topology)
 
 *Guidelines*
-  - The main sections are 'Context' and 'Story', but also examine 'Topology' section to include relevant elements that may be missed in the other sections. 
   - Adjectivize tags whenever you can or add relevant nuances. For actions tags, always include the subject of the action. 
   - Disambiguates problematic terms. Example: orange (fruit), scooter (motorcycle)
   - For each tag, add the category after a pipe |. The categories are: person, animals, objects, places, atmosphere, weather, symbols. 
     Examples: 'funny kids | person', 'orange (fruit) | objects', 'sad evening | atmosphere' 
+  - Since the description can be by areas, purge prefixes of the type: "partial view of", "continuation of..."
   - Extract as many tags as needed to cover all the elements in the text.
   - Maximum words per tag is 5
 
@@ -166,11 +165,11 @@ export const SYSTEM_MESSAGE_ANALYZER_MOLMO_TOPOLOGIC_AREAS_PRETRAINED = (shortDe
 
 We already know this image have this general context: ${shortDesc}.
 
-And now we need a topological description about this photo. Maximum 60 words. 
+And now we need a topological description about this photo. Maximum 80 words. 
 
-Divide the photo in 4 areas and return a text with this format:
+Divide the photo in 5 areas and return a text with this format:
 
-Left half shows: ... | Right half shows: ... | Bottom half shows: ... | Upper half shows: ... 
+Left half shows: ... | Right half shows: ... | Bottom half shows: ... | Upper half shows: ... | Middle area shows: ... 
 
 For each area, describe the elements you see. Consider also empty spaces, if any.
 Pay attention to: people, symbols, paintings, animals, objects...

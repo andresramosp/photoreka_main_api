@@ -127,84 +127,6 @@ const lemmatizer = {
 let sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 export default class AnalyzerService {
-  public async *analyzeGPT(photosIds: string[]) {
-    const photosService = new PhotosService()
-    const modelsService = new ModelsService()
-
-    const photos = await photosService.getPhotosByIds(photosIds)
-    const uploadPath = path.join(process.cwd(), 'public/uploads/photos')
-
-    let photosToProcess = []
-    for (const photo of photos) {
-      const filePath = path.join(uploadPath, `${photo.name}`)
-
-      try {
-        await fs.access(filePath)
-        const resizedBuffer = await sharp(filePath).toBuffer()
-
-        photosToProcess.push({
-          id: photo.id,
-          base64: resizedBuffer.toString('base64'),
-        })
-      } catch (error) {
-        console.warn(`No se pudo procesar la imagen con ID: ${photo.id}`, error)
-      }
-    }
-
-    if (photosToProcess.length === 0) {
-      throw new Exception('No valid images found for the provided IDs')
-    }
-
-    const results = []
-
-    // Fase GPT: Extracción de tags, fijación de contexto
-
-    let photosProcessed = []
-    const maxImagesPerBatchGPT = 4
-
-    for (let i = 0; i < photosToProcess.length; i += maxImagesPerBatchGPT) {
-      const batch = photosToProcess.slice(i, i + maxImagesPerBatchGPT)
-
-      const responseGPT = await modelsService.getGPTResponse(
-        SYSTEM_MESSAGE_ANALYZER_GPT_DESC(batch),
-        batch.map(({ base64 }) => ({
-          type: 'image_url',
-          image_url: {
-            url: `data:image/jpeg;base64,${base64}`,
-            detail: 'low',
-          },
-        })),
-        'gpt-4o',
-        null,
-        false
-      )
-
-      photosProcessed.push(...responseGPT.result)
-      await sleep(750)
-    }
-
-    // PROVISIONAL
-
-    photosProcessed = photosProcessed.map((photo) => ({
-      id: photo.id,
-      descriptionGeneric: photo.atmosphere_description,
-      descriptionTopologic: photo.objects_description,
-      descriptionGenre: photo.storytelling_description,
-      descriptionShort: photo.context_description,
-    }))
-
-    let { photosWithDescs: photosProcessedWithTags, costs } =
-      await this.addTagsFromDescs(photosProcessed)
-
-    results.push(...photosProcessedWithTags)
-
-    try {
-      await this.processDescAndTags(results)
-      yield { type: 'analysisComplete', data: { cost: costs } }
-      return
-    } catch (err) {}
-  }
-
   public async *analyzeGPTAndMolmo(photosIds: string[]) {
     const photosService = new PhotosService()
     const modelsService = new ModelsService()
@@ -215,7 +137,7 @@ export default class AnalyzerService {
     let photosToProcess: any[] = []
     let photosAlreadyProcessed: any[] = []
 
-    // Revisar cada foto y separar las que ya tienen descripciones
+    // Revisar cada foto y separar las que ya tienen descripciones context y story
     for (const photo of photos) {
       const filePath = path.join(uploadPath, `${photo.name}`)
       try {
@@ -223,7 +145,7 @@ export default class AnalyzerService {
         const resizedBuffer = await sharp(filePath).toBuffer()
         const base64Image = resizedBuffer.toString('base64')
 
-        if (photo.descriptions?.context && photo.descriptions.story) {
+        if (photo.processed?.context && photo.processed.story) {
           photosAlreadyProcessed.push({
             id: photo.id,
             base64: base64Image,
@@ -275,6 +197,10 @@ export default class AnalyzerService {
             context,
             story,
           },
+          processed: {
+            context: true,
+            story: true,
+          },
         })
       )
     )
@@ -322,6 +248,7 @@ export default class AnalyzerService {
           descriptions: {
             topology: molmo_descriptions.find((d) => d.id_prompt == 'topology').description,
           },
+          processed: { topology: true },
         })
       )
     )
@@ -345,62 +272,70 @@ export default class AnalyzerService {
     } catch (err) {}
   }
 
-  // TODO: no people
-  private async addTagsFromDescs(
-    photosWithDescs: any[],
-    generateGroup: boolean = true
-  ): Promise<any[]> {
+  private async addTagsFromDescs(photosWithDescs: any[]): Promise<any[]> {
     const modelsService = new ModelsService()
     const nlpService = new NLPService()
     let costs: number[] = []
     const delayMs = 500
 
-    // 1. Limpiar descripciones para todas las fotos de golpe
-    let cleanTextsResult = await modelsService.cleanDescriptions(
-      photosWithDescs.map(
-        (photo) =>
-          `1. Context: ${photo.context} | 2. Story: ${photo.story} 3. Topology: ${photo.topology}`
-      )
-    )
+    // 1. Limpiar descripciones para todas las fotos de golpe, en paralelo
+    const [cleanContextAndStoryResults, cleanTopologyResults] = await Promise.all([
+      modelsService.cleanDescriptions(
+        photosWithDescs.map((photo) => `1. Context: ${photo.context} | 2. Story: ${photo.story}`)
+      ),
+      modelsService.cleanDescriptions(photosWithDescs.map((photo) => `${photo.topology}`)),
+    ])
 
     const tasks = photosWithDescs.map(async (photo, index) => {
       const tagsDict: { [key: string]: string[] } = {}
 
-      const cleanedDescForTags = cleanTextsResult[index]
+      const cleanedContextAndStoryForPhoto = cleanContextAndStoryResults[index]
+      const cleanedTopologyForPhoto = cleanTopologyResults[index]
 
-      // 2. Extraer tags
-      const { result, cost } = await modelsService.getGPTResponse(
-        generateGroup
-          ? SYSTEM_MESSAGE_TAGS_TEXT_EXTRACTION_GPT
-          : SYSTEM_MESSAGE_TAGS_TEXT_EXTRACTION_WITH_GROUP_GPT,
-        JSON.stringify({ description: cleanedDescForTags }),
-        'gpt-4o-mini'
-      )
+      // 2. Extraer tags en paralelo
+      const [contextStoryResponse, topologyResponse] = await Promise.all([
+        modelsService.getGPTResponse(
+          SYSTEM_MESSAGE_TAGS_TEXT_EXTRACTION_WITH_GROUP_GPT,
+          JSON.stringify({ description: cleanedContextAndStoryForPhoto }),
+          'gpt-4o-mini'
+        ),
+        modelsService.getGPTResponse(
+          SYSTEM_MESSAGE_TAGS_TEXT_EXTRACTION_WITH_GROUP_GPT,
+          JSON.stringify({ description: cleanedTopologyForPhoto }),
+          'gpt-4o-mini'
+        ),
+      ])
+
+      const { tags: contextStoryTags } = contextStoryResponse.result
+      const { tags: topologyTags } = topologyResponse.result
+
+      costs.push(contextStoryResponse.cost, topologyResponse.cost)
+
+      let completeTagList = [...contextStoryTags, ...topologyTags]
+
+      // Verificar si existe el grupo "person"
+      const hasPerson = completeTagList.some((tag) => tag.split('|')[1].trim() === 'person')
+      if (!hasPerson) {
+        completeTagList.push('no people | misc')
+      }
 
       // 3. Sacar sustantivos de tags, solo de ciertos grupos
-      let sustantivesFromTag = []
-      for (let tag of result.tags) {
-        let tagName = tag.split('|')[0].trim()
-        let group = tag.split('|')[1].trim()
+      let sustantivesFromTag: string[] = []
+      for (let tag of completeTagList) {
+        let [tagName, group] = tag.split('|').map((item) => item.trim())
         if (['person', 'objects', 'animals'].includes(group)) {
           let sustantives = nlpService.getSustantives(tagName)
           if (sustantives?.length) sustantivesFromTag.push(...sustantives)
         }
       }
 
-      let tagsForDict = []
+      let tagsForDict: string[] = []
 
       // 5. Sacar grupos de tags (desde respuesta de GPT o con BERT)
-      if (generateGroup) {
-        let tagsGroupsResult = await modelsService.generateGroupsForTags([
-          ...sustantivesFromTag,
-          ...result.tags,
-        ])
-        tagsForDict = [...tagsGroupsResult]
-      } else {
-        let tagsGroupsResult = await modelsService.generateGroupsForTags([...sustantivesFromTag])
-        tagsForDict = [...result.tags, ...tagsGroupsResult]
-      }
+      let sustantiveGroupsResult = await modelsService.generateGroupsForTags([
+        ...sustantivesFromTag,
+      ])
+      tagsForDict = [...completeTagList, ...sustantiveGroupsResult]
 
       // 6. Procesar tags | grupos
       tagsForDict.forEach((tagStr: string) => {
@@ -411,9 +346,7 @@ export default class AnalyzerService {
         tagsDict[group].push(tag)
       })
 
-      costs.push(cost)
       Object.assign(photo, { generatedTags: tagsDict })
-
       await sleep(index * delayMs)
     })
 
@@ -422,6 +355,8 @@ export default class AnalyzerService {
   }
 
   public async processDescAndTags(dictionary: { id: string; [key: string]: any }[]) {
+    const photosService = new PhotosService()
+
     const existingTags = await Tag.all()
     const tagMap = new Map(
       existingTags.map((tag) => [lemmatizer.stem(tag.name.toLowerCase()), tag])
@@ -460,13 +395,6 @@ export default class AnalyzerService {
               true
             )
           }
-
-          photo.merge({
-            processed: true,
-            model: 'Molmo',
-          })
-
-          await photo.save()
         }
       })
     )
@@ -585,6 +513,84 @@ export default class AnalyzerService {
     } else {
       console.log('Ignoring tag: ', tagName)
     }
+  }
+
+  public async *analyzeGPT(photosIds: string[]) {
+    const photosService = new PhotosService()
+    const modelsService = new ModelsService()
+
+    const photos = await photosService.getPhotosByIds(photosIds)
+    const uploadPath = path.join(process.cwd(), 'public/uploads/photos')
+
+    let photosToProcess = []
+    for (const photo of photos) {
+      const filePath = path.join(uploadPath, `${photo.name}`)
+
+      try {
+        await fs.access(filePath)
+        const resizedBuffer = await sharp(filePath).toBuffer()
+
+        photosToProcess.push({
+          id: photo.id,
+          base64: resizedBuffer.toString('base64'),
+        })
+      } catch (error) {
+        console.warn(`No se pudo procesar la imagen con ID: ${photo.id}`, error)
+      }
+    }
+
+    if (photosToProcess.length === 0) {
+      throw new Exception('No valid images found for the provided IDs')
+    }
+
+    const results = []
+
+    // Fase GPT: Extracción de tags, fijación de contexto
+
+    let photosProcessed = []
+    const maxImagesPerBatchGPT = 4
+
+    for (let i = 0; i < photosToProcess.length; i += maxImagesPerBatchGPT) {
+      const batch = photosToProcess.slice(i, i + maxImagesPerBatchGPT)
+
+      const responseGPT = await modelsService.getGPTResponse(
+        SYSTEM_MESSAGE_ANALYZER_GPT_DESC(batch),
+        batch.map(({ base64 }) => ({
+          type: 'image_url',
+          image_url: {
+            url: `data:image/jpeg;base64,${base64}`,
+            detail: 'low',
+          },
+        })),
+        'gpt-4o',
+        null,
+        false
+      )
+
+      photosProcessed.push(...responseGPT.result)
+      await sleep(750)
+    }
+
+    // PROVISIONAL
+
+    photosProcessed = photosProcessed.map((photo) => ({
+      id: photo.id,
+      descriptionGeneric: photo.atmosphere_description,
+      descriptionTopologic: photo.objects_description,
+      descriptionGenre: photo.storytelling_description,
+      descriptionShort: photo.context_description,
+    }))
+
+    let { photosWithDescs: photosProcessedWithTags, costs } =
+      await this.addTagsFromDescs(photosProcessed)
+
+    results.push(...photosProcessedWithTags)
+
+    try {
+      await this.processDescAndTags(results)
+      yield { type: 'analysisComplete', data: { cost: costs } }
+      return
+    } catch (err) {}
   }
 
   private async compressPhotos(photos) {

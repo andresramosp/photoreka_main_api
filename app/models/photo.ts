@@ -4,7 +4,9 @@ import type { HasMany, ManyToMany } from '@adonisjs/lucid/types/relations'
 import Tag from './tag.js'
 import DescriptionChunk from './descriptionChunk.js'
 
-export type PhotoDescriptions = Record<'context' | 'story' | 'topology' | 'artistic', string>
+export type DescriptionType = 'context' | 'story' | 'topology' | 'artistic'
+export type PhotoDescriptions = Record<DescriptionType, string>
+export type AnalysisStatus = Record<DescriptionType, boolean>
 
 export default class Photo extends BaseModel {
   @column({ isPrimary: true })
@@ -14,7 +16,7 @@ export default class Photo extends BaseModel {
   declare descriptions: PhotoDescriptions | null
 
   @column()
-  declare processed: boolean
+  declare processed: AnalysisStatus | null
 
   @column()
   declare title: string | null
@@ -47,6 +49,23 @@ export default class Photo extends BaseModel {
     foreignKey: 'photoId',
   })
   declare descriptionChunks: HasMany<typeof DescriptionChunk>
+
+  public getProcessed(type: DescriptionType): boolean {
+    return this.processed?.[type] ?? false
+  }
+
+  public pendingProcesses(): DescriptionType[] {
+    return Object.entries(this.processed || {})
+      .filter(([_, status]) => !status)
+      .map(([type]) => type as DescriptionType)
+  }
+
+  @computed()
+  public get needProcess(): boolean {
+    return (
+      !this.getProcessed('context') || !this.getProcessed('story') || !this.getProcessed('topology')
+    )
+  }
 
   // @computed()
   // public get description() {
