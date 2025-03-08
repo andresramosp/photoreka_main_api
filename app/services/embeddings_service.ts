@@ -3,7 +3,7 @@
 import Tag from '#models/tag'
 import db from '@adonisjs/lucid/services/db'
 import ModelsService from './models_service.js'
-import Photo from '#models/photo'
+import Photo, { DescriptionType } from '#models/photo'
 import NodeCache from 'node-cache'
 import MeasureExecutionTime from '../decorators/measureExecutionTime.js'
 import { createRequire } from 'module'
@@ -56,11 +56,19 @@ export default class EmbeddingsService {
     threshold: Threshold = 0.3,
     limit: number = 10,
     metric: 'distance' | 'inner_product' | 'cosine_similarity' = 'cosine_similarity',
-    photo?: { id: number }
+    photo?: { id: number },
+    categories: DescriptionType[] = null
   ) {
     const modelsService = new ModelsService()
     let { embeddings } = await modelsService.getEmbeddings([term])
-    return this.findSimilarChunkToEmbedding(embeddings[0], threshold, limit, metric, photo)
+    return this.findSimilarChunkToEmbedding(
+      embeddings[0],
+      threshold,
+      limit,
+      metric,
+      photo,
+      categories
+    )
   }
 
   // @MeasureExecutionTime
@@ -143,7 +151,8 @@ export default class EmbeddingsService {
     threshold: Threshold = 0.3,
     limit: number = 10,
     metric: 'distance' | 'inner_product' | 'cosine_similarity' = 'cosine_similarity',
-    photo?: { id: number }
+    photo?: { id: number },
+    categories?: string[] // parámetro opcional agregado
   ) {
     if (!embedding || embedding.length === 0) {
       throw new Error('Embedding no proporcionado o vacío')
@@ -196,6 +205,12 @@ export default class EmbeddingsService {
     if (photo) {
       whereCondition += ` AND photo_id = :photoId`
       additionalParams.photoId = photo.id
+    }
+
+    // Filtro por categories si se proporcionan
+    if (categories && categories.length > 0) {
+      whereCondition += ` AND category = ANY(:categories)`
+      additionalParams.categories = categories
     }
 
     const embeddingString = `[${embedding.join(',')}]`

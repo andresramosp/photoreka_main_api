@@ -96,7 +96,7 @@ export default class ModelsService {
     }
   }
 
-  // @MeasureExecutionTime
+  @MeasureExecutionTime
   async getEmbeddings(tags) {
     try {
       const payload = { tags }
@@ -130,10 +130,11 @@ export default class ModelsService {
   }
 
   @MeasureExecutionTime
-  async cleanDescriptions(texts) {
+  async cleanDescriptions(texts, extract_ratio = 0.9) {
     try {
       const payload = {
         texts,
+        extract_ratio,
         purge_list: [
           'Upper left box shows',
           'Bottom left box shows',

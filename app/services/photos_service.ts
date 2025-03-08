@@ -53,6 +53,7 @@ export default class PhotosService {
       story: false,
       topology: false,
       artistic: false,
+      tags: false,
     }
 
     if (updates.descriptions && typeof updates.descriptions === 'object') {

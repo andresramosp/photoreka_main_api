@@ -396,7 +396,11 @@ export default class ScoringService {
       segment.name,
       embeddingsProximityThreshold,
       2000,
-      'cosine_similarity'
+      'cosine_similarity',
+      null,
+      ['topology', 'story', 'context']
+
+      // ['story', 'context']
     )
 
     let adjustedChunks = await this.modelsService.adjustProximitiesByContextInference(
@@ -605,7 +609,8 @@ export default class ScoringService {
       threshold,
       5,
       'cosine_similarity',
-      photo
+      photo,
+      ['story', 'context']
     )
     return similarChunks.map((ch) => {
       return { proximity: ch.proximity, text_chunk: ch.chunk }

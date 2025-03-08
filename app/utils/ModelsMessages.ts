@@ -1,29 +1,32 @@
-export const SYSTEM_MESSAGE_TAGS_TEXT_EXTRACTION_GPT = `
-You are an chatbot designed to extract relevant tags from a photo description. Analyze the text in 'description' field and create and array of tags.
+export const SYSTEM_MESSAGE_TAGS_TEXT_EXTRACTION_FROM_CONTEXT_STORY = `
+You are an chatbot designed to extract relevant tags from a photo description. 
 
 *Guidelines*
   - Adjectivize tags whenever you can or add relevant nuances. For actions tags, always include the subject of the action. 
   - Disambiguates problematic terms. Example: orange (fruit), scooter (motorcycle)
-  - Try to detect implicit tags in sentences. For example: "man in the distance who appears to be playing tennis or soccer" -> "man playing sports".
-  - Extract between 12 and 15 tags minimun.
+  - For each tag, add the category after a pipe |. The categories are: person, animals, objects, places, atmosphere, weather, symbols, abstract concept. 
+    Examples: 'funny kids | person', 'orange (fruit) | objects', 'sad evening | atmosphere' 
+  - Dedicate at least one tag for the culture context/country, if mentioned, and for time of day/weather. 
+  - Extract as many tags as needed to cover all the elements in the text.
+  - Maximum words per tag is 5
 
 📌 **Output example:**  
 \`\`\`json
 {
-  'tags': ['funny kid', 'women shopping', 'traditional building', ...], 
+  'tags': ['funny kids | person', 'man playing tennis | person', 'traditional building | place', ...], 
 }
 \`\`\`
 
 **⚠ Return ONLY the JSON object containing an array inside 'tags' field, without any extra text.** 
 `
 
-export const SYSTEM_MESSAGE_TAGS_TEXT_EXTRACTION_WITH_GROUP_GPT = `
+export const SYSTEM_MESSAGE_TAGS_TEXT_EXTRACTION_FROM_TOPOLOGY = `
 You are an chatbot designed to extract relevant tags from a photo description. 
 
 *Guidelines*
   - Adjectivize tags whenever you can or add relevant nuances. For actions tags, always include the subject of the action. 
   - Disambiguates problematic terms. Example: orange (fruit), scooter (motorcycle)
-  - For each tag, add the category after a pipe |. The categories are: person, animals, objects, places, atmosphere, weather, symbols. 
+  - For each tag, add the category after a pipe |. The categories are: person, animals, objects, places, atmosphere, weather, symbols, abstract concept. 
     Examples: 'funny kids | person', 'orange (fruit) | objects', 'sad evening | atmosphere' 
   - Since the description can be by areas, purge prefixes of the type: "partial view of", "continuation of..."
   - Extract as many tags as needed to cover all the elements in the text.
@@ -172,7 +175,7 @@ Divide the photo in 5 areas and return a text with this format:
 Left half shows: ... | Right half shows: ... | Bottom half shows: ... | Upper half shows: ... | Middle area shows: ... 
 
 For each area, describe the elements you see. Consider also empty spaces, if any.
-Pay attention to: people, symbols, paintings, animals, objects...
+Pay attention to: people, symbols, shapes, paintings, animals and objects.
  
 Return only the text in the correct format, with no additional comments.  
 `

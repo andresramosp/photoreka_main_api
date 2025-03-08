@@ -5,8 +5,9 @@ import Tag from './tag.js'
 import DescriptionChunk from './descriptionChunk.js'
 
 export type DescriptionType = 'context' | 'story' | 'topology' | 'artistic'
+export type StageType = 'context' | 'story' | 'topology' | 'artistic' | 'tags'
 export type PhotoDescriptions = Record<DescriptionType, string>
-export type AnalysisStatus = Record<DescriptionType, boolean>
+export type AnalysisStatus = Record<StageType, boolean>
 
 export default class Photo extends BaseModel {
   @column({ isPrimary: true })
@@ -50,31 +51,23 @@ export default class Photo extends BaseModel {
   })
   declare descriptionChunks: HasMany<typeof DescriptionChunk>
 
-  public getProcessed(type: DescriptionType): boolean {
+  public getProcessed(type: StageType): boolean {
     return this.processed?.[type] ?? false
   }
 
-  public pendingProcesses(): DescriptionType[] {
+  public pendingProcesses(): StageType[] {
     return Object.entries(this.processed || {})
       .filter(([_, status]) => !status)
-      .map(([type]) => type as DescriptionType)
+      .map(([type]) => type as StageType)
   }
 
   @computed()
   public get needProcess(): boolean {
     return (
-      !this.getProcessed('context') || !this.getProcessed('story') || !this.getProcessed('topology')
+      !this.getProcessed('context') ||
+      !this.getProcessed('story') ||
+      !this.getProcessed('topology') ||
+      !this.getProcessed('tags')
     )
   }
-
-  // @computed()
-  // public get description() {
-  //   return `CONTEXT: ${this.descriptionShort} | \n TOPOLOGIC: ${this.descriptionTopologic} | STORY \n ${this.descriptionGenre} | ARTISTIC \n ${this.descriptionGeneric}`
-  //   return [
-  //     this.descriptionShort,
-  //     this.descriptionGeneric,
-  //     this.descriptionGenre,
-  //     this.descriptionTopologic,
-  //   ].join('   |   ')
-  // }
 }

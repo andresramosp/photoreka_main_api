@@ -108,8 +108,8 @@ import {
   SYSTEM_MESSAGE_ANALYZER_GPT_DESC,
   SYSTEM_MESSAGE_ANALYZER_MOLMO_STREET_PHOTO_PRETRAINED,
   SYSTEM_MESSAGE_ANALYZER_MOLMO_TOPOLOGIC_AREAS_PRETRAINED,
-  SYSTEM_MESSAGE_TAGS_TEXT_EXTRACTION_GPT,
-  SYSTEM_MESSAGE_TAGS_TEXT_EXTRACTION_WITH_GROUP_GPT,
+  SYSTEM_MESSAGE_TAGS_TEXT_EXTRACTION_FROM_CONTEXT_STORY,
+  SYSTEM_MESSAGE_TAGS_TEXT_EXTRACTION_FROM_TOPOLOGY,
 } from '../utils/ModelsMessages.js'
 import { createRequire } from 'module'
 import EmbeddingsService from './embeddings_service.js'
@@ -220,14 +220,16 @@ export default class AnalyzerService {
     const batchPromisesMolmo = []
     let maxImagesPerBatchMolmo = photosWithPretrained.length
 
-    for (let i = 0; i < photosWithPretrained.length; i += maxImagesPerBatchMolmo) {
-      const batch = photosWithPretrained.slice(i, i + maxImagesPerBatchMolmo)
+    const photosForMolmo = photosWithPretrained.filter((photo) => !photo.processed?.topology)
+
+    for (let i = 0; i < photosForMolmo.length; i += maxImagesPerBatchMolmo) {
+      const batch = photosForMolmo.slice(i, i + maxImagesPerBatchMolmo)
 
       let { result: responseMolmo } = await modelsService.getMolmoResponse(
         batch.map((photo) => ({ id: photo.id, base64: photo.base64 })),
         [],
         [
-          ...photosWithPretrained.map((photo) => ({
+          ...photosForMolmo.map((photo) => ({
             id: photo.id,
             prompts: [
               {
@@ -265,11 +267,47 @@ export default class AnalyzerService {
 
     let { photosWithTags, costs } = await this.addTagsFromDescs(photosWithDescs, false)
 
-    try {
-      await this.processDescAndTags(photosWithTags)
-      yield { type: 'analysisComplete', data: { cost } }
-      return
-    } catch (err) {}
+    await this.processDescAndTags(photosWithTags)
+
+    await Promise.all(
+      photosWithTags.map(({ id }) =>
+        photosService.updatePhoto(id, {
+          processed: { tags: true },
+        })
+      )
+    )
+    yield { type: 'analysisComplete', data: { costs } }
+  }
+
+  private async cleanPhotosDescs(photosWithDescs, batchSize = 5, delayMs = 500) {
+    const modelsService = new ModelsService()
+
+    const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+    const results = { cleanContextAndStory: [], cleanTopology: [] }
+
+    for (let i = 0; i < photosWithDescs.length; i += batchSize) {
+      const batch = photosWithDescs.slice(i, i + batchSize)
+
+      const [cleanContextAndStoryBatch, cleanTopologyBatch] = await Promise.all([
+        modelsService.cleanDescriptions(
+          batch.map((photo) => `1. Context: ${photo.context} | 2. Story: ${photo.story}`),
+          0.9
+        ),
+        modelsService.cleanDescriptions(
+          batch.map((photo) => `${photo.topology}`),
+          1
+        ),
+      ])
+
+      results.cleanContextAndStory.push(...cleanContextAndStoryBatch)
+      results.cleanTopology.push(...cleanTopologyBatch)
+
+      if (i + batchSize < photosWithDescs.length) {
+        await delay(delayMs)
+      }
+    }
+
+    return results
   }
 
   private async addTagsFromDescs(photosWithDescs: any[]): Promise<any[]> {
@@ -279,28 +317,23 @@ export default class AnalyzerService {
     const delayMs = 500
 
     // 1. Limpiar descripciones para todas las fotos de golpe, en paralelo
-    const [cleanContextAndStoryResults, cleanTopologyResults] = await Promise.all([
-      modelsService.cleanDescriptions(
-        photosWithDescs.map((photo) => `1. Context: ${photo.context} | 2. Story: ${photo.story}`)
-      ),
-      modelsService.cleanDescriptions(photosWithDescs.map((photo) => `${photo.topology}`)),
-    ])
+    const { cleanContextAndStory, cleanTopology } = await this.cleanPhotosDescs(photosWithDescs)
 
     const tasks = photosWithDescs.map(async (photo, index) => {
       const tagsDict: { [key: string]: string[] } = {}
 
-      const cleanedContextAndStoryForPhoto = cleanContextAndStoryResults[index]
-      const cleanedTopologyForPhoto = cleanTopologyResults[index]
+      const cleanedContextAndStoryForPhoto = cleanContextAndStory[index]
+      const cleanedTopologyForPhoto = cleanTopology[index]
 
       // 2. Extraer tags en paralelo
       const [contextStoryResponse, topologyResponse] = await Promise.all([
         modelsService.getGPTResponse(
-          SYSTEM_MESSAGE_TAGS_TEXT_EXTRACTION_WITH_GROUP_GPT,
+          SYSTEM_MESSAGE_TAGS_TEXT_EXTRACTION_FROM_CONTEXT_STORY,
           JSON.stringify({ description: cleanedContextAndStoryForPhoto }),
           'gpt-4o-mini'
         ),
         modelsService.getGPTResponse(
-          SYSTEM_MESSAGE_TAGS_TEXT_EXTRACTION_WITH_GROUP_GPT,
+          SYSTEM_MESSAGE_TAGS_TEXT_EXTRACTION_FROM_TOPOLOGY,
           JSON.stringify({ description: cleanedTopologyForPhoto }),
           'gpt-4o-mini'
         ),
@@ -323,7 +356,7 @@ export default class AnalyzerService {
       let sustantivesFromTag: string[] = []
       for (let tag of completeTagList) {
         let [tagName, group] = tag.split('|').map((item) => item.trim())
-        if (['person', 'objects', 'animals'].includes(group)) {
+        if (['person', 'animals'].includes(group)) {
           let sustantives = nlpService.getSustantives(tagName)
           if (sustantives?.length) sustantivesFromTag.push(...sustantives)
         }
@@ -332,14 +365,15 @@ export default class AnalyzerService {
       let tagsForDict: string[] = []
 
       // 5. Sacar grupos de tags (desde respuesta de GPT o con BERT)
-      let sustantiveGroupsResult = await modelsService.generateGroupsForTags([
-        ...sustantivesFromTag,
-      ])
-      tagsForDict = [...completeTagList, ...sustantiveGroupsResult]
+      // let sustantiveGroupsResult = await modelsService.generateGroupsForTags([
+      //   ...sustantivesFromTag,
+      // ])
+      // tagsForDict = [...completeTagList, ...sustantiveGroupsResult]
+      tagsForDict = [...completeTagList, ...sustantivesFromTag]
 
       // 6. Procesar tags | grupos
       tagsForDict.forEach((tagStr: string) => {
-        const [tag, group] = tagStr.split('|').map((item) => item.trim())
+        const [tag, group = 'misc'] = tagStr.split('|').map((item) => item.trim())
         if (!tagsDict[group]) {
           tagsDict[group] = []
         }
@@ -368,6 +402,8 @@ export default class AnalyzerService {
 
         const photo = await Photo.query().where('id', id).first()
 
+        await sleep(500)
+
         if (photo) {
           const updateData: any = {}
           const tagInstances: any[] = []
@@ -378,7 +414,7 @@ export default class AnalyzerService {
               let tags = generatedTags[group] || []
               for (const tagName of tags) {
                 await this.processTag(tagName, group, tagMap, tagInstances)
-                await sleep(500)
+                await sleep(1000)
               }
             }),
           ])
@@ -408,6 +444,9 @@ export default class AnalyzerService {
       throw new Error('No descriptions found for this photo')
     }
 
+    // Función para crear un retardo
+    const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
     const tasks: Promise<void>[] = []
 
     for (const category of Object.keys(photo.descriptions)) {
@@ -415,7 +454,7 @@ export default class AnalyzerService {
       if (!description) continue
 
       let descriptionChunks
-      if (category == 'topology') {
+      if (category === 'topology') {
         descriptionChunks = description.split('|').filter((ch) => ch.length > 0)
       } else {
         descriptionChunks = this.splitIntoChunks(description, description.length / 300)
@@ -423,20 +462,17 @@ export default class AnalyzerService {
 
       await DescriptionChunk.query().where('photoId', photo.id).where('category', category).delete()
 
-      descriptionChunks.forEach((chunk) => {
-        tasks.push(
-          (async () => {
-            const { embeddings } = await modelsService.getEmbeddings([chunk])
-
-            await DescriptionChunk.create({
-              photoId: photo.id,
-              chunk,
-              category,
-              embedding: embeddings[0],
-            })
-          })()
+      const { embeddings } = await modelsService.getEmbeddings(descriptionChunks)
+      await Promise.all(
+        descriptionChunks.map((chunk, index) =>
+          DescriptionChunk.create({
+            photoId: photo.id,
+            chunk,
+            category,
+            embedding: embeddings[index],
+          })
         )
-      })
+      )
     }
 
     await Promise.all(tasks)
