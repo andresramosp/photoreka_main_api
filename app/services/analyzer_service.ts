@@ -186,11 +186,9 @@ export default class AnalyzerProcessRunner {
           new Map(tagsToSaveForPhoto.map((tag) => [tag.name.toLowerCase(), tag])).values()
         )
 
-        // Por consistencia, se podría hacer que se actualizara task.data[photo.id] quitando / añadiendo fotos y luego hacer el commit fuera
-        await photo.related('tags').sync(
-          uniqueTagToSave.map((tag) => tag.id),
-          true
-        )
+        // OJO: esto siempre añade tags, poqrue se asume la posibilidad de tareas de tags secuenciales.
+        // Para manejar el escenario overwrite / rehacer tags, habria que hacer un delete en un nivel superior
+        await photo.related('tags').attach(uniqueTagToSave.map((tag) => tag.id))
       }
     }
   }
@@ -236,9 +234,7 @@ export default class AnalyzerProcessRunner {
   }
 
   private async executeGPTTask(prompts: string[], batch: any[], task: VisionTask): Promise<any> {
-    // GPT solo trabaja con un prompt por request
     const prompt = prompts[0]
-    // Preparar la estructura de imagen respetando la resolución indicada
     const images = batch.map((pp) => ({
       type: 'image_url',
       image_url: {
@@ -246,18 +242,23 @@ export default class AnalyzerProcessRunner {
         detail: task.resolution,
       },
     }))
-    // Llamada al servicio GPT con el prompt inyectado y el batch de imágenes
-    return await this.modelsService.getGPTResponse(prompt, images, 'gpt-4o', null, 0)
+    const response = await this.retryCall(() =>
+      this.modelsService.getGPTResponse(prompt, images, 'gpt-4o', null, 0)
+    )
+    return response || { result: [] }
   }
 
   private async executeMolmoTask(prompts: string[], batch: any[], task: VisionTask): Promise<any> {
-    const { result } = await this.modelsService.getMolmoResponse(
-      batch.map((pp) => ({ id: pp.photo.id, base64: pp.base64 })),
-      [], // TODO: caso simple sin inyección
-      prompts
+    const response = await this.retryCall(() =>
+      this.modelsService.getMolmoResponse(
+        batch.map((pp) => ({ id: pp.photo.id, base64: pp.base64 })),
+        [],
+        prompts
+      )
     )
+    if (!response) return { result: [] }
 
-    // TODO: seguir por aqui
+    const { result } = response
     const homogenizedResult = result.map((res: any) => {
       const descriptionsByPrompt: { [key: string]: any } = {}
       task.promptsTarget.forEach((targetPrompt) => {
@@ -269,7 +270,6 @@ export default class AnalyzerProcessRunner {
         ...descriptionsByPrompt,
       }
     })
-
     return { result: homogenizedResult }
   }
 
@@ -324,6 +324,7 @@ export default class AnalyzerProcessRunner {
     }
   }
 
+  @MeasureExecutionTime
   public async createTagsEmbeddings() {
     // Recorremos todas las fotos y recogemos los tags sin embedding (sin duplicados)
     const allTagsMap = new Map<string, Tag>()
@@ -355,6 +356,7 @@ export default class AnalyzerProcessRunner {
     }
   }
 
+  @MeasureExecutionTime
   public async createChunksEmbeddings() {
     // Asumimos que DescriptionChunk es el modelo y que ya existen registros en BD.
     // Se consultan los chunks que aún no tienen embedding asignado.
@@ -479,6 +481,21 @@ export default class AnalyzerProcessRunner {
       text += `${desc}: ${photo.descriptions?.[desc] ?? ''} |`
     }
     return text
+  }
+
+  // Función auxiliar para reintentos (hasta 3 intentos con 5 segundos de espera)
+  private async retryCall<T>(fn: () => Promise<T>): Promise<T | null> {
+    let attempts = 0
+    while (attempts < 3) {
+      try {
+        return await fn()
+      } catch (error) {
+        attempts++
+        console.error(`[AnalyzerTask]: Re-intento ${attempts} fallido: ${error}`)
+        if (attempts < 3) await this.sleep(5000)
+      }
+    }
+    return null
   }
 
   private sleep(ms: number) {

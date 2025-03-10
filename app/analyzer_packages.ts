@@ -1,6 +1,7 @@
 import { AnalyzerTask, VisionTask, TagTask, ChunkTask } from '#models/analyzer/analyzerTask'
 import {
   SYSTEM_MESSAGE_ANALYZER_GPT_CONTEXT_AND_STORY,
+  SYSTEM_MESSAGE_ANALYZER_MOLMO_STREET_PHOTO_PRETRAINED,
   SYSTEM_MESSAGE_ANALYZER_MOLMO_TOPOLOGIC_AREAS_PRETRAINED,
   SYSTEM_MESSAGE_TAGS_TEXT_EXTRACTION_FROM_CONTEXT_STORY,
   SYSTEM_MESSAGE_TAGS_TEXT_EXTRACTION_FROM_TOPOLOGY,
@@ -58,6 +59,32 @@ export const packages = [
           context: 'split_by_size',
           story: 'split_by_size',
           topology: 'split_by_pipes',
+        },
+      },
+    ],
+  },
+  {
+    id: 'artistic',
+    tasks: [
+      {
+        name: 'Análisis Artistic',
+        type: 'VisionTask',
+        model: 'Molmo',
+        prompts: [SYSTEM_MESSAGE_ANALYZER_MOLMO_STREET_PHOTO_PRETRAINED],
+        overwrite: false,
+        imagesPerBatch: 0,
+        resolution: null,
+        promptDependentField: 'context',
+        promptsTarget: ['artistic'],
+      },
+      {
+        name: 'Segmentación y Embeddings',
+        type: 'ChunkTask',
+        prompt: null,
+        model: null,
+        overwrite: false,
+        descriptionsChunksMethod: {
+          artistic: 'split_by_size',
         },
       },
     ],

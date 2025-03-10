@@ -236,7 +236,7 @@ export default class ModelsService {
       return { result: parsedResult }
     } catch (error) {
       console.error('Error al obtener respuesta del endpoint de HF:', error)
-      return null
+      throw error // re-lanza la excepción para que se active la lógica de reintentos
     }
   }
 
@@ -359,7 +359,7 @@ export default class ModelsService {
       return result
     } catch (error) {
       console.error('Error fetching GPT response:', error)
-      return {}
+      throw error // re-lanza la excepción para que se active la lógica de reintentos
     }
   }
 
