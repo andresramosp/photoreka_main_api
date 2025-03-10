@@ -1,6 +1,6 @@
 // @ts-nocheck
 
-import AnalyzerProcess from '#models/analyzer/analyzerProcess'
+import AnalyzerProcess, { StageType } from '#models/analyzer/analyzerProcess'
 import EmbeddingsService from './embeddings_service.js'
 import ModelsService from './models_service.js'
 import NLPService from './nlp_service.js'
@@ -11,9 +11,9 @@ import Tag from '#models/tag'
 import { STOPWORDS } from '../utils/StopWords.js'
 import DescriptionChunk from '#models/descriptionChunk'
 import MeasureExecutionTime from '../decorators/measureExecutionTime.js'
-import PhotoProcess from '#models/analyzer/photoProcess'
 import { getTaskList } from '../analyzer_packages.js'
 import ws from './ws.js'
+import PhotoImage from '#models/analyzer/photoImage'
 
 export default class AnalyzerProcessRunner {
   private process: AnalyzerProcess
@@ -28,7 +28,7 @@ export default class AnalyzerProcessRunner {
     this.embeddingsService = new EmbeddingsService()
   }
 
-  public async setProcess(photos: Photo[], packageId: string) {
+  public async initProcess(photos: Photo[], packageId: string) {
     const tasks = getTaskList(packageId)
     this.process.currentStage = 'init'
     this.process.tasks = tasks
@@ -43,71 +43,63 @@ export default class AnalyzerProcessRunner {
       throw new Exception('[ERROR] No process found')
     }
 
-    this.process.currentStage = 'vision_tasks'
+    await this.changeStage('Process Started', 'vision_tasks')
 
-    // 1. Tareas de visión
     const visionTasks = this.process.tasks.filter((task) => task instanceof VisionTask)
     for (const task of visionTasks) {
       await this.executeVisionTask(task)
       await task.commit()
+      await this.changeStage(`Task complete: ${task.name}`, 'vision_tasks')
     }
 
-    ws.io?.emit('stageChanged', { message: 'Vision Tasks complete' })
-    this.process.currentStage = 'tags_tasks'
+    await this.changeStage('Vision Tasks complete', 'tags_tasks')
 
-    // 2. Tareas de generación de tags
     const tagsTasks = this.process.tasks.filter((task) => task instanceof TagTask)
     for (const task of tagsTasks) {
       await this.executeTagsTask(task)
       await task.commit()
+      await this.changeStage(`Task complete: ${task.name}`, 'vision_tasks')
     }
 
-    ws.io?.emit('stageChanged', { message: 'Tags Tasks complete' })
-    this.process.currentStage = 'embeddings_tags'
+    await this.changeStage('Tags Tasks complete', 'embeddings_tags')
 
     await this.createTagsEmbeddings()
 
-    ws.io?.emit('stageChanged', { message: 'Tags Embeddings complete' })
-    this.process.currentStage = 'chunks_tasks'
+    await this.changeStage('Tags Embeddings complete', 'chunks_tasks')
 
-    // 3. Tareas de generación de chunks
     const chunkTasks = this.process.tasks.filter((task) => task instanceof ChunkTask)
     for (const task of chunkTasks) {
       await this.executeChunksTask(task)
       await task.commit()
+      await this.changeStage(`Task complete: ${task.name}`, 'vision_tasks')
     }
 
-    ws.io?.emit('stageChanged', { message: 'Chunks Tags complete' })
-    this.process.currentStage = 'embeddings_chunks'
+    await this.changeStage('Chunks Tags complete', 'embeddings_chunks')
 
     await this.createChunksEmbeddings()
 
-    ws.io?.emit('stageChanged', { message: 'Chunks Embeddings complete' })
-    this.process.currentStage = 'finished'
+    await this.changeStage('Chunks Embeddings complete', 'finished')
 
     // TODO: ver como gestionar procesos parciales
-    yield { type: 'analysisComplete', data: { costs } }
+    yield { type: 'analysisComplete', data: { costs: [] } }
   }
 
-  @MeasureExecutionTime
+  // @MeasureExecutionTime
   private async executeVisionTask(task: VisionTask) {
     if (!task.data) {
       task.data = {}
     }
-    // TODO: sacar solo las fotos que no tengan ya relleno promptsTarget, salvo que overwrite sea true
-    let pendingPhotos = this.process.photoImages
 
-    const maxImagesPerBatch = task.model === 'GPT' ? 6 : pendingPhotos.length
+    let pendingPhotoImages = await this.getPendingPhotosForTask(task)
 
-    for (let i = 0; i < pendingPhotos.length; i += maxImagesPerBatch) {
-      const batch = pendingPhotos.slice(i, i + maxImagesPerBatch)
+    const imagesPerBatch =
+      task.imagesPerBatch == 0 ? pendingPhotoImages.length : task.imagesPerBatch
+
+    for (let i = 0; i < pendingPhotoImages.length; i += imagesPerBatch) {
+      const batch = pendingPhotoImages.slice(i, i + imagesPerBatch)
       let response: any
 
-      const injectedPrompts: string[] = this.injectPromptsDpendencies(
-        task.prompts,
-        task.promptDependentField,
-        batch
-      )
+      const injectedPrompts: any = await this.injectPromptsDpendencies(task, batch)
 
       response = await this[`execute${task.model}Task`](injectedPrompts, batch, task)
 
@@ -120,7 +112,7 @@ export default class AnalyzerProcessRunner {
     }
   }
 
-  @MeasureExecutionTime
+  // @MeasureExecutionTime
   private async executeTagsTask(task: TagTask) {
     if (!task.data) {
       task.data = {}
@@ -203,7 +195,7 @@ export default class AnalyzerProcessRunner {
     }
   }
 
-  @MeasureExecutionTime
+  // @MeasureExecutionTime
   public async executeChunksTask(task: ChunkTask) {
     if (!task.data) {
       task.data = {}
@@ -259,25 +251,18 @@ export default class AnalyzerProcessRunner {
   }
 
   private async executeMolmoTask(prompts: string[], batch: any[], task: VisionTask): Promise<any> {
-    const promptList = task.promptsTarget.map((target: DescriptionType, index: number) => ({
-      id: target,
-      text: prompts[index],
-    }))
-
     const { result } = await this.modelsService.getMolmoResponse(
-      batch.map((pp) => ({ id: pp.photoId, base64: pp.base64 })),
-      [],
-      batch.map((pp) => ({
-        id: pp.photoId,
-        prompts: promptList,
-      }))
+      batch.map((pp) => ({ id: pp.photo.id, base64: pp.base64 })),
+      [], // TODO: caso simple sin inyección
+      prompts
     )
 
+    // TODO: seguir por aqui
     const homogenizedResult = result.map((res: any) => {
       const descriptionsByPrompt: { [key: string]: any } = {}
-      promptList.forEach((prompt) => {
-        const descObj = res.descriptions.find((d: any) => d.id_prompt === prompt.id)
-        descriptionsByPrompt[prompt.id] = descObj ? descObj.description : null
+      task.promptsTarget.forEach((targetPrompt) => {
+        const descObj = res.descriptions.find((d: any) => d.id_prompt === targetPrompt)
+        descriptionsByPrompt[targetPrompt] = descObj ? descObj.description : null
       })
       return {
         id: res.id,
@@ -390,19 +375,60 @@ export default class AnalyzerProcessRunner {
 
   // FUNCIONES AUXILIARES //
 
+  private async changeStage(message: string, nextStage: StageType) {
+    ws.io?.emit('stageChanged', { message })
+    this.process.currentStage = nextStage
+    await this.process.save()
+    console.log(`[AnalyzerProcess]: ${message}`)
+  }
+
   // caso de inyectar id's de fotos
-  private injectPromptsDpendencies(
-    prompts: any[],
-    injection: DescriptionType,
-    batch: PhotoProcess[]
-  ): string[] {
-    let result = prompts
-    if (injection) {
-      result = prompts.map((p) => p(injection))
+  private async injectPromptsDpendencies(task: VisionTask, batch: PhotoImage[]): Promise<any> {
+    let result = task.prompts
+
+    if (task.model === 'Molmo') {
+      const promptList = task.promptsTarget.map((target: DescriptionType, index: number) => ({
+        id: target,
+        prompt: task.prompts[index],
+      }))
+
+      result = await Promise.all(
+        batch.map(async (photoImage: PhotoImage) => {
+          await photoImage.photo.refresh()
+          return {
+            id: photoImage.photo.id,
+            prompts: promptList.map((p) => ({
+              id: p.id,
+              text: p.prompt(photoImage.photo.descriptions[task.promptDependentField]),
+            })),
+          }
+        })
+      )
     } else {
-      result = prompts.map((p) => p(batch))
+      result = task.prompts.map((p) => p(batch.map((b) => b.photo))) // Inyección de ID por defecto
     }
+
     return result
+  }
+
+  private async getPendingPhotosForTask(task: VisionTask): PhotoImage[] {
+    await this.process.load('photos')
+    let pendingPhotosIds = task.overwrite
+      ? this.process.photos
+      : this.process.photos
+          .filter((p: Photo) => {
+            let hasAllDescriptions = true
+            for (const prompt of task.promptsTarget) {
+              hasAllDescriptions =
+                hasAllDescriptions && !!p.descriptions && !!p.descriptions[prompt]
+            }
+            return !hasAllDescriptions
+          })
+          .map((p) => p.id)
+
+    return this.process.photoImages.filter((pi: PhotoImage) =>
+      pendingPhotosIds.includes(pi.photo.id)
+    )
   }
 
   // Método auxiliar para dividir una descripción en chunks

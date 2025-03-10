@@ -37,7 +37,18 @@ export default class PhotosService {
   }
 
   public async getPhotosByIds(photoIds: string[]) {
-    const photos = await Photo.query().whereIn('id', photoIds).preload('tags') // Si necesitas cargar las relaciones, como 'tags'
+    const photos = await Photo.query()
+      .whereIn('id', photoIds)
+      .preload('tags')
+      .preload('analyzerProcess') // Si necesitas cargar las relaciones, como 'tags'
+    return photos
+  }
+
+  public async _getPhotosByUser(userId: string) {
+    let photos = await Photo.query()
+      .preload('tags')
+      .preload('descriptionChunks')
+      .preload('analyzerProcess')
     return photos
   }
 
@@ -80,13 +91,18 @@ export default class PhotosService {
     return photo
   }
 
-  @withCache({
-    key: (arg1) => `getPhotosByUser_${arg1}`,
-    provider: 'redis',
-    ttl: 50 * 5,
-  })
+  // TODO: quitar el mapeo absurdo, el tempID ya no hace falta
+
+  // @withCache({
+  //   key: (arg1) => `getPhotosByUser_${arg1}`,
+  //   provider: 'redis',
+  //   ttl: 50 * 5,
+  // })
   public async getPhotosByUser(userId: string[]) {
-    let photos = await Photo.query().preload('tags').preload('descriptionChunks')
+    let photos = await Photo.query()
+      .preload('tags')
+      .preload('descriptionChunks')
+      .preload('analyzerProcess')
     return photos.map((photo) => ({
       ...photo.$attributes,
       tags: photo.tags,

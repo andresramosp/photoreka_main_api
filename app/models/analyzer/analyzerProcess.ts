@@ -2,7 +2,7 @@ import { DateTime } from 'luxon'
 import { BaseModel, column, hasMany } from '@adonisjs/lucid/orm'
 import type { HasMany } from '@adonisjs/lucid/types/relations'
 import Photo from '../photo.js'
-import PhotoProcess from './photoProcess.js'
+import PhotoImage from './photoImage.js'
 import path from 'path'
 import fs from 'fs/promises'
 import sharp from 'sharp'
@@ -46,7 +46,7 @@ export default class AnalyzerProcess extends BaseModel {
   })
   declare photos: HasMany<typeof Photo>
 
-  public photoImages: PhotoProcess[] = []
+  public photoImages: PhotoImage[] = []
 
   public async populatePhotoImages() {
     const uploadPath = path.join(process.cwd(), 'public/uploads/photos')
@@ -57,19 +57,9 @@ export default class AnalyzerProcess extends BaseModel {
           await fs.access(filePath)
           const resizedBuffer = await sharp(filePath).toBuffer()
           const base64Image = resizedBuffer.toString('base64')
-          const pp = new PhotoProcess()
-          pp.photoId = photo.id
+          const pp = new PhotoImage()
+          pp.photo = photo
           pp.base64 = base64Image
-          // // Si la foto ya fue procesada, se agregan más datos
-          // if (photo.processed?.context && photo.processed?.story) {
-          //   pp.data = {
-          //     context: photo.descriptions?.context,
-          //     story: photo.descriptions?.story,
-          //     processed: photo.processed,
-          //   }
-          // } else {
-          //   pp.data = {}
-          // }
           return pp
         } catch (error) {
           console.warn(`No se pudo procesar la imagen con ID: ${photo.id}`, error)
@@ -78,6 +68,6 @@ export default class AnalyzerProcess extends BaseModel {
       })
     )
     // Filtrar instancias nulas
-    this.photoImages = processes.filter((pp) => pp !== null) as PhotoProcess[]
+    this.photoImages = processes.filter((pp) => pp !== null) as PhotoImage[]
   }
 }

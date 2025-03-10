@@ -100,7 +100,10 @@ export default class CatalogController {
 
   public async getPhotos({ response }: HttpContext) {
     try {
-      const photos = await Photo.query().preload('tags').orderBy('created_at', 'desc')
+      const photos = await Photo.query()
+        .preload('tags')
+        .preload('analyzerProcess')
+        .orderBy('created_at', 'desc')
       return response.ok({ photos })
     } catch (error) {
       console.error('Error fetching photos:', error)

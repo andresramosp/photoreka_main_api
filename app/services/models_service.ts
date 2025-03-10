@@ -96,7 +96,7 @@ export default class ModelsService {
     }
   }
 
-  @MeasureExecutionTime
+  // @MeasureExecutionTime
   async getEmbeddings(tags) {
     try {
       const payload = { tags }
