@@ -12,6 +12,29 @@ export default class AnalyzerController {
     const analyzerService = new AnalyzerService()
 
     try {
+      const { userId, packageId } = request.body()
+      const photos = (await Photo.all()).filter((photo) => photo.needProcess)
+
+      await analyzerService.setProcess(photos, packageId)
+
+      if (!analysisProcesses.has(userId)) {
+        const process = analyzerService.run()
+        analysisProcesses.set(userId, process)
+
+        this.handleAnalysisStream(userId, process)
+      }
+
+      return response.ok({ message: 'Analysis started', userId })
+    } catch (error) {
+      console.error(error)
+      return response.internalServerError({ message: 'Something went wrong', error: error.message })
+    }
+  }
+
+  public async analyzeOld({ request, response }: HttpContext) {
+    const analyzerService = new AnalyzerService()
+
+    try {
       // Obtener los IDs de las imágenes desde el frontend
       const { userId } = request.body()
 
@@ -30,7 +53,7 @@ export default class AnalyzerController {
 
       // Si el usuario ya tiene un análisis en curso, no iniciar otro
       if (!analysisProcesses.has(userId)) {
-        const process = analyzerService.analyzeGPTAndMolmo(photosIds)
+        const process = analyzerService.analyze(photosIds)
         analysisProcesses.set(userId, process)
 
         // Ejecutar el stream y emitir los eventos por WebSocket

@@ -7,7 +7,7 @@ export default class extends BaseSchema {
     this.schema.createTable(this.tableName, (table) => {
       table.increments('id').primary() // ID numérico incremental
       table.jsonb('descriptions')
-      table.jsonb('processed')
+      table.integer('analyzer_process_id').references('id').inTable('analyzer_processes')
       table.string('title')
       table.string('name')
       table.string('model')

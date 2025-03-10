@@ -47,7 +47,7 @@ export const SYSTEM_MESSAGE_ANALYZER_GPT_CONTEXT_AND_STORY = (photosBatch: any[]
 
  For each image, include following properties:
  
-- 'id': id of the image, using this comma-separated, ordered list: ${photosBatch.map((img: any) => img.id).join(',')}
+- 'id': id of the image, using this comma-separated, ordered list: ${photosBatch.map((img: any) => img.photoId).join(',')}
 - 'context': mention the place where the scene takes place, the time of day, as well as the cultural context. Also, when it becomes clear, add the country and/or city. Minimum 30 - 40 words. 
 - 'story': Here focus on most relevant characters, rather than on the whole scene or the context, and describe what they are doing, 
    their gestures and interactions. Discard elements too distant or barely visible. Minimum 150 - 180 words. 

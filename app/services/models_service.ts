@@ -192,7 +192,7 @@ export default class ModelsService {
   }
 
   @MeasureExecutionTime
-  public async getMolmoResponse(imagesItems, prompts, promptsPerImage) {
+  public async getMolmoResponse(imagesItems, prompts, promptsPerImage): Promise<any> {
     try {
       // Se asume que imagesItems es un array de objetos { id, base64 }
       const imagesArray = imagesItems.map((item) => ({
