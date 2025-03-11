@@ -13,6 +13,9 @@ export default class Tag extends BaseModel {
   declare group: string
 
   @column()
+  declare category: string
+
+  @column()
   declare children: Record<string, []>
 
   @column({ serializeAs: null })

@@ -14,14 +14,10 @@ export default class AnalyzerController {
     const photosService = new PhotosService()
 
     try {
-      // TODO: el needProcess tiene que ser para un proceso concreto. De esa forma, si queremos añadir nuevos analisis a las fotos
-      // podemos crear un proceso distinto, que se ejcutará siempre
-
       const { userId, packageId } = request.body()
-      const photos = (await photosService._getPhotosByUser(userId)).filter(
-        (photo) => photo.needProcess
-      )
+      const photos = await photosService._getPhotosByUser(userId)
 
+      // TODO: aqui debemos mirar si ya se hizo este package_id, en cuyo caso solo seguimos si es overwrite (ya veremos cómo se indica, puede ser una variable en el process)
       if (photos.length) {
         await analyzerService.initProcess(photos, packageId)
 

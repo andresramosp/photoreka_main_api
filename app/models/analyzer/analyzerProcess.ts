@@ -22,6 +22,9 @@ export default class AnalyzerProcess extends BaseModel {
   @column({ isPrimary: true })
   declare id: string
 
+  @column()
+  declare packageId: string
+
   @column({
     serializeAs: 'tasks',
     prepare: (value: AnalyzerTask[] | null) =>

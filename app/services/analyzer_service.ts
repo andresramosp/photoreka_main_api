@@ -31,11 +31,13 @@ export default class AnalyzerProcessRunner {
   public async initProcess(photos: Photo[], packageId: string) {
     const tasks = getTaskList(packageId)
     this.process.currentStage = 'init'
+    this.process.packageId = packageId
     this.process.tasks = tasks
     await this.process.save()
     await this.process.related('photos').updateOrCreateMany(photos)
     await this.process.load('photos')
     await this.process.populatePhotoImages()
+    await this.changeStage(`Process Started | Package: ${packageId} `, 'vision_tasks')
   }
 
   public async *run() {
@@ -43,44 +45,44 @@ export default class AnalyzerProcessRunner {
       throw new Exception('[ERROR] No process found')
     }
 
-    await this.changeStage('Process Started', 'vision_tasks')
-
     const visionTasks = this.process.tasks.filter((task) => task instanceof VisionTask)
     for (const task of visionTasks) {
+      await this.changeStage(`Initiating vision task: ${task.name}`, 'vision_tasks')
       await this.executeVisionTask(task)
       await task.commit()
-      await this.changeStage(`Task complete: ${task.name}`, 'vision_tasks')
+      await this.changeStage(`Vision task complete: ${task.name}`)
     }
-
-    await this.changeStage('Vision Tasks complete', 'tags_tasks')
 
     const tagsTasks = this.process.tasks.filter((task) => task instanceof TagTask)
     for (const task of tagsTasks) {
+      await this.changeStage(`Initiating tags task: ${task.name}`, 'tags_tasks')
       await this.executeTagsTask(task)
       await task.commit()
-      await this.changeStage(`Task complete: ${task.name}`, 'vision_tasks')
+      await this.changeStage(`Tags task complete: ${task.name}`)
     }
 
-    await this.changeStage('Tags Tasks complete', 'embeddings_tags')
-
-    await this.createTagsEmbeddings()
-
-    await this.changeStage('Tags Embeddings complete', 'chunks_tasks')
+    if (tagsTasks.length) {
+      await this.changeStage('Initiating tags embeddings task', 'embeddings_tags')
+      await this.createTagsEmbeddings()
+      await this.changeStage('Tags Embeddings complete')
+    }
 
     const chunkTasks = this.process.tasks.filter((task) => task instanceof ChunkTask)
     for (const task of chunkTasks) {
+      await this.changeStage(`Initiating chunks task: ${task.name}`, 'chunks_tasks')
       await this.executeChunksTask(task)
       await task.commit()
-      await this.changeStage(`Task complete: ${task.name}`, 'vision_tasks')
+      await this.changeStage(`Chunk task complete: ${task.name}`)
     }
 
-    await this.changeStage('Chunks Tags complete', 'embeddings_chunks')
+    if (chunkTasks.length) {
+      await this.changeStage('Initiating chunks embeddings task', 'embeddings_chunks')
+      await this.createChunksEmbeddings()
+      await this.changeStage('Chunks Embeddings complete')
+    }
 
-    await this.createChunksEmbeddings()
+    await this.changeStage('Process Completed', 'finished')
 
-    await this.changeStage('Chunks Embeddings complete', 'finished')
-
-    // TODO: ver como gestionar procesos parciales
     yield { type: 'analysisComplete', data: { costs: [] } }
   }
 
@@ -165,6 +167,7 @@ export default class AnalyzerProcessRunner {
         let newTag = new Tag()
         newTag.name = tag
         newTag.group = group
+        newTag.category = task.descriptionSourceFields.join('_')
         task.data[photo.id].push(newTag)
       })
 
@@ -186,20 +189,28 @@ export default class AnalyzerProcessRunner {
           new Map(tagsToSaveForPhoto.map((tag) => [tag.name.toLowerCase(), tag])).values()
         )
 
-        // OJO: esto siempre añade tags, poqrue se asume la posibilidad de tareas de tags secuenciales.
-        // Para manejar el escenario overwrite / rehacer tags, habria que hacer un delete en un nivel superior
-        await photo.related('tags').attach(uniqueTagToSave.map((tag) => tag.id))
+        if (task.overwrite) {
+          console.log('[AnalyzerProcess]: Sobreescribiendo tags... ')
+          await photo.related('tags').sync(
+            uniqueTagToSave.map((tag) => tag.id),
+            true
+          )
+        } else {
+          console.log('[AnalyzerProcess]: Añadiendo tags... ')
+          await photo.related('tags').attach(uniqueTagToSave.map((tag) => tag.id))
+        }
       }
     }
   }
 
-  // @MeasureExecutionTime
+  // TODO: hacerlo más selectivo, para que solo opere sobre las descriptions indicadas, como la tarea de tags
   public async executeChunksTask(task: ChunkTask) {
     if (!task.data) {
       task.data = {}
     }
 
     for (let photo of this.process.photos) {
+      await photo.refresh()
       if (!photo.descriptions || typeof photo.descriptions !== 'object') {
         throw new Error('No descriptions found for this photo')
       }
@@ -377,10 +388,12 @@ export default class AnalyzerProcessRunner {
 
   // FUNCIONES AUXILIARES //
 
-  private async changeStage(message: string, nextStage: StageType) {
+  private async changeStage(message: string, nextStage: StageType = null) {
     ws.io?.emit('stageChanged', { message })
-    this.process.currentStage = nextStage
-    await this.process.save()
+    if (nextStage) {
+      this.process.currentStage = nextStage
+      await this.process.save()
+    }
     console.log(`[AnalyzerProcess]: ${message}`)
   }
 

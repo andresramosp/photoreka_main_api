@@ -10,7 +10,7 @@ export default function MeasureExecutionTime(
     const result = await originalMethod.apply(this, args)
     const end = performance.now()
     const executionTime = ((end - start) / 1000).toFixed(3)
-    console.log(`Execution time [${propertyKey}]: ${executionTime} seconds`)
+    console.log(`[${propertyKey}]: ${executionTime} seconds`)
     return result
   }
 

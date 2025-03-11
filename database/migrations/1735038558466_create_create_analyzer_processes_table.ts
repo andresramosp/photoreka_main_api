@@ -6,6 +6,7 @@ export default class CreateAnalyzerProcesses extends BaseSchema {
   async up() {
     this.schema.createTable(this.tableName, (table) => {
       table.increments('id').primary()
+      table.string('package_id', 255)
       table.jsonb('tasks').nullable() // Se almacena como JSONB
       table
         .enum('current_stage', [
