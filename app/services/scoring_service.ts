@@ -562,7 +562,8 @@ export default class ScoringService {
       embeddingsProximityThreshold,
       1500, // debería ser num_photos * constante, con un limite de 5000 o así.
       'cosine_similarity',
-      remainingTags.map((t) => t.id) // Solo considerar los tags que no coincidieron por string
+      null, //remainingTags.map((t) => t.id), // Solo considerar los tags que no coincidieron por string,
+      ['artistic']
     )
 
     // < 0 Contradiction

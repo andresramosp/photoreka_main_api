@@ -46,9 +46,12 @@ export default class PhotosService {
 
   public async _getPhotosByUser(userId: string) {
     let photos = await Photo.query()
-      .preload('tags')
       .preload('descriptionChunks')
       .preload('analyzerProcess')
+      .preload('tags', (tagsQuery) => {
+        tagsQuery.pivotColumns(['category'])
+      })
+
     return photos
   }
 
@@ -58,31 +61,14 @@ export default class PhotosService {
       throw new Error('Photo not found')
     }
 
-    // Inicializa 'processed' si es null o undefined
-    photo.processed = photo.processed || {
-      context: false,
-      story: false,
-      topology: false,
-      artistic: false,
-      tags: false,
-    }
-
     if (updates.descriptions && typeof updates.descriptions === 'object') {
       photo.descriptions = {
         ...(photo.descriptions || {}),
         ...updates.descriptions,
       }
     }
-
-    if (updates.processed && typeof updates.processed === 'object') {
-      photo.processed = {
-        ...photo.processed,
-        ...updates.processed,
-      }
-    }
-
     Object.entries(updates).forEach(([key, value]) => {
-      if (key !== 'descriptions' && key !== 'processed') {
+      if (key !== 'descriptions') {
         ;(photo as any)[key] = value
       }
     })

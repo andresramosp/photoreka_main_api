@@ -39,6 +39,7 @@ export default class Photo extends BaseModel {
     pivotForeignKey: 'photo_id',
     relatedKey: 'id',
     pivotRelatedForeignKey: 'tag_id',
+    pivotColumns: ['category'],
   })
   declare tags: ManyToMany<typeof Tag>
 

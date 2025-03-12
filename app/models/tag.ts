@@ -1,5 +1,5 @@
 import { DateTime } from 'luxon'
-import { BaseModel, beforeSave, column, manyToMany } from '@adonisjs/lucid/orm'
+import { BaseModel, beforeSave, column, computed, manyToMany } from '@adonisjs/lucid/orm'
 import Photo from './photo.js'
 
 export default class Tag extends BaseModel {
@@ -12,8 +12,10 @@ export default class Tag extends BaseModel {
   @column()
   declare group: string
 
-  // @column()
-  // declare category: string
+  @computed()
+  public get category() {
+    return this.$extras.pivot_category
+  }
 
   @column()
   declare children: Record<string, []>

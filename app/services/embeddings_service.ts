@@ -240,7 +240,9 @@ export default class EmbeddingsService {
     threshold: Threshold = 0.3,
     limit: number = 10,
     metric: 'distance' | 'inner_product' | 'cosine_similarity' = 'cosine_similarity',
-    tagIds?: number[]
+    tagIds?: number[],
+    categories?: string[],
+    userId?: number // 🔥 Se deja opcional para el futuro
   ) {
     if (!embedding || embedding.length === 0) {
       throw new Error('Embedding no proporcionado o vacío')
@@ -252,6 +254,7 @@ export default class EmbeddingsService {
 
     let additionalParams: any = {}
     let thresholdCondition = ''
+
     if (typeof threshold === 'number') {
       if (metric === 'distance') {
         metricQuery = 'embedding <-> :embedding AS proximity'
@@ -287,17 +290,21 @@ export default class EmbeddingsService {
       additionalParams.maxThreshold = threshold.max
     }
 
-    // Filtro adicional por tagIds si están presentes
-    const tagFilterCondition = tagIds && tagIds.length > 0 ? 'AND id = ANY(:tagIds)' : ''
+    const tagFilterCondition = tagIds && tagIds.length > 0 ? 'AND tags.id = ANY(:tagIds)' : ''
+    const categoryFilterCondition =
+      categories && categories.length > 0 ? 'AND tags_photos.category = ANY(:categories)' : ''
+    const userFilterCondition = userId ? 'AND photos.user_id = :userId' : '' // 🔥 Se deja listo para el futuro
 
-    whereCondition = `${thresholdCondition} ${tagFilterCondition}`
+    whereCondition = `${thresholdCondition} ${tagFilterCondition} ${categoryFilterCondition} ${userFilterCondition}`
 
     const embeddingString = `[${embedding.join(',')}]`
 
     const result = await db.rawQuery(
       `
-      SELECT id, name, "group", created_at, updated_at, ${metricQuery}
+      SELECT tags.id, tags.name, tags."group", tags_photos.category, tags.created_at, tags.updated_at, ${metricQuery}
       FROM tags
+      JOIN tags_photos ON tags_photos.tag_id = tags.id
+      JOIN photos ON photos.id = tags_photos.photo_id
       WHERE ${whereCondition}
       ORDER BY ${orderBy}
       LIMIT :limit
@@ -306,6 +313,8 @@ export default class EmbeddingsService {
         embedding: embeddingString,
         limit,
         tagIds: tagIds || [],
+        categories: categories || [],
+        userId: userId || null, // 🔥 Se pasa null si no hay userId para evitar errores
         ...additionalParams,
       }
     )
