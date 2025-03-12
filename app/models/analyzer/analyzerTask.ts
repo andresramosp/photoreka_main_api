@@ -21,6 +21,7 @@ export class VisionTask extends AnalyzerTask {
   declare promptDependentField: DescriptionType
   declare promptsTarget: DescriptionType[]
   declare data: Record<string, Record<string, string>> // foto -> { description_field -> text }
+  declare complete: boolean // TODO: que serialize a BD, y usar para saber si la task ya se completó, en vez de mirar los fields
 
   public async commit() {
     const photosService = new PhotosService()

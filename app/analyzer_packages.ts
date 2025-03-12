@@ -194,6 +194,14 @@ export const packages = [
         promptsTarget: ['artistic'],
       },
       {
+        name: 'Etiquetado y Embeddings de Artistic',
+        type: 'TagTask',
+        model: 'GPT',
+        prompt: SYSTEM_MESSAGE_TAGS_TEXT_EXTRACTION_FROM_CONTEXT_STORY,
+        overwrite: false,
+        descriptionSourceFields: ['artistic'],
+      },
+      {
         name: 'Segmentación y Embeddings',
         type: 'ChunkTask',
         prompt: null,

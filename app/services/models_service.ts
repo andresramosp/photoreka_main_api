@@ -129,7 +129,7 @@ export default class ModelsService {
     }
   }
 
-  @MeasureExecutionTime
+  // @MeasureExecutionTime
   async cleanDescriptions(texts, extract_ratio = 0.9) {
     try {
       const payload = {

@@ -5,9 +5,23 @@ export default class extends BaseSchema {
 
   async up() {
     this.schema.createTable(this.tableName, (table) => {
-      table.increments('id')
-      table.integer('photo_id').references('id').inTable('photos')
-      table.integer('tag_id').references('id').inTable('tags')
+      table
+        .integer('photo_id')
+        .unsigned()
+        .notNullable()
+        .references('id')
+        .inTable('photos')
+        .onDelete('CASCADE')
+      table
+        .integer('tag_id')
+        .unsigned()
+        .notNullable()
+        .references('id')
+        .inTable('tags')
+        .onDelete('CASCADE')
+      table.string('category')
+
+      table.primary(['photo_id', 'tag_id'])
     })
   }
 

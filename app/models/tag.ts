@@ -12,8 +12,8 @@ export default class Tag extends BaseModel {
   @column()
   declare group: string
 
-  @column()
-  declare category: string
+  // @column()
+  // declare category: string
 
   @column()
   declare children: Record<string, []>

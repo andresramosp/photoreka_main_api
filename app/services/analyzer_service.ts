@@ -14,6 +14,7 @@ import MeasureExecutionTime from '../decorators/measureExecutionTime.js'
 import { getTaskList } from '../analyzer_packages.js'
 import ws from './ws.js'
 import PhotoImage from '#models/analyzer/photoImage'
+import db from '@adonisjs/lucid/services/db'
 
 export default class AnalyzerProcessRunner {
   private process: AnalyzerProcess
@@ -49,7 +50,6 @@ export default class AnalyzerProcessRunner {
     for (const task of visionTasks) {
       await this.changeStage(`Initiating vision task: ${task.name}`, 'vision_tasks')
       await this.executeVisionTask(task)
-      await task.commit()
       await this.changeStage(`Vision task complete: ${task.name}`)
     }
 
@@ -57,7 +57,6 @@ export default class AnalyzerProcessRunner {
     for (const task of tagsTasks) {
       await this.changeStage(`Initiating tags task: ${task.name}`, 'tags_tasks')
       await this.executeTagsTask(task)
-      await task.commit()
       await this.changeStage(`Tags task complete: ${task.name}`)
     }
 
@@ -110,6 +109,7 @@ export default class AnalyzerProcessRunner {
         task.data[id] = { ...task.data[id], ...descriptions }
       }
 
+      await task.commit()
       await this.sleep(750)
     }
   }
@@ -158,7 +158,7 @@ export default class AnalyzerProcessRunner {
 
       let tagsToSave: string[] = []
 
-      tagsToSave = [...tagList, ...sustantivesFromTag]
+      tagsToSave = [...tagList, ...new Set(sustantivesFromTag)]
 
       task.data[photo.id] = []
 
@@ -167,7 +167,7 @@ export default class AnalyzerProcessRunner {
         let newTag = new Tag()
         newTag.name = tag
         newTag.group = group
-        newTag.category = task.descriptionSourceFields.join('_')
+        // newTag.category = task.descriptionSourceFields.join('_') // TODO: esto a la tabla relacional
         task.data[photo.id].push(newTag)
       })
 
@@ -197,7 +197,22 @@ export default class AnalyzerProcessRunner {
           )
         } else {
           console.log('[AnalyzerProcess]: Añadiendo tags... ')
-          await photo.related('tags').attach(uniqueTagToSave.map((tag) => tag.id))
+          const existingTagIds = (await photo.related('tags').query()).map((tag) => tag.id)
+          const category = task.descriptionSourceFields.join('_')
+          const newTagsWithCategory = uniqueTagToSave
+            .filter((tag) => !existingTagIds.includes(tag.id)) // Filtra solo los nuevos
+            .reduce(
+              (acc, tag) => {
+                acc[tag.id] = { category }
+                return acc
+              },
+              {} as Record<number, { category: string }>
+            )
+
+          if (Object.keys(newTagsWithCategory).length > 0) {
+            console.log(`[AnalyzerProcess]: Añadiendo nuevos tags con categoría "${category}"...`)
+            await photo.related('tags').attach(newTagsWithCategory)
+          }
         }
       }
     }
@@ -284,54 +299,64 @@ export default class AnalyzerProcessRunner {
     return { result: homogenizedResult }
   }
 
-  public async validateTag(tag: Tag, globalTagList: Array<Tag>, tagsToSaveForPhoto: Tag[]) {
-    const isStopword = (tagName: string) => STOPWORDS.includes(tagName.toLowerCase())
+  // TODO: los tags deben compararse usando también el grupo (orange | fruit, orange | color)
+  public async validateTag(
+    tag: Tag,
+    globalTagList: Tag[],
+    tagsToSaveForPhoto: Tag[]
+  ): Promise<void> {
+    const tagNameLower = tag.name.toLowerCase()
 
-    if (!isStopword(tag.name)) {
-      let existingTag = globalTagList.find((t) => t.name == tag.name.toLowerCase())
-
-      if (!existingTag) {
-        let similarTagsResult: any
-        try {
-          similarTagsResult = await this.embeddingsService.findSimilarTagsToText(tag.name, 0.89, 5)
-        } catch (err) {
-          console.log('Error in findSimilarTagsToText')
-        }
-
-        if (similarTagsResult?.length > 0) {
-          for (const similarTag of similarTagsResult) {
-            const existingSimilarTag = globalTagList.find(
-              (t) => t.name == similarTag.name.toLowerCase()
-            )
-            if (existingSimilarTag) {
-              tagsToSaveForPhoto.push(existingSimilarTag)
-            }
-          }
-          console.log(
-            `Using existing similar tags for ${tag.name}: ${JSON.stringify(similarTagsResult.map((tag: any) => tag.name))}`
-          )
-          return
-        }
-      }
-
-      if (!existingTag) {
-        try {
-          await tag.save()
-          tagsToSaveForPhoto.push(tag)
-          globalTagList.push(tag)
-        } catch (err) {
-          if (err.code === '23505') {
-            console.log(`Tag ${tag.name} already exists, fetching existing one.`)
-            const concurrentBDTag = await Tag.query().where('name', tag.name).firstOrFail()
-            tagsToSaveForPhoto.push(concurrentBDTag)
-          } else {
-            throw err
-          }
-        }
-      }
-      if (existingTag) tagsToSaveForPhoto.push(existingTag)
-    } else {
+    // Si es una stopword, se ignora la etiqueta.
+    if (STOPWORDS.includes(tagNameLower)) {
       console.log('Ignoring tag: ', tag.name)
+      return
+    }
+
+    // Si ya existe en la lista global, se añade y se retorna.
+    const existingTag = globalTagList.find((t) => t.name === tagNameLower)
+    if (existingTag) {
+      tagsToSaveForPhoto.push(existingTag)
+      console.log(`Using existing exact tag for ${tag.name}: ${existingTag.name}`)
+      return
+    }
+
+    // Busca etiquetas similares.
+    let similarTagsResult: any[] = []
+    try {
+      similarTagsResult =
+        (await this.embeddingsService.findSimilarTagsToText(tag.name, 0.89, 5)) || []
+    } catch (error) {
+      console.log('Error in findSimilarTagsToText')
+    }
+    if (similarTagsResult.length > 0) {
+      for (const similarTag of similarTagsResult) {
+        const found = globalTagList.find((t) => t.name === similarTag.name.toLowerCase())
+        if (found) {
+          tagsToSaveForPhoto.push(found)
+        }
+      }
+      console.log(
+        `Using existing similar tags for ${tag.name}: ${JSON.stringify(similarTagsResult.map((t) => t.name))}`
+      )
+      return
+    }
+
+    // Si no se encontró etiqueta existente ni similar, se intenta guardar la nueva.
+    try {
+      await tag.save()
+      tagsToSaveForPhoto.push(tag)
+      globalTagList.push(tag)
+    } catch (err: any) {
+      if (err.code === '23505') {
+        console.log(
+          `Tried to save tag (${tag.name}) already existing in BD, fetching existing one.`
+        )
+        const concurrentTag = await Tag.query().where('name', tag.name).firstOrFail()
+        tagsToSaveForPhoto.push(concurrentTag)
+      } else {
+        throw err
+      }
     }
   }
 
