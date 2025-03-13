@@ -51,6 +51,7 @@ export default class PhotosService {
       .preload('tags', (tagsQuery) => {
         tagsQuery.pivotColumns(['category'])
       })
+      .orderBy('created_at', 'desc')
 
     return photos
   }
@@ -79,11 +80,11 @@ export default class PhotosService {
 
   // TODO: quitar el mapeo absurdo, el tempID ya no hace falta
 
-  // @withCache({
-  //   key: (arg1) => `getPhotosByUser_${arg1}`,
-  //   provider: 'redis',
-  //   ttl: 50 * 5,
-  // })
+  @withCache({
+    key: (arg1) => `getPhotosByUser_${arg1}`,
+    provider: 'redis',
+    ttl: 50 * 5,
+  })
   public async getPhotosByUser(userId: string[]) {
     let photos = await Photo.query()
       .preload('tags')

@@ -29,16 +29,35 @@ export default class AnalyzerProcessRunner {
     this.embeddingsService = new EmbeddingsService()
   }
 
-  public async initProcess(photos: Photo[], packageId: string) {
+  public async initProcess(userPhotos: Photo[], packageId: string) {
+    const unproccesedPhotos = userPhotos.filter((photo: Photo) => !photo.analyzerProcess)
     const tasks = getTaskList(packageId)
     this.process.currentStage = 'init'
     this.process.packageId = packageId
     this.process.tasks = tasks
     await this.process.save()
-    await this.process.related('photos').updateOrCreateMany(photos)
+    await this.process.related('photos').updateOrCreateMany(unproccesedPhotos)
     await this.process.load('photos')
     await this.process.populatePhotoImages()
-    await this.changeStage(`Process Started | Package: ${packageId} `, 'vision_tasks')
+    await this.changeStage(
+      `Process Started | Package: ${packageId} | ${unproccesedPhotos.length} photos`,
+      'vision_tasks'
+    )
+  }
+
+  public async resumeProcess(userPhotos: Photo[], processId: number) {
+    this.process = await AnalyzerProcess.query()
+      .where('id', processId)
+      .preload('photos')
+      .firstOrFail()
+    const tasks = getTaskList(this.process?.packageId)
+    this.process.currentStage = 'init' // TODO: deberiamos poder saltar a la primera stage de currentStage
+    this.process.tasks = tasks
+    await this.process.save()
+    await this.process.populatePhotoImages()
+    await this.changeStage(
+      `Process Resumed | ID: ${processId} | ${this.process.photos.length} photos`
+    )
   }
 
   public async *run() {
@@ -91,119 +110,171 @@ export default class AnalyzerProcessRunner {
       task.data = {}
     }
 
-    let pendingPhotoImages = await this.getPendingPhotosForTask(task)
+    // 1. Obtenemos el listado completo de imágenes a procesar
+    const pendingPhotoImages = await this.getPendingPhotosForVisionTask(task)
 
-    const imagesPerBatch =
-      task.imagesPerBatch == 0 ? pendingPhotoImages.length : task.imagesPerBatch
-
-    for (let i = 0; i < pendingPhotoImages.length; i += imagesPerBatch) {
-      const batch = pendingPhotoImages.slice(i, i + imagesPerBatch)
-      let response: any
-
-      const injectedPrompts: any = await this.injectPromptsDpendencies(task, batch)
-
-      response = await this[`execute${task.model}Task`](injectedPrompts, batch, task)
-
-      for (const res of response.result) {
-        const { id, ...descriptions } = res
-        task.data[id] = { ...task.data[id], ...descriptions }
-      }
-
-      await task.commit()
-      await this.sleep(750)
+    // 2. Agrupamos las imágenes en lotes ("batches")
+    const batches: any[][] = []
+    for (let i = 0; i < pendingPhotoImages.length; i += task.imagesPerBatch) {
+      const batch = pendingPhotoImages.slice(i, i + task.imagesPerBatch)
+      batches.push(batch)
     }
+
+    // 3. Para cada batch, creamos una promesa que se lanza con un retraso incremental
+    const batchPromises = batches.map((batch, idx) => {
+      return (async () => {
+        // Retraso según el índice de batch
+        await this.sleep(idx * 500)
+
+        let response: any
+        const injectedPrompts: any = await this.injectPromptsDpendencies(task, batch)
+
+        console.log(
+          `[AnalyzerProcess]: Vision Task calling ${task.model} for ${batch.length} images...`
+        )
+
+        try {
+          response = await this[`execute${task.model}Task`](injectedPrompts, batch, task)
+        } catch (err) {
+          console.log(`[AnalyzerProcess]: Error en ${task.model} for ${batch.length} images...`)
+          return // o throw err si deseas romper aquí
+        }
+
+        // Guardamos descripciones en task.data
+        for (const res of response.result) {
+          const { id, ...descriptions } = res
+          task.data[id] = { ...task.data[id], ...descriptions }
+        }
+
+        // Confirmamos estado del task
+        await task.commit()
+      })()
+    })
+
+    // 4. Esperamos a que concluyan todos los lotes
+    await Promise.all(batchPromises)
   }
 
   // @MeasureExecutionTime
   private async executeTagsTask(task: TagTask) {
+    console.log(
+      '[AnalyzerProcess]: TagTask: Iniciando fase 1 - Carga y limpieza de descripciones...'
+    )
+
     if (!task.data) {
       task.data = {}
     }
 
-    await this.process.load('photos')
+    const pendingPhotos = await this.getPendingPhotosForTagsTask(task)
 
-    // 1. Limpiamos/resumimos descriptions para todas las fotos
-    const cleanedResults = await this.cleanPhotosDescs(
-      this.process.photos,
-      task.descriptionSourceFields
-    )
+    const cleanedResults = await this.cleanPhotosDescs(pendingPhotos, task.descriptionSourceFields)
 
-    // 2. Obtenemos los tags/gropos para todas las fotos
-    const tagRequests = this.process.photos.map(async (photo, index) => {
-      const cleanedText = cleanedResults[index]
+    console.log('[AnalyzerProcess]: TagTask: Fase 2 - Procesando solicitudes a GPT...')
 
-      const { result: extractedTagsResponse, cost } = await this.modelsService.getGPTResponse(
-        task.prompt as string,
-        JSON.stringify({ description: cleanedText }),
-        'gpt-4o-mini'
-      )
+    await this.requestTagsFromGPT(pendingPhotos, task, cleanedResults)
 
-      const { tags: tagList } = extractedTagsResponse
+    console.log('[AnalyzerProcess]: TagTask: Fase 3 - Filtrando y guardando en DB...')
 
-      // Verificar si existe el grupo "person"
-      const hasPerson = tagList.some((tag: string) => tag.split('|')[1].trim() === 'person')
-      if (!hasPerson) {
-        tagList.push('no people | misc')
-      }
+    await this.filterAndSaveTags(pendingPhotos, task)
 
-      // 3. Sacar sustantivos de tags, solo de ciertos grupos
-      let sustantivesFromTag: string[] = []
-      for (let tag of tagList) {
-        let [tagName, group] = tag.split('|').map((item: string) => item.trim())
-        if (['person', 'animals'].includes(group)) {
-          let sustantives = this.nlpService.getSustantives(tagName)
-          if (sustantives?.length) sustantivesFromTag.push(...sustantives)
+    console.log('[AnalyzerProcess]: TagTask: Finalizado.')
+  }
+
+  private async requestTagsFromGPT(photos: Photos[], task: TagTask, cleanedResults: string[]) {
+    const tagRequests: Promise<void>[] = []
+    const totalPhotos = this.process.photos.length
+    // Inicia un log sin salto de línea para ir agregando IDs
+    process.stdout.write(`[AnalyzerProcess]: TagTask: Realizando requests GPT para `)
+
+    photos.forEach((photo, index) => {
+      const requestPromise = (async () => {
+        // Espera un retraso distinto para cada foto
+        await this.sleep(index * 500)
+
+        try {
+          const { result: extractedTagsResponse } = await this.modelsService.getGPTResponse(
+            task.prompt as string,
+            JSON.stringify({ description: cleanedResults[index] }),
+            'gpt-4o-mini'
+          )
+          const { tags: tagList } = extractedTagsResponse
+
+          // Asegurar "no people" si no hay grupo 'person'
+          const hasPerson = tagList.some((t) => t.split('|')[1]?.trim() === 'person')
+          if (!hasPerson) {
+            tagList.push('no people | misc')
+          }
+
+          // Sacar sustantivos de ciertos grupos
+          let sustantivesFromTag: string[] = []
+          for (const tag of tagList) {
+            const [tagName, group] = tag.split('|').map((i) => i.trim())
+            if (['person', 'animals'].includes(group)) {
+              const sustantives = this.nlpService.getSustantives(tagName)
+              if (sustantives?.length) {
+                sustantivesFromTag.push(...sustantives)
+              }
+            }
+          }
+
+          const tagsToSave = [...tagList, ...new Set(sustantivesFromTag)]
+          task.data[photo.id] = []
+
+          tagsToSave.forEach((tagStr) => {
+            const [tag, group = 'misc'] = tagStr.split('|').map((i) => i.trim())
+            const newTag = new Tag()
+            newTag.name = tag
+            newTag.group = group
+            task.data[photo.id].push(newTag)
+          })
+        } catch (err) {
+          console.log(`[AnalyzerProcess]: Error en ${task.name} -> ${err}`)
         }
-      }
 
-      let tagsToSave: string[] = []
+        const progress = Math.floor(((index + 1) / totalPhotos) * 100)
+        process.stdout.write(`[${photo.id}] ${progress}% `)
+      })()
 
-      tagsToSave = [...tagList, ...new Set(sustantivesFromTag)]
-
-      task.data[photo.id] = []
-
-      tagsToSave.forEach((tagStr: string) => {
-        const [tag, group = 'misc'] = tagStr.split('|').map((item) => item.trim())
-        let newTag = new Tag()
-        newTag.name = tag
-        newTag.group = group
-        // newTag.category = task.descriptionSourceFields.join('_') // TODO: esto a la tabla relacional
-        task.data[photo.id].push(newTag)
-      })
-
-      await this.sleep(index * 500)
+      tagRequests.push(requestPromise)
     })
 
     await Promise.all(tagRequests)
 
-    // 3. Filtramos la lista de tags para reusar aquellos que ya existan/se parezcan en BD (o entre sí)
+    // Salta de línea al completar
+    process.stdout.write('\n')
+  }
+
+  private async filterAndSaveTags(photos: Photo[], task: TagTask) {
     const globalTagList = await Tag.all()
 
-    for (let photo of this.process.photos) {
-      const tagsToSaveForPhoto: any[] = []
-      for (let tag of task.data[photo.id]) {
+    for (const photo of photos) {
+      const tagsToSaveForPhoto: Tag[] = []
+
+      for (const tag of task.data[photo.id]) {
         await this.validateTag(tag, globalTagList, tagsToSaveForPhoto)
       }
+
       if (tagsToSaveForPhoto.length > 0) {
         const uniqueTagToSave = Array.from(
-          new Map(tagsToSaveForPhoto.map((tag) => [tag.name.toLowerCase(), tag])).values()
+          new Map(tagsToSaveForPhoto.map((t) => [t.name.toLowerCase(), t])).values()
         )
 
         if (task.overwrite) {
-          console.log('[AnalyzerProcess]: Sobreescribiendo tags... ')
+          console.log('[AnalyzerProcess]: Sobreescribiendo tags...')
           await photo.related('tags').sync(
-            uniqueTagToSave.map((tag) => tag.id),
+            uniqueTagToSave.map((t) => t.id),
             true
           )
         } else {
-          console.log('[AnalyzerProcess]: Añadiendo tags... ')
-          const existingTagIds = (await photo.related('tags').query()).map((tag) => tag.id)
+          console.log('[AnalyzerProcess]: Añadiendo tags...')
+          const existingTagIds = (await photo.related('tags').query()).map((t) => t.id)
           const category = task.descriptionSourceFields.join('_')
+
           const newTagsWithCategory = uniqueTagToSave
-            .filter((tag) => !existingTagIds.includes(tag.id)) // Filtra solo los nuevos
+            .filter((t) => !existingTagIds.includes(t.id))
             .reduce(
-              (acc, tag) => {
-                acc[tag.id] = { category }
+              (acc, t) => {
+                acc[t.id] = { category }
                 return acc
               },
               {} as Record<number, { category: string }>
@@ -380,6 +451,7 @@ export default class AnalyzerProcessRunner {
     const tagsToCompute = Array.from(allTagsMap.values())
     // Procesamos en lotes de 16
     for (let i = 0; i < tagsToCompute.length; i += 16) {
+      await this.sleep(250)
       const batch = tagsToCompute.slice(i, i + 16)
       const tagNames = batch.map((tag) => tag.name)
       const { embeddings } = await this.modelsService.getEmbeddings(tagNames)
@@ -451,7 +523,7 @@ export default class AnalyzerProcessRunner {
     return result
   }
 
-  private async getPendingPhotosForTask(task: VisionTask): PhotoImage[] {
+  private async getPendingPhotosForVisionTask(task: VisionTask): PhotoImage[] {
     await this.process.load('photos')
     let pendingPhotosIds = task.overwrite
       ? this.process.photos
@@ -469,6 +541,18 @@ export default class AnalyzerProcessRunner {
     return this.process.photoImages.filter((pi: PhotoImage) =>
       pendingPhotosIds.includes(pi.photo.id)
     )
+  }
+
+  private async getPendingPhotosForTagsTask(task: TagTask): Photo[] {
+    await this.process.load('photos', (query) => {
+      query.preload('tags')
+    })
+    let categoryName = task.descriptionSourceFields.join('_')
+    return task.overwrite
+      ? this.process.photos
+      : this.process.photos.filter((p: Photo) => {
+          return p.tags.filter((t: Tag) => t.category == categoryName).length == 0
+        })
   }
 
   // Método auxiliar para dividir una descripción en chunks

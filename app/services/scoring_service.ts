@@ -62,6 +62,9 @@ export default class ScoringService {
     this.embeddingsService = new EmbeddingsService()
   }
 
+  // TODO: no solo filtra sino que también determina el valor a usar: embeddings o inferencia logica
+  // si es creativo, nos basamos en embeddings, ajustados ligeramente por casos de negativos o positivos muy fuertes
+  // revisar/quitar el caso especial de 0.98, que se cubriría con esto
   private applyBaseThreshold(
     scoredPhotoElements: any[],
     segmentIndex: number, // -1 fullquery
@@ -113,11 +116,11 @@ export default class ScoringService {
 
   // @MeasureExecutionTime
   // TODO: userid!!
-  @withCache({
-    key: (_, arg2, arg3, arg4) => `getScoredPhotosByTagsAndDesc_ ${arg2.original}_${arg3}_${arg4}`,
-    provider: 'redis',
-    ttl: 60 * 5,
-  })
+  // @withCache({
+  //   key: (_, arg2, arg3, arg4) => `getScoredPhotosByTagsAndDesc_ ${arg2.original}_${arg3}_${arg4}`,
+  //   provider: 'redis',
+  //   ttl: 60 * 5,
+  // })
   public async getScoredPhotosByTagsAndDesc(
     photos: Photo[],
     structuredQuery: any,
@@ -142,7 +145,8 @@ export default class ScoringService {
           { name: structuredQuery.no_prefix, index: -1 },
           weights[searchType].embeddingsFullQueryThreshold,
           strictInference,
-          true
+          true,
+          ['context', 'story']
         )
       : Promise.resolve([])
 
@@ -232,12 +236,12 @@ export default class ScoringService {
   }
 
   // TODO: userid!!
-  // @withCache({
-  //   key: (_, arg2, arg3, arg4) =>
-  //     `getScoredPhotosByTags_${JSON.stringify(arg2)}_${JSON.stringify(arg3)}_${arg4}`,
-  //   provider: 'redis',
-  //   ttl: 120,
-  // })
+  @withCache({
+    key: (_, arg2, arg3, arg4) =>
+      `getScoredPhotosByTags_${JSON.stringify(arg2)}_${JSON.stringify(arg3)}_${arg4}`,
+    provider: 'redis',
+    ttl: 120,
+  })
   public async getScoredPhotosByTags(
     photos: Photo[],
     included: string[],
@@ -347,6 +351,10 @@ export default class ScoringService {
     strictInference: boolean,
     deepSearch: boolean = false
   ): Promise<ScoredPhoto[]> {
+    // TODO: diferenciar mediante algún parámetro que categorías se buscan para 1) los tags, 2) las desc
+    const tagsCategories = ['context_story']
+    const descCategories = ['context', 'story']
+
     const photosToReview = aggregatedScores.map((s) => s.photo)
     const tagPromise =
       weights.tags > 0
@@ -354,7 +362,8 @@ export default class ScoringService {
             photosToReview,
             segment,
             weights.embeddingsTagsThreshold,
-            strictInference
+            strictInference,
+            tagsCategories
           )
         : Promise.resolve([])
     const descPromise =
@@ -363,7 +372,9 @@ export default class ScoringService {
             photosToReview,
             segment,
             weights.embeddingsDescsThreshold,
-            strictInference
+            strictInference,
+            false,
+            descCategories
           )
         : Promise.resolve([])
 
@@ -389,7 +400,8 @@ export default class ScoringService {
     segment: { name: string; index: number },
     embeddingsProximityThreshold: number = 0.2,
     strictInference: boolean,
-    isFullQuery: boolean = false
+    isFullQuery: boolean = false,
+    categories: string
   ): Promise<{ photo: Photo; descScore: number }[]> {
     // Obtener los chunks similares para el segmento
     const matchingChunks = await this.embeddingsService.findSimilarChunksToText(
@@ -398,9 +410,7 @@ export default class ScoringService {
       2000,
       'cosine_similarity',
       null,
-      ['topology', 'story', 'context']
-
-      // ['story', 'context']
+      categories
     )
 
     let adjustedChunks = await this.modelsService.adjustProximitiesByContextInference(
@@ -475,7 +485,8 @@ export default class ScoringService {
     photos: Photo[],
     segment: { name: string; index: number },
     embeddingsProximityThreshold: number = 0.15,
-    strictInference: boolean
+    strictInference: boolean,
+    categories?: string[] // parámetro opcional para filtrar por categoría
   ): Promise<{ photo: Photo; tagScore: number }[]> {
     const allTags = await Tag.all() // By user!
 
@@ -484,21 +495,22 @@ export default class ScoringService {
       segment,
       allTags,
       embeddingsProximityThreshold,
-      strictInference
+      strictInference,
+      categories
     )
     const tagMap = new Map<string, number>()
     matchingTags.forEach((tag: any) => {
-      // const current = tagMap.get(tag.name) || 0
       tagMap.set(tag.name, tag.proximity)
     })
 
-    // Calcular el score para cada foto basándonos en los tags coincidentes
+    // Calcular el score para cada foto basándonos en los tags coincidentes,
+    // aplicando un filtro extra para que el tag coincida con la categoría indicada
     let scoredPhotos = photos.map((photo) => {
-      if (photo.id == '14') {
-        console.log()
-      }
       photo.matchingTags = photo.matchingTags || []
-      const matchingPhotoTags = photo.tags?.filter((tag) => tagMap.has(tag.name)) || []
+      const matchingPhotoTags =
+        photo.tags?.filter((tag) => {
+          return tagMap.has(tag.name) && (!categories || categories.includes(tag.category))
+        }) || []
       photo.matchingTags = [
         ...photo.matchingTags,
         ...matchingPhotoTags.map((tag) => ({ name: tag.name, proximity: tagMap.get(tag.name) })),
@@ -511,7 +523,6 @@ export default class ScoringService {
       return { photo, tagScore }
     })
 
-    // Ordenamos y filtramos según la lógica aplicada
     scoredPhotos = scoredPhotos
       .filter((score) => score.tagScore > 0)
       .sort((a, b) => b.tagScore - a.tagScore)
@@ -522,83 +533,98 @@ export default class ScoringService {
     segment: { name: string; index: number },
     tags,
     embeddingsProximityThreshold: number,
-    strictInference: boolean
+    strictInference: boolean,
+    categories: string[]
   ) {
-    let lematizedTerm = pluralize.singular(segment.name.toLowerCase())
-    let termWordCount = lematizedTerm.split(' ').length
+    // 1) Comparación por cadenas
+    const { lematizedTerm, stringMatches, remainingTags } = this.getStringMatches(segment, tags)
 
-    let lematizedTagNames = []
-    for (let tag of tags) {
-      let lematizedTagName = pluralize.singular(tag.name.toLowerCase())
-      lematizedTagNames.push({ name: lematizedTagName, id: tag.id })
-    }
-
-    // 1. String comparison con los tags iguales o más cortos
-    let equalOrShorterTags = []
-    for (let tag of lematizedTagNames) {
-      if (tag.name.split(' ').length >= termWordCount) {
-        equalOrShorterTags.push(tag)
-      }
-    }
-
-    let matchedTagsByString = equalOrShorterTags.filter((tag) => {
-      const regex = new RegExp(`(^|\\s)${lematizedTerm}($|\\s)`, 'i')
-      return regex.test(tag.name)
-    })
-
-    let stringMatches = matchedTagsByString.map((tag) => {
-      return { name: tags.find((t) => t.id == tag.id).name, proximity: 1.9 }
-    })
-
-    // Excluir los tags que ya han sido encontrados por coincidencia de string
-    let remainingTags = lematizedTagNames.filter(
-      (tag) => !matchedTagsByString.find((matchedTag) => matchedTag.name == tag.name)
-    )
-
-    // 2. Embeddings + ajuste por inferencia lógica
-    let { embeddings } = await this.modelsService.getEmbeddings([lematizedTerm])
-    const similarTags = await this.embeddingsService.findSimilarTagToEmbedding(
-      embeddings[0],
-      embeddingsProximityThreshold,
-      1500, // debería ser num_photos * constante, con un limite de 5000 o así.
-      'cosine_similarity',
-      null, //remainingTags.map((t) => t.id), // Solo considerar los tags que no coincidieron por string,
-      ['artistic']
-    )
-
-    // < 0 Contradiction
-    // == 0 Neutral
-    // > 0 Entailment
-    let adjustedSimilarTags = await this.modelsService.adjustProximitiesByContextInference(
+    // 2) Comparación y ajuste semántico/lógico
+    const semanticMatches = await this.getSemanticMatches(
+      lematizedTerm,
       segment.name,
-      similarTags,
-      'tag'
+      remainingTags,
+      embeddingsProximityThreshold,
+      categories
     )
 
-    let semanticMatches = adjustedSimilarTags.map((tag) => {
-      return {
-        name: tag.name,
-        proximity: tag.proximity,
-        embeddingsProximity: tag.embeddingsProximity,
-      }
-    })
-
-    // Combinar resultados y eliminar duplicados
-    let allMatches = [...stringMatches, ...semanticMatches]
-    let uniqueMatches = allMatches.filter(
+    // Combinar y filtrar duplicados
+    const allMatches = [...stringMatches, ...semanticMatches]
+    const uniqueMatches = allMatches.filter(
       (match, index, self) => index === self.findIndex((t) => t.name === match.name)
     )
 
-    let thresholdBasedMatches = this.applyBaseThreshold(
+    // Aplicar umbral base
+    const thresholdBasedMatches = this.applyBaseThreshold(
       uniqueMatches,
       segment.index,
       strictInference
     )
 
-    return {
-      matchingTags: thresholdBasedMatches,
-      lematizedTerm,
-    }
+    return { matchingTags: thresholdBasedMatches, lematizedTerm }
+  }
+
+  private getStringMatches(segment: { name: string; index: number }, tags) {
+    const lematizedTerm = pluralize.singular(segment.name.toLowerCase())
+    const termWordCount = lematizedTerm.split(' ').length
+
+    const lematizedTagNames = tags.map((tag) => ({
+      name: pluralize.singular(tag.name.toLowerCase()),
+      id: tag.id,
+    }))
+
+    // Filtrar tags con igual o mayor cantidad de palabras que el término
+    const equalOrShorterTags = lematizedTagNames.filter(
+      (tag) => tag.name.split(' ').length >= termWordCount
+    )
+
+    // Coincidencia por expresión regular
+    const regex = new RegExp(`(^|\\s)${lematizedTerm}($|\\s)`, 'i')
+    const matchedTagsByString = equalOrShorterTags.filter((tag) => regex.test(tag.name))
+    const stringMatches = matchedTagsByString.map((tag) => ({
+      name: tags.find((t) => t.id === tag.id).name,
+      proximity: 1.9,
+    }))
+
+    // Excluir tags ya coincidentes por string
+    const remainingTags = lematizedTagNames.filter(
+      (tag) => !matchedTagsByString.some((matchedTag) => matchedTag.name === tag.name)
+    )
+
+    return { lematizedTerm, stringMatches, remainingTags }
+  }
+
+  private async getSemanticMatches(
+    lematizedTerm: string,
+    originalSegmentName: string,
+    remainingTags,
+    embeddingsProximityThreshold: number,
+    categories: string[]
+  ) {
+    const { embeddings } = await this.modelsService.getEmbeddings([lematizedTerm])
+
+    // Buscar similitud
+    const similarTags = await this.embeddingsService.findSimilarTagToEmbedding(
+      embeddings[0],
+      embeddingsProximityThreshold,
+      1500,
+      'cosine_similarity',
+      remainingTags.map((t) => t.id),
+      categories
+    )
+
+    // Ajustar proximidades según inferencia lógica
+    const adjustedSimilarTags = await this.modelsService.adjustProximitiesByContextInference(
+      originalSegmentName,
+      similarTags,
+      'tag'
+    )
+
+    return adjustedSimilarTags.map((tag) => ({
+      name: tag.name,
+      proximity: tag.proximity,
+      embeddingsProximity: tag.embeddingsProximity,
+    }))
   }
 
   public async getNearChunksFromDesc(photo: Photo, query: string, threshold: number = 0.1) {

@@ -240,7 +240,7 @@ export default class ModelsService {
     }
   }
 
-  @MeasureExecutionTime
+  // @MeasureExecutionTime
   public async getGPTResponse(
     systemContent: string | null,
     userContent: any,
