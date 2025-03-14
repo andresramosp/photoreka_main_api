@@ -17,6 +17,7 @@ export class AnalyzerTask {
 export class VisionTask extends AnalyzerTask {
   declare prompts: string[] | Function[]
   declare resolution: 'low' | 'high'
+  declare sequential: boolean
   declare imagesPerBatch: number
   declare promptDependentField: DescriptionType
   declare promptsTarget: DescriptionType[]

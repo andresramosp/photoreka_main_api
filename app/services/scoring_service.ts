@@ -20,6 +20,9 @@ interface ScoredPhoto {
   totalScore?: number // Puntaje total calculado
 }
 
+const MAX_SIMILAR_TAGS = 1000
+const MAX_SIMILAR_CHUNKS = 1000
+
 const getWeights = (deepSearch) => {
   return {
     tags: {
@@ -29,12 +32,12 @@ const getWeights = (deepSearch) => {
       embeddingsTagsThreshold: deepSearch ? 0.15 : 0.3,
     },
     semantic: {
-      tags: 0.5,
-      desc: 0.5,
+      tags: 0.4,
+      desc: 0.6,
       fullQuery: 1,
       embeddingsTagsThreshold: deepSearch ? 0.13 : 0.25,
       embeddingsDescsThreshold: deepSearch ? 0.17 : 0.35,
-      embeddingsFullQueryThreshold: deepSearch ? 0.35 : 0.55,
+      embeddingsFullQueryThreshold: deepSearch ? 0.3 : 0.55,
     },
     creative: {
       tags: 0.3,
@@ -42,7 +45,7 @@ const getWeights = (deepSearch) => {
       fullQuery: 1,
       embeddingsTagsThreshold: deepSearch ? 0.13 : 0.3,
       embeddingsDescsThreshold: deepSearch ? 0.17 : 0.35,
-      embeddingsFullQueryThreshold: deepSearch ? 0.35 : 0.55,
+      embeddingsFullQueryThreshold: deepSearch ? 0.3 : 0.55,
     },
     nuancesTags: {
       tags: 1,
@@ -80,7 +83,7 @@ export default class ScoringService {
       return scoredPhotoElements.filter((element) => element.proximity > 1)
     } else {
       // Incluimos negativos para descartar casos muy flagrantes opuestos (-0.9)
-      return scoredPhotoElements.filter((element) => element.proximity > -1)
+      return scoredPhotoElements.filter((element) => element.proximity > 0)
     }
   }
 
@@ -150,8 +153,8 @@ export default class ScoringService {
         )
       : Promise.resolve([])
 
-    const performNuancesQuerySearch =
-      structuredQuery.nuances_segments.length > 0 && searchType == 'creative'
+    const performNuancesQuerySearch = false
+    // structuredQuery.nuances_segments.length > 0 && searchType == 'creative'
 
     const nuancesQuery: Promise<ScoredPhoto[]> = performNuancesQuerySearch
       ? Promise.all(
@@ -224,7 +227,7 @@ export default class ScoringService {
     const allTags = await Tag.all()
 
     const matchingPromises = excluded.map((tag) =>
-      this.findMatchingTagsForSegment({ name: tag, index: 1 }, allTags, 0.2, true)
+      this.findMatchingTagsForSegment({ name: tag, index: 1 }, allTags, 0.2, true, photos)
     )
     const matchingResults = await Promise.all(matchingPromises)
     const allExcludedTags = matchingResults.map((mr) => mr.matchingTags).flat()
@@ -236,12 +239,12 @@ export default class ScoringService {
   }
 
   // TODO: userid!!
-  @withCache({
-    key: (_, arg2, arg3, arg4) =>
-      `getScoredPhotosByTags_${JSON.stringify(arg2)}_${JSON.stringify(arg3)}_${arg4}`,
-    provider: 'redis',
-    ttl: 120,
-  })
+  // @withCache({
+  //   key: (_, arg2, arg3, arg4) =>
+  //     `getScoredPhotosByTags_${JSON.stringify(arg2)}_${JSON.stringify(arg3)}_${arg4}`,
+  //   provider: 'redis',
+  //   ttl: 120,
+  // })
   public async getScoredPhotosByTags(
     photos: Photo[],
     included: string[],
@@ -407,9 +410,9 @@ export default class ScoringService {
     const matchingChunks = await this.embeddingsService.findSimilarChunksToText(
       segment.name,
       embeddingsProximityThreshold,
-      2000,
+      MAX_SIMILAR_CHUNKS,
       'cosine_similarity',
-      null,
+      photos.map((photo) => photo.id),
       categories
     )
 
@@ -496,6 +499,7 @@ export default class ScoringService {
       allTags,
       embeddingsProximityThreshold,
       strictInference,
+      photos,
       categories
     )
     const tagMap = new Map<string, number>()
@@ -534,6 +538,7 @@ export default class ScoringService {
     tags,
     embeddingsProximityThreshold: number,
     strictInference: boolean,
+    photos: Photo[],
     categories: string[]
   ) {
     // 1) Comparación por cadenas
@@ -545,6 +550,7 @@ export default class ScoringService {
       segment.name,
       remainingTags,
       embeddingsProximityThreshold,
+      photos,
       categories
     )
 
@@ -599,6 +605,7 @@ export default class ScoringService {
     originalSegmentName: string,
     remainingTags,
     embeddingsProximityThreshold: number,
+    photos: Photo[],
     categories: string[]
   ) {
     const { embeddings } = await this.modelsService.getEmbeddings([lematizedTerm])
@@ -607,10 +614,11 @@ export default class ScoringService {
     const similarTags = await this.embeddingsService.findSimilarTagToEmbedding(
       embeddings[0],
       embeddingsProximityThreshold,
-      1500,
+      MAX_SIMILAR_TAGS,
       'cosine_similarity',
       remainingTags.map((t) => t.id),
-      categories
+      categories,
+      photos.map((p) => p.id)
     )
 
     // Ajustar proximidades según inferencia lógica
@@ -636,7 +644,7 @@ export default class ScoringService {
       threshold,
       5,
       'cosine_similarity',
-      photo,
+      [photo.id],
       ['story', 'context']
     )
     return similarChunks.map((ch) => {

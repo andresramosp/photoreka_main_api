@@ -29,8 +29,10 @@ export default class AnalyzerProcessRunner {
     this.embeddingsService = new EmbeddingsService()
   }
 
-  public async initProcess(userPhotos: Photo[], packageId: string) {
-    const unproccesedPhotos = userPhotos.filter((photo: Photo) => !photo.analyzerProcess)
+  public async initProcess(userPhotos: Photo[], packageId: string, isUpgrade: boolean = false) {
+    const unproccesedPhotos = isUpgrade
+      ? userPhotos
+      : userPhotos.filter((photo: Photo) => !photo.analyzerProcess) // para fotos añadidas!
     const tasks = getTaskList(packageId)
     this.process.currentStage = 'init'
     this.process.packageId = packageId
@@ -68,7 +70,7 @@ export default class AnalyzerProcessRunner {
     const visionTasks = this.process.tasks.filter((task) => task instanceof VisionTask)
     for (const task of visionTasks) {
       await this.changeStage(`Initiating vision task: ${task.name}`, 'vision_tasks')
-      await this.executeVisionTask(task)
+      await this.executeVisionTask(task, task.sequential)
       await this.changeStage(`Vision task complete: ${task.name}`)
     }
 
@@ -105,7 +107,7 @@ export default class AnalyzerProcessRunner {
   }
 
   // @MeasureExecutionTime
-  private async executeVisionTask(task: VisionTask) {
+  private async executeVisionTask(task: VisionTask, sequential: boolean) {
     if (!task.data) {
       task.data = {}
     }
@@ -120,39 +122,42 @@ export default class AnalyzerProcessRunner {
       batches.push(batch)
     }
 
-    // 3. Para cada batch, creamos una promesa que se lanza con un retraso incremental
-    const batchPromises = batches.map((batch, idx) => {
-      return (async () => {
-        // Retraso según el índice de batch
-        await this.sleep(idx * 500)
+    // Función que procesa cada batch
+    const processBatch = async (batch: any[], idx: number) => {
+      // Retraso incremental según el índice de batch
+      await this.sleep(idx * 500)
 
-        let response: any
-        const injectedPrompts: any = await this.injectPromptsDpendencies(task, batch)
+      let response: any
+      const injectedPrompts: any = await this.injectPromptsDpendencies(task, batch)
+      console.log(
+        `[AnalyzerProcess]: Vision Task calling ${task.model} for ${batch.length} images...`
+      )
 
-        console.log(
-          `[AnalyzerProcess]: Vision Task calling ${task.model} for ${batch.length} images...`
-        )
+      try {
+        response = await this[`execute${task.model}Task`](injectedPrompts, batch, task)
+      } catch (err) {
+        console.log(`[AnalyzerProcess]: Error en ${task.model} for ${batch.length} images...`)
+        return
+      }
 
-        try {
-          response = await this[`execute${task.model}Task`](injectedPrompts, batch, task)
-        } catch (err) {
-          console.log(`[AnalyzerProcess]: Error en ${task.model} for ${batch.length} images...`)
-          return // o throw err si deseas romper aquí
-        }
+      // Guardamos descripciones en task.data
+      for (const res of response.result) {
+        const { id, ...descriptions } = res
+        task.data[id] = { ...task.data[id], ...descriptions }
+      }
 
-        // Guardamos descripciones en task.data
-        for (const res of response.result) {
-          const { id, ...descriptions } = res
-          task.data[id] = { ...task.data[id], ...descriptions }
-        }
+      // Confirmamos estado del task
+      await task.commit()
+    }
 
-        // Confirmamos estado del task
-        await task.commit()
-      })()
-    })
-
-    // 4. Esperamos a que concluyan todos los lotes
-    await Promise.all(batchPromises)
+    // Ejecutamos de forma secuencial o concurrente según el parámetro
+    if (sequential) {
+      for (let i = 0; i < batches.length; i++) {
+        await processBatch(batches[i], i)
+      }
+    } else {
+      await Promise.all(batches.map((batch, idx) => processBatch(batch, idx)))
+    }
   }
 
   // @MeasureExecutionTime

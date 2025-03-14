@@ -140,7 +140,7 @@ export default class PhotosService {
     const photos = await this.getPhotosByUser('1234')
 
     const { structuredResult, sourceResult, useImage, expansionCost } =
-      await this.queryService.structureQueryLLM(searchType, query)
+      await this.queryService.structureQuery(searchType, query)
 
     const batchSize = 3
     const maxPageAttempts = 3

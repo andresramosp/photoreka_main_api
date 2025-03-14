@@ -213,7 +213,7 @@ export default class ModelsService {
             images: imagesArray,
             prompts,
             prompts_per_image: promptsPerImage,
-            batch_size: 4,
+            batch_size: 16,
             generation_config: {
               temperature: 0.1,
               max_new_tokens: 300,

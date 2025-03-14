@@ -56,7 +56,7 @@ export default class EmbeddingsService {
     threshold: Threshold = 0.3,
     limit: number = 10,
     metric: 'distance' | 'inner_product' | 'cosine_similarity' = 'cosine_similarity',
-    photo?: { id: number },
+    photoIds: number[] = null,
     categories: DescriptionType[] = null
   ) {
     const modelsService = new ModelsService()
@@ -66,7 +66,7 @@ export default class EmbeddingsService {
       threshold,
       limit,
       metric,
-      photo,
+      photoIds,
       categories
     )
   }
@@ -151,7 +151,7 @@ export default class EmbeddingsService {
     threshold: Threshold = 0.3,
     limit: number = 10,
     metric: 'distance' | 'inner_product' | 'cosine_similarity' = 'cosine_similarity',
-    photo?: { id: number },
+    photoIds?: number[],
     categories?: string[] // parámetro opcional agregado
   ) {
     if (!embedding || embedding.length === 0) {
@@ -202,9 +202,9 @@ export default class EmbeddingsService {
     whereCondition = thresholdCondition
 
     // Filtro por photo_id si se proporciona
-    if (photo) {
-      whereCondition += ` AND photo_id = :photoId`
-      additionalParams.photoId = photo.id
+    if (photoIds && photoIds.length > 0) {
+      whereCondition += ` AND photo_id = ANY(:photoIds)`
+      additionalParams.photoIds = photoIds
     }
 
     // Filtro por categories si se proporcionan
@@ -226,6 +226,7 @@ export default class EmbeddingsService {
       SELECT id, photo_id, chunk, ${metricQuery}
       FROM descriptions_chunks
       WHERE ${whereCondition}
+      ORDER BY ${orderBy}
       LIMIT :limit
       `,
       queryParameters
@@ -242,6 +243,7 @@ export default class EmbeddingsService {
     metric: 'distance' | 'inner_product' | 'cosine_similarity' = 'cosine_similarity',
     tagIds?: number[],
     categories?: string[],
+    photoIds?: number[],
     userId?: number // 🔥 Se deja opcional para el futuro
   ) {
     if (!embedding || embedding.length === 0) {
@@ -293,9 +295,11 @@ export default class EmbeddingsService {
     const tagFilterCondition = tagIds && tagIds.length > 0 ? 'AND tags.id = ANY(:tagIds)' : ''
     const categoryFilterCondition =
       categories && categories.length > 0 ? 'AND tags_photos.category = ANY(:categories)' : ''
-    const userFilterCondition = userId ? 'AND photos.user_id = :userId' : '' // 🔥 Se deja listo para el futuro
+    const photoFilterCondition =
+      photoIds && photoIds.length > 0 ? 'AND photos.id = ANY(:photoIds)' : ''
+    const userFilterCondition = userId ? 'AND photos.user_id = :userId' : ''
 
-    whereCondition = `${thresholdCondition} ${tagFilterCondition} ${categoryFilterCondition} ${userFilterCondition}`
+    whereCondition = `${thresholdCondition} ${tagFilterCondition} ${categoryFilterCondition} ${photoFilterCondition} ${userFilterCondition}`
 
     const embeddingString = `[${embedding.join(',')}]`
 
@@ -314,6 +318,7 @@ export default class EmbeddingsService {
         limit,
         tagIds: tagIds || [],
         categories: categories || [],
+        photoIds: photoIds || [],
         userId: userId || null, // 🔥 Se pasa null si no hay userId para evitar errores
         ...additionalParams,
       }

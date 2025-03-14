@@ -20,7 +20,7 @@ export default class AnalyzerController {
       // TODO: aqui debemos mirar si ya se hizo este package_id, en cuyo caso solo seguimos si es overwrite (ya veremos cómo se indica, puede ser una variable en el process)
       if (photos.length) {
         // await analyzerService.initProcess(photos, packageId)
-        await analyzerService.resumeProcess(photos, 32)
+        await analyzerService.resumeProcess(photos, 38)
 
         if (!analysisProcesses.has(userId)) {
           const process = analyzerService.run()
