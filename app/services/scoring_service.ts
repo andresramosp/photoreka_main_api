@@ -20,8 +20,8 @@ interface ScoredPhoto {
   totalScore?: number // Puntaje total calculado
 }
 
-const MAX_SIMILAR_TAGS = 1000
-const MAX_SIMILAR_CHUNKS = 1000
+const MAX_SIMILAR_TAGS = 1250
+const MAX_SIMILAR_CHUNKS = 850
 
 const getWeights = (deepSearch) => {
   return {
@@ -34,7 +34,7 @@ const getWeights = (deepSearch) => {
     semantic: {
       tags: 0.4,
       desc: 0.6,
-      fullQuery: 1,
+      fullQuery: 2,
       embeddingsTagsThreshold: deepSearch ? 0.13 : 0.25,
       embeddingsDescsThreshold: deepSearch ? 0.17 : 0.35,
       embeddingsFullQueryThreshold: deepSearch ? 0.3 : 0.55,
@@ -42,10 +42,18 @@ const getWeights = (deepSearch) => {
     creative: {
       tags: 0.3,
       desc: 0.7,
-      fullQuery: 1,
+      fullQuery: 2,
       embeddingsTagsThreshold: deepSearch ? 0.13 : 0.3,
       embeddingsDescsThreshold: deepSearch ? 0.17 : 0.35,
       embeddingsFullQueryThreshold: deepSearch ? 0.3 : 0.55,
+    },
+    topological: {
+      tags: 0,
+      desc: 1,
+      fullQuery: 2.5,
+      embeddingsTagsThreshold: 0,
+      embeddingsDescsThreshold: deepSearch ? 0.3 : 0.4,
+      embeddingsFullQueryThreshold: deepSearch ? 0.2 : 0.3,
     },
     nuancesTags: {
       tags: 1,
@@ -63,28 +71,6 @@ export default class ScoringService {
   constructor() {
     this.modelsService = new ModelsService()
     this.embeddingsService = new EmbeddingsService()
-  }
-
-  // TODO: no solo filtra sino que también determina el valor a usar: embeddings o inferencia logica
-  // si es creativo, nos basamos en embeddings, ajustados ligeramente por casos de negativos o positivos muy fuertes
-  // revisar/quitar el caso especial de 0.98, que se cubriría con esto
-  private applyBaseThreshold(
-    scoredPhotoElements: any[],
-    segmentIndex: number, // -1 fullquery
-    strictInference: boolean
-  ) {
-    // Establecemos threshold base sobre tag o chunk.
-    // -1 | 0 Contradiction (incluye relaciones opuestas, se podría usar el momdo creativo)
-    // 0 | 1  Neutral (incluye relaciones semánticas no estrictas, ideal para búsquedas por "evocación")
-    // 1 | 2 Entailment (inferencia estricta, subclases ontologicas y sinonimos)
-    // Ademas, para strict, tenemos en cuenta el numero de segmento, ya que para el primero exigiremos un poco más
-
-    if (strictInference) {
-      return scoredPhotoElements.filter((element) => element.proximity > 1)
-    } else {
-      // Incluimos negativos para descartar casos muy flagrantes opuestos (-0.9)
-      return scoredPhotoElements.filter((element) => element.proximity > 0)
-    }
   }
 
   private getMaxPotentialScore(structuredQuery, searchType, weights) {
@@ -119,18 +105,17 @@ export default class ScoringService {
 
   // @MeasureExecutionTime
   // TODO: userid!!
-  // @withCache({
-  //   key: (_, arg2, arg3, arg4) => `getScoredPhotosByTagsAndDesc_ ${arg2.original}_${arg3}_${arg4}`,
-  //   provider: 'redis',
-  //   ttl: 60 * 5,
-  // })
+  @withCache({
+    key: (_, arg2, arg3, arg4) => `getScoredPhotosByTagsAndDesc_ ${arg2.original}_${arg3}_${arg4}`,
+    provider: 'redis',
+    ttl: 60 * 5,
+  })
   public async getScoredPhotosByTagsAndDesc(
     photos: Photo[],
     structuredQuery: any,
-    searchType: 'semantic' | 'creative',
-    deepSearch: boolean = false
+    searchType: 'semantic' | 'creative' | 'topological'
   ): Promise<ScoredPhoto[] | undefined> {
-    let weights = getWeights(deepSearch)
+    let weights = getWeights(true)
     let aggregatedScores: ScoredPhoto[] = photos.map((photo) => ({
       photo,
       tagScore: 0,
@@ -140,7 +125,7 @@ export default class ScoringService {
 
     const strictInference = searchType !== 'creative'
 
-    const performFullQuerySearch = structuredQuery.positive_segments.length > 1 || !deepSearch
+    const performFullQuerySearch = structuredQuery.positive_segments.length > 1
 
     const fullQueryPromise: Promise<ScoredPhoto[]> = performFullQuerySearch
       ? this.getScoredPhotoDescBySegment(
@@ -149,12 +134,12 @@ export default class ScoringService {
           weights[searchType].embeddingsFullQueryThreshold,
           strictInference,
           true,
-          ['context', 'story']
+          searchType == 'topological' ? ['topology'] : ['context', 'story']
         )
       : Promise.resolve([])
 
-    const performNuancesQuerySearch = false
-    // structuredQuery.nuances_segments.length > 0 && searchType == 'creative'
+    const performNuancesQuerySearch =
+      structuredQuery.nuances_segments?.length > 0 && searchType == 'creative'
 
     const nuancesQuery: Promise<ScoredPhoto[]> = performNuancesQuerySearch
       ? Promise.all(
@@ -164,7 +149,7 @@ export default class ScoringService {
               aggregatedScores,
               weights.nuancesTags,
               strictInference,
-              deepSearch
+              searchType
             )
           )
         )
@@ -179,7 +164,7 @@ export default class ScoringService {
           scores,
           weights[searchType],
           strictInference,
-          deepSearch
+          searchType
         )
       }
       return scores
@@ -249,9 +234,9 @@ export default class ScoringService {
     photos: Photo[],
     included: string[],
     excluded: string[],
-    deepSearch: boolean = false
+    searchType: string
   ): Promise<ScoredPhoto[] | undefined> {
-    let weights = getWeights(deepSearch)
+    let weights = getWeights(true)
 
     let filteredPhotos = await this.filterExcludedPhotosByTags(photos, excluded)
 
@@ -269,7 +254,7 @@ export default class ScoringService {
           scores,
           weights.tags,
           true,
-          deepSearch
+          searchType
         )
       }
       return scores
@@ -352,15 +337,15 @@ export default class ScoringService {
     aggregatedScores: ScoredPhoto[],
     weights: { tags: number; desc: number; fullQuery: number },
     strictInference: boolean,
-    deepSearch: boolean = false
+    searchType: string
   ): Promise<ScoredPhoto[]> {
     // TODO: diferenciar mediante algún parámetro que categorías se buscan para 1) los tags, 2) las desc
-    const tagsCategories = ['context_story']
-    const descCategories = ['context', 'story']
+    const tagsCategories = searchType == 'topological' ? [] : ['context_story', 'topology']
+    const descCategories = searchType == 'topological' ? ['topology'] : ['context', 'story']
 
     const photosToReview = aggregatedScores.map((s) => s.photo)
     const tagPromise =
-      weights.tags > 0
+      searchType !== 'topological' && weights.tags > 0
         ? this.getScoredPhotoTagsBySegment(
             photosToReview,
             segment,
@@ -370,7 +355,7 @@ export default class ScoringService {
           )
         : Promise.resolve([])
     const descPromise =
-      deepSearch && weights.desc > 0
+      weights.desc > 0
         ? this.getScoredPhotoDescBySegment(
             photosToReview,
             segment,
@@ -416,18 +401,16 @@ export default class ScoringService {
       categories
     )
 
-    let adjustedChunks = await this.modelsService.adjustProximitiesByContextInference(
+    let adjustedChunks = await this.adjustProximities(
       segment.name,
       matchingChunks.map((mc) => ({
         name: mc.chunk,
         proximity: mc.proximity,
         id: mc.id,
       })),
-      'desc'
+      'desc',
+      strictInference
     )
-
-    // Establecemos threshold base teniendo en cuenta:
-    adjustedChunks = this.applyBaseThreshold(adjustedChunks, segment.index, strictInference)
 
     // Crear un mapa de chunk id a proximidad ajustada
     const chunkMap = new Map<string | number, number>(
@@ -439,8 +422,13 @@ export default class ScoringService {
       photo.descriptionChunks?.some((chunk) => chunkMap.has(chunk.id))
     )
 
+    console.log(`[DESC] Relevant photos for ${segment.name}: ${relevantPhotos.length}`)
+
     // Calcular el score para cada foto basado en los chunks coincidentes
     let scoredPhotos = relevantPhotos.map((photo) => {
+      if (photo.id == '333') {
+        console.log()
+      }
       photo.matchingChunks = photo.matchingChunks || []
       const matchingPhotoChunks =
         photo.descriptionChunks?.filter((chunk) => chunkMap.has(chunk.id)) || []
@@ -468,20 +456,12 @@ export default class ScoringService {
     return scoredPhotos
   }
 
-  // Dada una lista de scores de tags o chunks, calcula el score.
-  // Añadimos un caso especial para tratar negativos muy fuertes, para el caso de 'creative', que puede matchear muy positivo
-  // en neutrals aun teniendo unos pocos tags/chunks totalmente contradictorios.
   private calculateProximitiesScores(proximities) {
     const minProximity = Math.min(...proximities)
-    const countBelowPointEight = proximities.filter((p) => p < 0.9).length
-    if (minProximity < -0.98) {
-      return -1
-    } else {
-      const maxProximity = Math.max(...proximities)
-      const totalProximities = proximities.reduce((sum, p) => sum + p, 0)
-      const adjustedProximity = totalProximities / 2
-      return maxProximity + Math.min(adjustedProximity, maxProximity)
-    }
+    const maxProximity = Math.max(...proximities)
+    const totalProximities = proximities.reduce((sum, p) => sum + p, 0)
+    const adjustedProximity = totalProximities / 2
+    return maxProximity + Math.min(adjustedProximity, maxProximity)
   }
 
   private async getScoredPhotoTagsBySegment(
@@ -551,7 +531,8 @@ export default class ScoringService {
       remainingTags,
       embeddingsProximityThreshold,
       photos,
-      categories
+      categories,
+      strictInference
     )
 
     // Combinar y filtrar duplicados
@@ -560,14 +541,7 @@ export default class ScoringService {
       (match, index, self) => index === self.findIndex((t) => t.name === match.name)
     )
 
-    // Aplicar umbral base
-    const thresholdBasedMatches = this.applyBaseThreshold(
-      uniqueMatches,
-      segment.index,
-      strictInference
-    )
-
-    return { matchingTags: thresholdBasedMatches, lematizedTerm }
+    return { matchingTags: uniqueMatches, lematizedTerm }
   }
 
   private getStringMatches(segment: { name: string; index: number }, tags) {
@@ -606,7 +580,8 @@ export default class ScoringService {
     remainingTags,
     embeddingsProximityThreshold: number,
     photos: Photo[],
-    categories: string[]
+    categories: string[],
+    strictInference: boolean
   ) {
     const { embeddings } = await this.modelsService.getEmbeddings([lematizedTerm])
 
@@ -622,10 +597,11 @@ export default class ScoringService {
     )
 
     // Ajustar proximidades según inferencia lógica
-    const adjustedSimilarTags = await this.modelsService.adjustProximitiesByContextInference(
+    const adjustedSimilarTags = await this.adjustProximities(
       originalSegmentName,
       similarTags,
-      'tag'
+      'tag',
+      strictInference
     )
 
     return adjustedSimilarTags.map((tag) => ({
@@ -650,5 +626,39 @@ export default class ScoringService {
     return similarChunks.map((ch) => {
       return { proximity: ch.proximity, text_chunk: ch.chunk }
     })
+  }
+
+  public async adjustProximities(term, tags, termsType = 'tag', strictInference) {
+    let result
+
+    const adjustedProximitiesByContext =
+      await this.modelsService.adjustProximitiesByContextInference(
+        term,
+        tags,
+        termsType,
+        strictInference
+      )
+
+    if (strictInference) {
+      result = adjustedProximitiesByContext.map((ap) => ({
+        ...ap,
+        proximity: ap.logicProximity,
+      }))
+    } else {
+      result = adjustedProximitiesByContext.map((ap) => {
+        const logicBonus = Math.max(ap.logicProximity, 0) // Asegurar que no sea negativo
+        const scaledBonus = Math.log1p(logicBonus) // Aplica curva logarítmica
+        return {
+          ...ap,
+          proximity: ap.embeddingsProximity + scaledBonus,
+        }
+      })
+    }
+
+    if (strictInference) {
+      return result.filter((element) => element.proximity > 1) // logic + entailment
+    } else {
+      return result.filter((element) => element.proximity > 0) // embeddings + bonus
+    }
   }
 }

@@ -29,8 +29,12 @@ export default class AnalyzerProcessRunner {
     this.embeddingsService = new EmbeddingsService()
   }
 
-  public async initProcess(userPhotos: Photo[], packageId: string, isUpgrade: boolean = false) {
-    const unproccesedPhotos = isUpgrade
+  public async initProcess(
+    userPhotos: Photo[],
+    packageId: string,
+    isUpgradeOrRemake: boolean = false
+  ) {
+    const unproccesedPhotos = isUpgradeOrRemake
       ? userPhotos
       : userPhotos.filter((photo: Photo) => !photo.analyzerProcess) // para fotos añadidas!
     const tasks = getTaskList(packageId)
@@ -125,7 +129,7 @@ export default class AnalyzerProcessRunner {
     // Función que procesa cada batch
     const processBatch = async (batch: any[], idx: number) => {
       // Retraso incremental según el índice de batch
-      await this.sleep(idx * 500)
+      await this.sleep(idx * 750)
 
       let response: any
       const injectedPrompts: any = await this.injectPromptsDpendencies(task, batch)
@@ -263,33 +267,29 @@ export default class AnalyzerProcessRunner {
         const uniqueTagToSave = Array.from(
           new Map(tagsToSaveForPhoto.map((t) => [t.name.toLowerCase(), t])).values()
         )
+        const category = task.descriptionSourceFields.join('_')
 
-        if (task.overwrite) {
-          console.log('[AnalyzerProcess]: Sobreescribiendo tags...')
-          await photo.related('tags').sync(
-            uniqueTagToSave.map((t) => t.id),
-            true
-          )
-        } else {
-          console.log('[AnalyzerProcess]: Añadiendo tags...')
-          const existingTagIds = (await photo.related('tags').query()).map((t) => t.id)
-          const category = task.descriptionSourceFields.join('_')
-
-          const newTagsWithCategory = uniqueTagToSave
-            .filter((t) => !existingTagIds.includes(t.id))
-            .reduce(
-              (acc, t) => {
-                acc[t.id] = { category }
-                return acc
-              },
-              {} as Record<number, { category: string }>
-            )
-
-          if (Object.keys(newTagsWithCategory).length > 0) {
-            console.log(`[AnalyzerProcess]: Añadiendo nuevos tags con categoría "${category}"...`)
-            await photo.related('tags').attach(newTagsWithCategory)
-          }
+        // Primero, eliminar las relaciones de tags bajo la categoría actual.
+        const attachedTags = await photo.related('tags').query()
+        const tagIdsToDetach = attachedTags
+          .filter((tag) => tag.$extras && tag.$extras.pivot_category === category)
+          .map((tag) => tag.id)
+        if (tagIdsToDetach.length > 0) {
+          console.log(`[AnalyzerProcess]: Borrando tags de la categoría "${category}"...`)
+          await photo.related('tags').detach(tagIdsToDetach)
         }
+
+        // Construir el objeto con la categoría para los nuevos tags.
+        const tagsWithCategory = uniqueTagToSave.reduce(
+          (acc, t) => {
+            acc[t.id] = { category }
+            return acc
+          },
+          {} as Record<number, { category: string }>
+        )
+
+        console.log(`[AnalyzerProcess]: Añadiendo nuevos tags con categoría "${category}"...`)
+        await photo.related('tags').attach(tagsWithCategory)
       }
     }
   }
@@ -531,7 +531,7 @@ export default class AnalyzerProcessRunner {
   private async getPendingPhotosForVisionTask(task: VisionTask): PhotoImage[] {
     await this.process.load('photos')
     let pendingPhotosIds = task.overwrite
-      ? this.process.photos
+      ? this.process.photos.map((p) => p.id)
       : this.process.photos
           .filter((p: Photo) => {
             let hasAllDescriptions = true
@@ -548,7 +548,7 @@ export default class AnalyzerProcessRunner {
     )
   }
 
-  private async getPendingPhotosForTagsTask(task: TagTask): Photo[] {
+  private async getPendingPhotosForTagsTask(task: TagTask, isUpgradeOrRemake: boolean): Photo[] {
     await this.process.load('photos', (query) => {
       query.preload('tags')
     })

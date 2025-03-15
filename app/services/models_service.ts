@@ -67,11 +67,11 @@ export default class ModelsService {
   }
 
   @MeasureExecutionTime
-  async adjustProximitiesByContextInference(term, tags, termsType = 'tag') {
+  async adjustProximitiesByContextInference(term, texts, termsType = 'tag') {
     try {
       let payload = {
         term,
-        tag_list: tags.map((tag) => ({ name: tag.name, group: tag.group })),
+        tag_list: texts.map((tag) => ({ name: tag.name, group: tag.group })),
       }
 
       const operation =
@@ -85,10 +85,11 @@ export default class ModelsService {
 
       data = data.output ? data.output : data
 
-      return tags.map((tag) => ({
-        ...tag,
-        embeddingsProximity: tag.proximity,
-        proximity: data[tag.name]?.adjusted_proximity,
+      return texts.map((text) => ({
+        name: text.name,
+        id: text.id,
+        embeddingsProximity: text.proximity,
+        logicProximity: data[text.name]?.adjusted_proximity,
       }))
     } catch (error) {
       console.error('Error en adjustProximitiesByContextInference:', error.message)

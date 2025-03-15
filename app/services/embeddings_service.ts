@@ -242,7 +242,7 @@ export default class EmbeddingsService {
     limit: number = 10,
     metric: 'distance' | 'inner_product' | 'cosine_similarity' = 'cosine_similarity',
     tagIds?: number[],
-    categories?: string[],
+    categories?: string[], // garantizamos que pertenece a esa categorías, pero aún no sabemos para qué foto
     photoIds?: number[],
     userId?: number // 🔥 Se deja opcional para el futuro
   ) {
@@ -305,7 +305,7 @@ export default class EmbeddingsService {
 
     const result = await db.rawQuery(
       `
-      SELECT tags.id, tags.name, tags."group", tags_photos.category, tags.created_at, tags.updated_at, ${metricQuery}
+      SELECT DISTINCT tags.id, tags.name, tags."group", tags_photos.category, tags.created_at, tags.updated_at, ${metricQuery}
       FROM tags
       JOIN tags_photos ON tags_photos.tag_id = tags.id
       JOIN photos ON photos.id = tags_photos.photo_id

@@ -15,8 +15,8 @@ import withCostWS from '../decorators/withCostWs.js'
 import ScoringService from './scoring_service.js'
 import { withCache } from '../decorators/withCache.js'
 import {
-  SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE,
-  SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE_ONLY_IMAGE,
+  MESSAGE_SEARCH_MODEL_CREATIVE,
+  MESSAGE_SEARCH_MODEL_CREATIVE_ONLY_IMAGE,
 } from '../utils/ModelsMessages.js'
 
 export default class PhotosService {
@@ -133,7 +133,7 @@ export default class PhotosService {
   @withCostWS
   public async *search(
     query: any,
-    searchType: 'semantic' | 'creative',
+    searchType: 'semantic' | 'creative' | 'topological',
     options = { deepSearch: false, withInsights: false, pageSize: 18 }
   ) {
     const { deepSearch, withInsights } = options
@@ -275,8 +275,8 @@ export default class PhotosService {
     if (searchType === 'creative' || searchType === 'semantic') {
       searchModelMessage =
         sourceResult.requireSource === 'image'
-          ? SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE_ONLY_IMAGE
-          : SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE(true)
+          ? MESSAGE_SEARCH_MODEL_CREATIVE_ONLY_IMAGE
+          : MESSAGE_SEARCH_MODEL_CREATIVE(true)
     }
 
     let needImage = sourceResult.requireSource == 'image'

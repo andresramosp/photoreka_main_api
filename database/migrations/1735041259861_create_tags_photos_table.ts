@@ -21,7 +21,7 @@ export default class extends BaseSchema {
         .onDelete('CASCADE')
       table.string('category')
 
-      table.primary(['photo_id', 'tag_id'])
+      table.primary(['photo_id', 'tag_id', 'category'])
     })
   }
 

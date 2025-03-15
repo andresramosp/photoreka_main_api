@@ -104,12 +104,12 @@ import { Exception } from '@adonisjs/core/exceptions'
 import ModelsService from './models_service.js'
 import Tag from '#models/tag'
 import {
-  SYSTEM_MESSAGE_ANALYZER_GPT_CONTEXT_AND_STORY,
-  SYSTEM_MESSAGE_ANALYZER_GPT_DESC,
-  SYSTEM_MESSAGE_ANALYZER_MOLMO_STREET_PHOTO_PRETRAINED,
-  SYSTEM_MESSAGE_ANALYZER_MOLMO_TOPOLOGIC_AREAS_PRETRAINED,
-  SYSTEM_MESSAGE_TAGS_TEXT_EXTRACTION_FROM_CONTEXT_STORY,
-  SYSTEM_MESSAGE_TAGS_TEXT_EXTRACTION_FROM_TOPOLOGY,
+  MESSAGE_ANALYZER_GPT_CONTEXT_AND_STORY,
+  MESSAGE_ANALYZER_GPT_DESC,
+  MESSAGE_ANALYZER_MOLMO_STREET_PHOTO_PRETRAINED,
+  MESSAGE_ANALYZER_MOLMO_TOPOLOGIC_AREAS_PRETRAINED,
+  MESSAGE_TAGS_TEXT_EXTRACTION_FROM_CONTEXT_STORY,
+  MESSAGE_TAGS_TEXT_EXTRACTION_FROM_TOPOLOGY,
 } from '../utils/ModelsMessages.js'
 import { createRequire } from 'module'
 import EmbeddingsService from './embeddings_service.js'
@@ -239,7 +239,7 @@ export default class AnalyzerService {
     for (let i = 0; i < photosToProcess.length; i += maxImagesPerBatchGPT) {
       const batch = photosToProcess.slice(i, i + maxImagesPerBatchGPT)
       const responseGPT = await modelsService.getGPTResponse(
-        SYSTEM_MESSAGE_ANALYZER_GPT_CONTEXT_AND_STORY(batch),
+        MESSAGE_ANALYZER_GPT_CONTEXT_AND_STORY(batch),
         batch.map(({ base64 }) => ({
           type: 'image_url',
           image_url: {
@@ -272,7 +272,7 @@ export default class AnalyzerService {
           prompts: [
             {
               id: 'topology',
-              text: SYSTEM_MESSAGE_ANALYZER_MOLMO_TOPOLOGIC_AREAS_PRETRAINED(photo.context),
+              text: MESSAGE_ANALYZER_MOLMO_TOPOLOGIC_AREAS_PRETRAINED(photo.context),
             },
           ],
         }))
@@ -331,12 +331,12 @@ export default class AnalyzerService {
       // 2. Extraer tags en paralelo
       const [contextStoryResponse, topologyResponse] = await Promise.all([
         modelsService.getGPTResponse(
-          SYSTEM_MESSAGE_TAGS_TEXT_EXTRACTION_FROM_CONTEXT_STORY,
+          MESSAGE_TAGS_TEXT_EXTRACTION_FROM_CONTEXT_STORY,
           JSON.stringify({ description: cleanedContextAndStoryForPhoto }),
           'gpt-4o-mini'
         ),
         modelsService.getGPTResponse(
-          SYSTEM_MESSAGE_TAGS_TEXT_EXTRACTION_FROM_TOPOLOGY,
+          MESSAGE_TAGS_TEXT_EXTRACTION_FROM_TOPOLOGY,
           JSON.stringify({ description: cleanedTopologyForPhoto }),
           'gpt-4o-mini'
         ),
@@ -593,7 +593,7 @@ export default class AnalyzerService {
       const batch = photosToProcess.slice(i, i + maxImagesPerBatchGPT)
 
       const responseGPT = await modelsService.getGPTResponse(
-        SYSTEM_MESSAGE_ANALYZER_GPT_DESC(batch),
+        MESSAGE_ANALYZER_GPT_DESC(batch),
         batch.map(({ base64 }) => ({
           type: 'image_url',
           image_url: {

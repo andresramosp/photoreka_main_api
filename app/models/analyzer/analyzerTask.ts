@@ -7,7 +7,7 @@ import { ModelType } from './analyzerProcess.js'
 export class AnalyzerTask {
   declare name: string
   declare model: ModelType
-  declare overwrite: boolean
+  declare overwrite: boolean // esto solo tiene sentido para determinar si se cogen fotos ya procesadas o no. Pero una tarea siempre hacer overwrite de sus descs/tags, no añade...
 
   toJSON() {
     return { name: this.name }

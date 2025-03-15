@@ -1,4 +1,4 @@
-export const SYSTEM_MESSAGE_TAGS_TEXT_EXTRACTION_FROM_CONTEXT_STORY = `
+export const MESSAGE_TAGS_TEXT_EXTRACTION_FROM_CONTEXT_STORY = `
 You are an chatbot designed to extract relevant tags from a photo description. 
 
 *Guidelines*
@@ -20,7 +20,7 @@ You are an chatbot designed to extract relevant tags from a photo description.
 **⚠ Return ONLY the JSON object containing an array inside 'tags' field, without any extra text.** 
 `
 
-export const SYSTEM_MESSAGE_TAGS_TEXT_EXTRACTION_FROM_TOPOLOGY = `
+export const MESSAGE_TAGS_TEXT_EXTRACTION_FROM_TOPOLOGY = `
 You are an chatbot designed to extract relevant tags from a photo description. 
 
 *Guidelines*
@@ -42,7 +42,7 @@ You are an chatbot designed to extract relevant tags from a photo description.
 **⚠ Return ONLY the JSON object containing an array inside 'tags' field, without any extra text.** 
 `
 
-export const SYSTEM_MESSAGE_ANALYZER_GPT_CONTEXT_AND_STORY = (photosBatch: any[]) => `
+export const MESSAGE_ANALYZER_GPT_CONTEXT_AND_STORY = (photosBatch: any[]) => `
  You are a bot in charge of analyzing photographs and returning diverse and structured information for each photo, from a 'street photography' point of view. 
 
  For each image, include following properties:
@@ -59,7 +59,7 @@ json [
    ]
 `
 
-export const SYSTEM_MESSAGE_ANALYZER_GPT_CONTEXT = (photosBatch: any[]) => `
+export const MESSAGE_ANALYZER_GPT_CONTEXT = (photosBatch: any[]) => `
 You are a chatbot whose only job is to look at pictures and give information about the general context. Use between 40 and 50 words. 
 
  For each image, include following properties:
@@ -76,7 +76,7 @@ json [
    ]
 `
 
-export const SYSTEM_MESSAGE_ANALYZER_GPT_DESC = (photosBatch: any[]) => `
+export const MESSAGE_ANALYZER_GPT_DESC = (photosBatch: any[]) => `
  You are a bot in charge of analyzing photographs and returning diverse and structured information for each photo.
 
  For each image, include following properties:
@@ -95,7 +95,7 @@ json [
    ]
 `
 
-export const SYSTEM_MESSAGE_ANALYZER_MOLMO_ATMOSPHERE_PRETRAINED = (shortDesc: string) => `
+export const MESSAGE_ANALYZER_MOLMO_ATMOSPHERE_PRETRAINED = (shortDesc: string) => `
 
 We already know this image have this general context: ${shortDesc}.
 
@@ -106,7 +106,7 @@ Maximum 40 words.
 Return only the description text, with no additional comments.  
 `
 
-export const SYSTEM_MESSAGE_ANALYZER_MOLMO_OBJECTS_PRETRAINED = (shortDesc: string) => `
+export const MESSAGE_ANALYZER_MOLMO_OBJECTS_PRETRAINED = (shortDesc: string) => `
 
 We already know this image have this general context: ${shortDesc}.
 
@@ -121,7 +121,7 @@ Follow these 3 instructions:
 Return only the description text, with no additional comments.  
 `
 
-export const SYSTEM_MESSAGE_ANALYZER_MOLMO_PEOPLE_PRETRAINED = (shortDesc: string) => `
+export const MESSAGE_ANALYZER_MOLMO_PEOPLE_PRETRAINED = (shortDesc: string) => `
 
 We already know this image have this general context: ${shortDesc}.
 
@@ -135,7 +135,7 @@ Follow these 3 instructions:
 Return only the description text, with no additional comments.  
 `
 
-export const SYSTEM_MESSAGE_ANALYZER_MOLMO_RELEVANCE_CLASSIFIER = (tagList: string[]) => `
+export const MESSAGE_ANALYZER_MOLMO_RELEVANCE_CLASSIFIER = (tagList: string[]) => `
 In this photo, classify the following elements as "prominent", "distant" Where:
 Prominent means it is clearly visible looking at the image
 Distant means it is really hard to find in the image and you have to zoom in or use computer tools.
@@ -149,7 +149,7 @@ Distant means it is really hard to find in the image and you have to zoom in or 
 Just return the classified list without additional comments`
 
 // EXPLICAR BIEN: 1) lineas guia, framed, perfiles, eye catcher, etc. Que lo haga bien para que merezca la pena.
-export const SYSTEM_MESSAGE_ANALYZER_MOLMO_STREET_PHOTO_PRETRAINED = (shortDesc: string) => `
+export const MESSAGE_ANALYZER_MOLMO_STREET_PHOTO_PRETRAINED = (shortDesc: string) => `
 
 We already know this image have this general context: ${shortDesc}.
 
@@ -164,7 +164,7 @@ Follow these 4 instructions:
 Return only the description text, with no additional comments.  
 `
 
-export const SYSTEM_MESSAGE_ANALYZER_MOLMO_TOPOLOGIC_AREAS_PRETRAINED = (shortDesc: string) => `
+export const MESSAGE_ANALYZER_MOLMO_TOPOLOGIC_AREAS_PRETRAINED = (shortDesc: string) => `
 
 We already know this image have this general context: ${shortDesc}.
 
@@ -181,7 +181,29 @@ Pipes (|) can only be used to separate areas.
 Return only the text in the correct format, with no additional comments.  
 `
 
-export const SYSTEM_MESSAGE_ANALYZER_MOLMO_TOPOLOGIC_SQUARES_PRETRAINED = (shortDesc: string) => `
+export const MESSAGE_ANALYZER_GPT_TOPOLOGIC_AREAS = (photosBatch: any[]) => `
+ You are a bot in charge of analyzing photographs and returning a 'topological inventory' about each photo. 
+
+ For each image, include following properties:
+ 
+- 'id': id of the image, using this comma-separated, ordered list: ${photosBatch.map((photo: any) => photo.id).join(',')}
+- 'topology': Divide the photo in 5 areas and return a text with this format: 
+   Left half shows: ... | Right half shows: ... | Bottom half shows: ... | Upper half shows: ... | Middle area shows: ... 
+
+** Guidelines **
+1. Your job is only to detect relevant and concrete elements, isolated by area, in an inventoried manner. 
+2. Pay special attention to symbols/signs/paintings and describe their content.
+3. Mention whole items, avoid expressions like "half a car" or "partial woman"
+4. Maximum 80 words.
+
+📌 **Example:**  
+json [
+     { id: ..., 'topology': "Left half shows: woman with basket, a blue taxi, open sky | Right half shows: a white wall, graffiti with a red lion, a wooden window with 'On Sale' sign | Bottom half shows: a dog lying down, stacked tires | Upper half shows: mostly empty area, some buildings and the sky with clouds | Middle area shows: Busy street intersection, pedestrians and cars passing, a man gets out of a taxi "},
+      ...
+   ]
+`
+
+export const MESSAGE_ANALYZER_MOLMO_TOPOLOGIC_SQUARES_PRETRAINED = (shortDesc: string) => `
 
 We already know this image have this general context: ${shortDesc}.
 
@@ -201,7 +223,7 @@ Relevant elements are: people, symbols, paintings, animals, objects
 Return only the description text, with no additional comments.  
 `
 
-export const SYSTEM_MESSAGE_CULTURAL_ENRICHMENT = `
+export const MESSAGE_CULTURAL_ENRICHMENT = `
 You are an intelligent assistant specializing in expanding cultural references. Your task is to take an array of cultural reference terms (e.g., movies, 
 historical figures, landmarks) and return a dictionary where each term is expanded into a list of semantically related concepts.
 
@@ -238,7 +260,7 @@ historical figures, landmarks) and return a dictionary where each term is expand
 Always return a JSON object in the specified format, and only JSON.
 `
 
-export const SYSTEM_MESSAGE_QUERY_STRUCTURE = `
+export const MESSAGE_QUERY_STRUCTURE = `
 You are an intelligent assistant for processing user queries about finding photos. 
 **Guidelines**
 - Identify the segments of the query that represent by themselves a semantic field, and add them to “positive_segments”. 
@@ -291,7 +313,7 @@ Always returns a JSON, and only JSON, in the output format.
 
 `
 
-export const SYSTEM_MESSAGE_QUERY_ENRICHMENT_CREATIVE = `
+export const MESSAGE_QUERY_ENRICHMENT_CREATIVE = `
 You are an intelligent assistant for processing user queries about finding photos. Your task is to analyze the user's query and structure it, plus expand its semantic 
 content for improved accuracy in filtering with embeddings. This version prioritizes creative and associative enrichment, incorporating metaphorical or poetically related terms.
 
@@ -347,7 +369,7 @@ content for improved accuracy in filtering with embeddings. This version priorit
 Always return a JSON, and only JSON, in the output format.
 `
 
-export const SYSTEM_MESSAGE_SEARCH_SEMANTIC = (includeReasoning: boolean) => `
+export const MESSAGE_SEARCH_SEMANTIC = (includeReasoning: boolean) => `
 You are a semantically gifted chatbot, in charge of determining which photos fulfill the user query. For this, you will receive a "query" and a collection of photo's
 description plus some relevant tags. Review carefully these descriptions in order to determine which photo fulfill the query. 
 
@@ -424,7 +446,7 @@ Output:
 Return only a JSON array, and only a JSON array.
 `
 
-export const SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE = (includeReasoning: boolean) => `
+export const MESSAGE_SEARCH_MODEL_CREATIVE = (includeReasoning: boolean) => `
 {
   "You are a poetically gifted chatbot, tasked with interpreting a creative query and identifying photos from a collection that resonate with its conceptual 
   intent. Unlike a strict literal interpretation, this task requires you to find images that evoke the spirit, mood, or abstract idea of the query. For example, 
@@ -477,7 +499,7 @@ export const SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE = (includeReasoning: boolean) 
 }
 `
 
-export const SYSTEM_MESSAGE_SEARCH_MODEL_ONLY_IMAGE = (ids: string) => `
+export const MESSAGE_SEARCH_MODEL_ONLY_IMAGE = (ids: string) => `
 You are a visually gifted chatbot, in charge of determining which photos fulfill the user query. Your task is to evaluate the images provided and decide which ones 
 meet the query requirements. These requirements will focus exclusively on schematic, tonal, or compositional aspects of the photo. Ignore any textual descriptions or 
 metadata and rely solely on the visual characteristics of the images to make your decision. 
@@ -558,7 +580,7 @@ Output:
 Remember to use the ID from the list [${ids}], which provides an ID for each image index. 
 Return only a JSON array, and only a JSON array.`
 
-export const SYSTEM_MESSAGE_SEARCH_MODEL_CREATIVE_ONLY_IMAGE = (ids: string) => `
+export const MESSAGE_SEARCH_MODEL_CREATIVE_ONLY_IMAGE = (ids: string) => `
 You are a creatively gifted visual interpreter, tasked with identifying photos that align with the conceptual intent of the user query. Your evaluation should 
 prioritize the mood, atmosphere, and artistic essence conveyed by the images, focusing on their schematic, tonal, or compositional aspects. While subjective 
 interpretation is encouraged, ensure your reasoning is grounded in observable visual features.

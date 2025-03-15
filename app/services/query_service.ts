@@ -2,7 +2,7 @@
 
 import { withCache } from '../decorators/withCache.js'
 import withCost from '../decorators/withCost.js'
-import { SYSTEM_MESSAGE_QUERY_STRUCTURE } from '../utils/ModelsMessages.js'
+import { MESSAGE_QUERY_STRUCTURE } from '../utils/ModelsMessages.js'
 import AnalyzerService from './analyzer_service.js'
 import EmbeddingsService from './embeddings_service.js'
 import ModelsService from './models_service.js'
@@ -27,7 +27,7 @@ export default class QueryService {
     provider: 'redis',
     ttl: 60 * 10,
   })
-  public async structureQuery(searchType: 'logical' | 'semantic' | 'creative', query) {
+  public async structureQuery(searchType: 'topological' | 'semantic' | 'creative', query) {
     let expansionCost = 0
     let structuredResult = await this.modelsService.getStructuredQuery(query.description)
     let sourceResult = { requireSource: 'description' }
@@ -44,14 +44,14 @@ export default class QueryService {
   }
 
   withCost()
-  public async structureQueryLLM(searchType: 'logical' | 'semantic' | 'creative', query) {
+  public async structureQueryLLM(searchType: 'topological' | 'semantic' | 'creative', query) {
     let expansionCost = 0
     let sourceResult = { requireSource: 'description' }
 
     const noPrefixResult = await this.modelsService.getNoPrefixQuery(query.description)
 
     const { result: modelResult, cost: modelCost } = await this.modelsService.getGPTResponse(
-      SYSTEM_MESSAGE_QUERY_STRUCTURE,
+      MESSAGE_QUERY_STRUCTURE,
       JSON.stringify({ query: noPrefixResult }),
       'gpt-4o-mini'
     )
