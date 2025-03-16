@@ -38,11 +38,12 @@ export default class SearchController {
 
       const query = request.body()
 
-      const stream = searchService.searchByTags(query, {
-        searchMode: query.options.searchMode,
-        withInsights: query.options.withInsights,
+      const stream = searchService.searchByTags({
+        included: query.included,
+        excluded: query.excluded,
         pageSize: query.options.pageSize,
         iteration: query.options.iteration,
+        searchMode: query.options.searchMode,
       })
 
       for await (const result of stream) {
@@ -63,10 +64,14 @@ export default class SearchController {
       const query = request.body()
 
       const stream = searchService.searchTopological(query, {
-        searchMode: query.options.searchMode,
-        withInsights: query.options.withInsights,
+        left: query.left,
+        right: query.right,
+        upper: query.upper,
+        bottom: query.bottom,
+        middle: query.middle,
         pageSize: query.options.pageSize,
         iteration: query.options.iteration,
+        searchMode: query.options.searchMode,
       })
 
       for await (const result of stream) {

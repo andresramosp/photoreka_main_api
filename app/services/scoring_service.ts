@@ -22,8 +22,7 @@ interface ScoredPhoto {
 }
 
 const MAX_SIMILAR_TAGS = 1250
-const MAX_SIMILAR_CHUNKS = 850
-
+const MAX_SIMILAR_CHUNKS = 2000
 const getWeights = (isCreative: boolean) => {
   return {
     tags: {
@@ -44,9 +43,7 @@ const getWeights = (isCreative: boolean) => {
       tags: 0,
       desc: 1,
       fullQuery: 2.5,
-      embeddingsTagsThreshold: 0,
-      embeddingsDescsThreshold: 0.3,
-      embeddingsFullQueryThreshold: 0.2,
+      embeddingsDescsThreshold: 0.17,
     },
     nuancesTags: {
       tags: 1,
@@ -68,11 +65,11 @@ export default class ScoringService {
 
   // @MeasureExecutionTime
   // TODO: userid!!
-  @withCache({
-    key: (_, arg2, arg3, arg4) => `getScoredPhotosByTagsAndDesc_ ${arg2.original}_${arg3}_${arg4}`,
-    provider: 'redis',
-    ttl: 60 * 5,
-  })
+  // @withCache({
+  //   key: (_, arg2, arg3, arg4) => `getScoredPhotosByTagsAndDesc_ ${arg2.original}_${arg3}`,
+  //   provider: 'redis',
+  //   ttl: 60 * 5,
+  // })
   public async getScoredPhotosByTagsAndDesc(
     photos: Photo[],
     structuredQuery: any,
@@ -111,7 +108,9 @@ export default class ScoringService {
               { name: nuance_segment, index },
               aggregatedScores,
               weights.nuancesTags,
-              strictInference
+              strictInference,
+              ['context_story', 'topology'],
+              ['context', 'story']
             )
           )
         )
@@ -124,7 +123,9 @@ export default class ScoringService {
           { name: segment, index },
           scores,
           weights.semantic,
-          strictInference
+          strictInference,
+          ['context_story', 'topology'],
+          ['context', 'story']
         )
       }
       return scores
@@ -163,8 +164,9 @@ export default class ScoringService {
       }))
   }
 
+  // TODO: replantear: tiene
   private async filterExcludedPhotosByTags(photos: Photo[], excluded: string[]) {
-    const proximityThreshold = 0.6 + 1 // 0.8 de Entailment
+    const proximityThreshold = 1 + 0.6
     const allTags = await Tag.all()
 
     const matchingPromises = excluded.map((tag) =>
@@ -176,22 +178,25 @@ export default class ScoringService {
       .filter((t) => t.proximity > proximityThreshold)
       .map((t) => t.name)
 
+    console.log(`Excluded: ${excludedTagNames}`)
+
     return photos.filter((photo) => !photo.tags?.some((tag) => excludedTagNames.includes(tag.name)))
   }
 
   // TODO: userid!!
-  @withCache({
-    key: (_, arg2, arg3, arg4) =>
-      `getScoredPhotosByTags_${JSON.stringify(arg2)}_${JSON.stringify(arg3)}_${arg4}`,
-    provider: 'redis',
-    ttl: 120,
-  })
+  // @withCache({
+  //   key: (_, arg2, arg3, arg4) =>
+  //     `getScoredPhotosByTags_${JSON.stringify(arg2)}_${JSON.stringify(arg3)}_${arg4}`,
+  //   provider: 'redis',
+  //   ttl: 120,
+  // })
   public async getScoredPhotosByTags(
     photos: Photo[],
     included: string[],
-    excluded: string[]
+    excluded: string[],
+    searchMode: SearchMode
   ): Promise<ScoredPhoto[] | undefined> {
-    let weights = getWeights(true)
+    let weights = getWeights(searchMode == 'creative') // TODO: añadir parametros
 
     let filteredPhotos = await this.filterExcludedPhotosByTags(photos, excluded)
 
@@ -204,7 +209,70 @@ export default class ScoringService {
     const includedPromise = (async () => {
       let scores = aggregatedScores
       for (const [index, segment] of included.entries()) {
-        scores = await this.processSegment({ name: segment, index }, scores, weights.tags, true)
+        scores = await this.processSegment(
+          { name: segment, index },
+          scores,
+          weights.tags,
+          searchMode == 'logical',
+          ['context_story', 'topology'],
+          ['context', 'story']
+        )
+      }
+      return scores
+    })()
+
+    // Esperamos ambas promesas en paralelo.
+    const [finalScores] = await Promise.all([includedPromise])
+
+    let potentialMaxScore = 10 // //this.getMaxPotentialScore(structuredQuery, searchType, weights)
+
+    return finalScores
+      .filter((scores) => scores.totalScore > 0)
+      .sort((a, b) => {
+        return b.totalScore - a.totalScore
+      })
+      .map((score) => ({
+        ...score,
+        matchPercent: Math.min(100, (score.totalScore * 100) / potentialMaxScore),
+      }))
+  }
+
+  public async getScoredPhotosByTopoAreas(
+    photos: Photo[],
+    queryByAreas: { left: string; right: string; upper: string; bottom: string; middle: string },
+    searchMode: SearchMode
+  ): Promise<ScoredPhoto[] | undefined> {
+    let weights = getWeights(searchMode == 'creative')
+
+    let aggregatedScores: ScoredPhoto[] = photos.map((photo) => ({
+      photo,
+      tagScore: 0,
+      totalScore: 1,
+    }))
+
+    const prefixMap = {
+      right: 'Right half shows:',
+      left: 'Left half shows:',
+      upper: 'Upper half shows:',
+      bottom: 'Bottom half shows:',
+      middle: 'Middle half shows:',
+    }
+
+    const filledStrings = Object.entries(queryByAreas)
+      .filter(([_, value]) => value) // Filtra campos vacíos
+      .map(([key, value]) => `${prefixMap[key]} ${value}`)
+
+    const includedPromise = (async () => {
+      let scores = aggregatedScores
+      for (const [index, segment] of filledStrings.entries()) {
+        scores = await this.processSegment(
+          { name: segment, index },
+          scores,
+          weights.topological,
+          searchMode == 'logical',
+          [],
+          ['topology']
+        )
       }
       return scores
     })()
@@ -285,12 +353,10 @@ export default class ScoringService {
     segment: { name: string; index: number },
     aggregatedScores: ScoredPhoto[],
     weights: { tags: number; desc: number; fullQuery: number },
-    strictInference: boolean
+    strictInference: boolean,
+    tagsCategories: string[],
+    descCategories: string[]
   ): Promise<ScoredPhoto[]> {
-    // TODO: diferenciar mediante algún parámetro que categorías se buscan para 1) los tags, 2) las desc
-    const tagsCategories = ['context_story', 'topology']
-    const descCategories = ['context', 'story']
-
     const photosToReview = aggregatedScores.map((s) => s.photo)
     const tagPromise =
       weights.tags > 0
@@ -584,6 +650,7 @@ export default class ScoringService {
         ...ap,
         proximity: ap.logicProximity,
       }))
+      return result.filter((element) => element.proximity > 1) // logic + entailment
     } else {
       result = adjustedProximitiesByContext.map((ap) => {
         const logicBonus = Math.max(ap.logicProximity, 0) // Asegurar que no sea negativo
@@ -593,11 +660,6 @@ export default class ScoringService {
           proximity: ap.embeddingsProximity + scaledBonus,
         }
       })
-    }
-
-    if (strictInference) {
-      return result.filter((element) => element.proximity > 1) // logic + entailment
-    } else {
       return result.filter((element) => element.proximity > 0) // embeddings + bonus
     }
   }

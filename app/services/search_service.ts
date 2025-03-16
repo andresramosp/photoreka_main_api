@@ -26,6 +26,19 @@ export type SearchOptions = {
   pageSize: number
 }
 
+export type SearchTagsOptions = SearchOptions & {
+  included: string[]
+  excluded: string[]
+}
+
+export type SearchTopologicalOptions = SearchOptions & {
+  left: string
+  right: string
+  upper: string
+  bottom: string
+  middle: string
+}
+
 export default class SearchService {
   public modelsService: ModelsService = null
   public photosService: PhotosService = null
@@ -155,20 +168,21 @@ export default class SearchService {
   }
 
   //   @withCostWS
-  public async *searchByTags(query: any, options: SearchOptions) {
-    const { pageSize } = options
-    const photos = await this.getPhotosByUser('1234')
+  public async *searchByTags(options: SearchTagsOptions) {
+    const { included, excluded, iteration, pageSize, searchMode } = options
+    const photos = await this.photosService.getPhotosByUser('1234')
 
     let embeddingScoredPhotos = await this.scoringService.getScoredPhotosByTags(
       photos,
-      query.included,
-      query.excluded
+      included,
+      excluded,
+      searchMode
     )
 
     const { paginatedPhotos, hasMore } = this.getPaginatedPhotosByPage(
       embeddingScoredPhotos,
       pageSize,
-      query.iteration
+      iteration
     )
 
     yield {
@@ -176,28 +190,34 @@ export default class SearchService {
       data: {
         hasMore,
         results: {
-          [query.iteration]: paginatedPhotos,
+          [iteration]: paginatedPhotos,
         },
-        iteration: query.iteration,
+        iteration: iteration,
       },
     }
   }
 
   //   @withCostWS
-  public async *searchTopological(query: any, options: SearchOptions) {
-    const { pageSize } = options
-    const photos = await this.getPhotosByUser('1234')
+  public async *searchTopological(query: any, options: SearchTopologicalOptions) {
+    const { pageSize, iteration, searchMode } = options
+    const photos = await this.photosService.getPhotosByUser('1234')
 
-    let embeddingScoredPhotos = await this.scoringService.getScoredPhotosByTags(
+    let embeddingScoredPhotos = await this.scoringService.getScoredPhotosByTopoAreas(
       photos,
-      query.included,
-      query.excluded
+      {
+        bottom: options.bottom,
+        upper: options.upper,
+        left: options.left,
+        right: options.right,
+        middle: options.middle,
+      },
+      searchMode
     )
 
     const { paginatedPhotos, hasMore } = this.getPaginatedPhotosByPage(
       embeddingScoredPhotos,
       pageSize,
-      query.iteration
+      iteration
     )
 
     yield {
@@ -205,9 +225,9 @@ export default class SearchService {
       data: {
         hasMore,
         results: {
-          [query.iteration]: paginatedPhotos,
+          [iteration]: paginatedPhotos,
         },
-        iteration: query.iteration,
+        iteration: iteration,
       },
     }
   }

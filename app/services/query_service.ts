@@ -18,16 +18,23 @@ export default class QueryService {
     this.analyzerService = new AnalyzerService()
   }
 
-  // Parece que no es estrictamente necesaria la expansión, cuando se consideran los neutrals (strictInference = false)
-  // Pero sí que habría que distinguir cuando una query contiene una referencia o el prefijo evocativo para establecer ese valor
+  public async structureQuery(query) {
+    const numberOfWords = query.split(' ').length
+    if (numberOfWords > 4) {
+      return this.structureQueryLLM(query)
+    } else {
+      return this.structureQueryNLP(query)
+    }
+  }
+
   // withCost()
   // TODO: userid!!
-  // @withCache({
-  //   key: (arg1) => `structureQuery_${arg1}`,
-  //   provider: 'redis',
-  //   ttl: 60 * 10,
-  // })
-  public async structureQuery(query) {
+  @withCache({
+    key: (arg1) => `structureQuery_${arg1}`,
+    provider: 'redis',
+    ttl: 60 * 10,
+  })
+  public async structureQueryNLP(query) {
     let expansionCost = 0
     let structuredResult = await this.modelsService.getStructuredQuery(query)
     let sourceResult = { requireSource: 'description' }
@@ -66,7 +73,7 @@ export default class QueryService {
     modelResult.no_prefix = noPrefixResult
 
     console.log(
-      `[processQuery]: Result for ${description} -> ${JSON.stringify(modelResult.positive_segments)} | ${JSON.stringify(modelResult.nuances_segments)}`
+      `[processQuery]: Result for ${query} -> ${JSON.stringify(modelResult.positive_segments)} | ${JSON.stringify(modelResult.nuances_segments)}`
     )
 
     return {
