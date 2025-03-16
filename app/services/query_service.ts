@@ -22,18 +22,18 @@ export default class QueryService {
   // Pero sí que habría que distinguir cuando una query contiene una referencia o el prefijo evocativo para establecer ese valor
   // withCost()
   // TODO: userid!!
-  @withCache({
-    key: (arg1, arg2) => `${arg1}_${arg2.description}`,
-    provider: 'redis',
-    ttl: 60 * 10,
-  })
-  public async structureQuery(searchType: 'topological' | 'semantic' | 'creative', query) {
+  // @withCache({
+  //   key: (arg1) => `structureQuery_${arg1}`,
+  //   provider: 'redis',
+  //   ttl: 60 * 10,
+  // })
+  public async structureQuery(query) {
     let expansionCost = 0
-    let structuredResult = await this.modelsService.getStructuredQuery(query.description)
+    let structuredResult = await this.modelsService.getStructuredQuery(query)
     let sourceResult = { requireSource: 'description' }
 
     console.log(
-      `[processQuery]: Result for ${query.description} -> ${JSON.stringify(structuredResult.positive_segments)}`
+      `[processQuery]: Result for ${query} -> ${JSON.stringify(structuredResult.positive_segments)}`
     )
 
     return {
@@ -44,11 +44,11 @@ export default class QueryService {
   }
 
   withCost()
-  public async structureQueryLLM(searchType: 'topological' | 'semantic' | 'creative', query) {
+  public async structureQueryLLM(query) {
     let expansionCost = 0
     let sourceResult = { requireSource: 'description' }
 
-    const noPrefixResult = await this.modelsService.getNoPrefixQuery(query.description)
+    const noPrefixResult = await this.modelsService.getNoPrefixQuery(query)
 
     const { result: modelResult, cost: modelCost } = await this.modelsService.getGPTResponse(
       MESSAGE_QUERY_STRUCTURE,
@@ -56,7 +56,7 @@ export default class QueryService {
       'gpt-4o-mini'
     )
 
-    modelResult.original = query.description
+    modelResult.original = query
     modelResult.positive_segments = [
       ...new Set([...modelResult.positive_segments, ...modelResult.named_entities]),
     ]
@@ -66,7 +66,7 @@ export default class QueryService {
     modelResult.no_prefix = noPrefixResult
 
     console.log(
-      `[processQuery]: Result for ${query.description} -> ${JSON.stringify(modelResult.positive_segments)} | ${JSON.stringify(modelResult.nuances_segments)}`
+      `[processQuery]: Result for ${description} -> ${JSON.stringify(modelResult.positive_segments)} | ${JSON.stringify(modelResult.nuances_segments)}`
     )
 
     return {

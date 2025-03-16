@@ -8,6 +8,7 @@ import MeasureExecutionTime from '../decorators/measureExecutionTime.js'
 import { createRequire } from 'module'
 import EmbeddingsService from './embeddings_service.js'
 import { withCache } from '../decorators/withCache.js'
+import type { SearchMode, SearchType } from './search_service.js'
 const require = createRequire(import.meta.url)
 const pluralize = require('pluralize')
 
@@ -23,43 +24,35 @@ interface ScoredPhoto {
 const MAX_SIMILAR_TAGS = 1250
 const MAX_SIMILAR_CHUNKS = 850
 
-const getWeights = (deepSearch) => {
+const getWeights = (isCreative: boolean) => {
   return {
     tags: {
       tags: 1,
       desc: 0,
       fullQuery: null,
-      embeddingsTagsThreshold: deepSearch ? 0.15 : 0.3,
+      embeddingsTagsThreshold: 0.15,
     },
     semantic: {
-      tags: 0.4,
-      desc: 0.6,
+      tags: isCreative ? 0.3 : 0.4,
+      desc: isCreative ? 0.7 : 0.6,
       fullQuery: 2,
-      embeddingsTagsThreshold: deepSearch ? 0.13 : 0.25,
-      embeddingsDescsThreshold: deepSearch ? 0.17 : 0.35,
-      embeddingsFullQueryThreshold: deepSearch ? 0.3 : 0.55,
-    },
-    creative: {
-      tags: 0.3,
-      desc: 0.7,
-      fullQuery: 2,
-      embeddingsTagsThreshold: deepSearch ? 0.13 : 0.3,
-      embeddingsDescsThreshold: deepSearch ? 0.17 : 0.35,
-      embeddingsFullQueryThreshold: deepSearch ? 0.3 : 0.55,
+      embeddingsTagsThreshold: 0.13,
+      embeddingsDescsThreshold: 0.17,
+      embeddingsFullQueryThreshold: 0.3,
     },
     topological: {
       tags: 0,
       desc: 1,
       fullQuery: 2.5,
       embeddingsTagsThreshold: 0,
-      embeddingsDescsThreshold: deepSearch ? 0.3 : 0.4,
-      embeddingsFullQueryThreshold: deepSearch ? 0.2 : 0.3,
+      embeddingsDescsThreshold: 0.3,
+      embeddingsFullQueryThreshold: 0.2,
     },
     nuancesTags: {
       tags: 1,
       desc: 0,
       fullQuery: null,
-      embeddingsTagsThreshold: deepSearch ? 0.35 : 0.65,
+      embeddingsTagsThreshold: 0.35,
     },
   }
 }
@@ -73,36 +66,6 @@ export default class ScoringService {
     this.embeddingsService = new EmbeddingsService()
   }
 
-  private getMaxPotentialScore(structuredQuery, searchType, weights) {
-    // Valores que consideramos un match perfecto
-    const maxProximity = 1.9
-    const maxTagMatches = 0.5
-    const maxChunkMatches = 0.5
-
-    const maxRawScoreForTags = maxProximity + (maxTagMatches * maxProximity) / 2
-
-    const maxRawScoreForChunks = maxProximity + (maxChunkMatches * maxProximity) / 2
-
-    const maxRawScoreForFullQuery = maxRawScoreForChunks
-
-    const currentWeights = weights[searchType]
-
-    // Para cada segmento, el aporte máximo es la suma ponderada de tags y descripción
-    const maxScorePerSegment =
-      (currentWeights.tags > 0 ? maxRawScoreForTags * currentWeights.tags : 0) +
-      (currentWeights.desc > 0 ? maxRawScoreForChunks * currentWeights.desc : 0)
-
-    const segmentsCount = structuredQuery.positive_segments.length
-    let maxPotentialScore = segmentsCount * maxScorePerSegment
-
-    // Si se usa fullQuery (más de un segmento y el peso correspondiente es mayor a 0)
-    if (segmentsCount > 1 && currentWeights.fullQuery > 0) {
-      maxPotentialScore += maxRawScoreForFullQuery * currentWeights.fullQuery
-    }
-
-    return maxPotentialScore
-  }
-
   // @MeasureExecutionTime
   // TODO: userid!!
   @withCache({
@@ -113,9 +76,9 @@ export default class ScoringService {
   public async getScoredPhotosByTagsAndDesc(
     photos: Photo[],
     structuredQuery: any,
-    searchType: 'semantic' | 'creative' | 'topological'
+    searchMode: SearchMode
   ): Promise<ScoredPhoto[] | undefined> {
-    let weights = getWeights(true)
+    let weights = getWeights(searchMode == 'creative')
     let aggregatedScores: ScoredPhoto[] = photos.map((photo) => ({
       photo,
       tagScore: 0,
@@ -123,7 +86,7 @@ export default class ScoringService {
       totalScore: 0,
     }))
 
-    const strictInference = searchType !== 'creative'
+    const strictInference = searchMode == 'logical'
 
     const performFullQuerySearch = structuredQuery.positive_segments.length > 1
 
@@ -131,15 +94,15 @@ export default class ScoringService {
       ? this.getScoredPhotoDescBySegment(
           photos,
           { name: structuredQuery.no_prefix, index: -1 },
-          weights[searchType].embeddingsFullQueryThreshold,
+          weights.semantic.embeddingsFullQueryThreshold,
           strictInference,
           true,
-          searchType == 'topological' ? ['topology'] : ['context', 'story']
+          ['context', 'story']
         )
       : Promise.resolve([])
 
     const performNuancesQuerySearch =
-      structuredQuery.nuances_segments?.length > 0 && searchType == 'creative'
+      structuredQuery.nuances_segments?.length > 0 && searchMode == 'creative'
 
     const nuancesQuery: Promise<ScoredPhoto[]> = performNuancesQuerySearch
       ? Promise.all(
@@ -148,23 +111,20 @@ export default class ScoringService {
               { name: nuance_segment, index },
               aggregatedScores,
               weights.nuancesTags,
-              strictInference,
-              searchType
+              strictInference
             )
           )
         )
       : Promise.resolve([])
 
-    // Procesamos los segmentos secuencialmente en una promesa. Con deepSearch, se harán tambien contra la desc.
     const segmentsPromise = (async () => {
       let scores = aggregatedScores
       for (const [index, segment] of structuredQuery.positive_segments.entries()) {
         scores = await this.processSegment(
           { name: segment, index },
           scores,
-          weights[searchType],
-          strictInference,
-          searchType
+          weights.semantic,
+          strictInference
         )
       }
       return scores
@@ -180,7 +140,7 @@ export default class ScoringService {
     // Mergeamos el score fullQuery en los resultados finales.
     let finalScores = this.mergeTagDescScoredPhotos(scoresAfterSegments, [], fullQueryDescScores, {
       tags: 0,
-      desc: weights[searchType].fullQuery,
+      desc: weights.semantic.fullQuery,
     })
 
     for (let nuanceTagScore of nuancesQueryTagsScore) {
@@ -190,7 +150,7 @@ export default class ScoringService {
       })
     }
 
-    let potentialMaxScore = this.getMaxPotentialScore(structuredQuery, searchType, weights)
+    let potentialMaxScore = this.getMaxPotentialScore(structuredQuery, 'semantic', weights)
 
     return finalScores
       .filter((scores) => scores.totalScore > 0)
@@ -203,11 +163,7 @@ export default class ScoringService {
       }))
   }
 
-  private async filterExcludedPhotosByTags(
-    photos: Photo[],
-    excluded: string[],
-    deepSearch: boolean = false
-  ) {
+  private async filterExcludedPhotosByTags(photos: Photo[], excluded: string[]) {
     const proximityThreshold = 0.6 + 1 // 0.8 de Entailment
     const allTags = await Tag.all()
 
@@ -224,17 +180,16 @@ export default class ScoringService {
   }
 
   // TODO: userid!!
-  // @withCache({
-  //   key: (_, arg2, arg3, arg4) =>
-  //     `getScoredPhotosByTags_${JSON.stringify(arg2)}_${JSON.stringify(arg3)}_${arg4}`,
-  //   provider: 'redis',
-  //   ttl: 120,
-  // })
+  @withCache({
+    key: (_, arg2, arg3, arg4) =>
+      `getScoredPhotosByTags_${JSON.stringify(arg2)}_${JSON.stringify(arg3)}_${arg4}`,
+    provider: 'redis',
+    ttl: 120,
+  })
   public async getScoredPhotosByTags(
     photos: Photo[],
     included: string[],
-    excluded: string[],
-    searchType: string
+    excluded: string[]
   ): Promise<ScoredPhoto[] | undefined> {
     let weights = getWeights(true)
 
@@ -249,13 +204,7 @@ export default class ScoringService {
     const includedPromise = (async () => {
       let scores = aggregatedScores
       for (const [index, segment] of included.entries()) {
-        scores = await this.processSegment(
-          { name: segment, index },
-          scores,
-          weights.tags,
-          true,
-          searchType
-        )
+        scores = await this.processSegment({ name: segment, index }, scores, weights.tags, true)
       }
       return scores
     })()
@@ -336,16 +285,15 @@ export default class ScoringService {
     segment: { name: string; index: number },
     aggregatedScores: ScoredPhoto[],
     weights: { tags: number; desc: number; fullQuery: number },
-    strictInference: boolean,
-    searchType: string
+    strictInference: boolean
   ): Promise<ScoredPhoto[]> {
     // TODO: diferenciar mediante algún parámetro que categorías se buscan para 1) los tags, 2) las desc
-    const tagsCategories = searchType == 'topological' ? [] : ['context_story', 'topology']
-    const descCategories = searchType == 'topological' ? ['topology'] : ['context', 'story']
+    const tagsCategories = ['context_story', 'topology']
+    const descCategories = ['context', 'story']
 
     const photosToReview = aggregatedScores.map((s) => s.photo)
     const tagPromise =
-      searchType !== 'topological' && weights.tags > 0
+      weights.tags > 0
         ? this.getScoredPhotoTagsBySegment(
             photosToReview,
             segment,
@@ -454,14 +402,6 @@ export default class ScoringService {
       .filter((score) => score.descScore > 0)
       .sort((a, b) => b.descScore - a.descScore)
     return scoredPhotos
-  }
-
-  private calculateProximitiesScores(proximities) {
-    const minProximity = Math.min(...proximities)
-    const maxProximity = Math.max(...proximities)
-    const totalProximities = proximities.reduce((sum, p) => sum + p, 0)
-    const adjustedProximity = totalProximities / 2
-    return maxProximity + Math.min(adjustedProximity, maxProximity)
   }
 
   private async getScoredPhotoTagsBySegment(
@@ -660,5 +600,43 @@ export default class ScoringService {
     } else {
       return result.filter((element) => element.proximity > 0) // embeddings + bonus
     }
+  }
+
+  private calculateProximitiesScores(proximities) {
+    const minProximity = Math.min(...proximities)
+    const maxProximity = Math.max(...proximities)
+    const totalProximities = proximities.reduce((sum, p) => sum + p, 0)
+    const adjustedProximity = totalProximities / 2
+    return maxProximity + Math.min(adjustedProximity, maxProximity)
+  }
+
+  private getMaxPotentialScore(structuredQuery, searchType: SearchType, weights) {
+    // Valores que consideramos un match perfecto
+    const maxProximity = 1.9
+    const maxTagMatches = 0.5
+    const maxChunkMatches = 0.5
+
+    const maxRawScoreForTags = maxProximity + (maxTagMatches * maxProximity) / 2
+
+    const maxRawScoreForChunks = maxProximity + (maxChunkMatches * maxProximity) / 2
+
+    const maxRawScoreForFullQuery = maxRawScoreForChunks
+
+    const currentWeights = weights[searchType]
+
+    // Para cada segmento, el aporte máximo es la suma ponderada de tags y descripción
+    const maxScorePerSegment =
+      (currentWeights.tags > 0 ? maxRawScoreForTags * currentWeights.tags : 0) +
+      (currentWeights.desc > 0 ? maxRawScoreForChunks * currentWeights.desc : 0)
+
+    const segmentsCount = structuredQuery.positive_segments.length
+    let maxPotentialScore = segmentsCount * maxScorePerSegment
+
+    // Si se usa fullQuery (más de un segmento y el peso correspondiente es mayor a 0)
+    if (segmentsCount > 1 && currentWeights.fullQuery > 0) {
+      maxPotentialScore += maxRawScoreForFullQuery * currentWeights.fullQuery
+    }
+
+    return maxPotentialScore
   }
 }

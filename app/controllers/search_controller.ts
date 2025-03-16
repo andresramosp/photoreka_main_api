@@ -1,22 +1,23 @@
 import type { HttpContext } from '@adonisjs/core/http'
 
-import PhotosService from '#services/photos_service'
 import ws from '#services/ws'
+import SearchService from '#services/search_service'
 
 export default class SearchController {
   /**
    * Handle the upload of multiple photos
    */
 
-  public async search({ request, response }: HttpContext) {
+  public async searchSemantic({ request, response }: HttpContext) {
     try {
-      const photosService = new PhotosService()
+      const searchService = new SearchService()
       const query = request.body()
 
-      const stream = photosService.search(query, query.searchType, {
-        deepSearch: query.deepSearch,
-        withInsights: query.withInsights, // solo de pago
-        pageSize: query.pageSize,
+      const stream = searchService.searchSemantic(query.description, {
+        searchMode: query.options.searchMode,
+        withInsights: query.options.withInsights,
+        pageSize: query.options.pageSize,
+        iteration: query.options.iteration,
       })
 
       for await (const result of stream) {
@@ -33,13 +34,39 @@ export default class SearchController {
 
   public async searchByTags({ response, request }: HttpContext) {
     try {
-      const photosService = new PhotosService()
+      const searchService = new SearchService()
 
       const query = request.body()
 
-      const stream = photosService.searchByTags(query, {
-        deepSearch: query.deepSearch,
-        pageSize: query.pageSize,
+      const stream = searchService.searchByTags(query, {
+        searchMode: query.options.searchMode,
+        withInsights: query.options.withInsights,
+        pageSize: query.options.pageSize,
+        iteration: query.options.iteration,
+      })
+
+      for await (const result of stream) {
+        ws.io?.emit(result.type, result.data)
+      }
+
+      return response.ok({ message: 'Search process initiated' })
+    } catch (error) {
+      console.error('Error fetching photos:', error)
+      return response.internalServerError({ message: 'Error fetching photos' })
+    }
+  }
+
+  public async searchTopological({ response, request }: HttpContext) {
+    try {
+      const searchService = new SearchService()
+
+      const query = request.body()
+
+      const stream = searchService.searchTopological(query, {
+        searchMode: query.options.searchMode,
+        withInsights: query.options.withInsights,
+        pageSize: query.options.pageSize,
+        iteration: query.options.iteration,
       })
 
       for await (const result of stream) {

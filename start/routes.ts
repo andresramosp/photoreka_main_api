@@ -21,10 +21,8 @@ router.post('/api/catalog/uploadGooglePhotos', [CatalogController, 'uploadGoogle
 
 router.post('/api/analyzer/', [AnalyzerController, 'analyze'])
 
-router.post('/api/search', [SearchController, 'search'])
-router.post('/api/searchByTags', [SearchController, 'searchByTags'])
+router.post('/api/search/semantic', [SearchController, 'searchSemantic'])
+router.post('/api/search/tags', [SearchController, 'searchByTags'])
+router.post('/api/search/topological', [SearchController, 'searchTopological'])
 
 router.get('/api/tags/search', [TagsController, 'search'])
-
-// router.get('/api/tags/', [TagsController, 'list'])
-// router.get('/api/tags/search', [TagsController, 'search'])
