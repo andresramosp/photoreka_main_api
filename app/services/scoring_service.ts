@@ -22,7 +22,8 @@ interface ScoredPhoto {
 }
 
 const MAX_SIMILAR_TAGS = 1250
-const MAX_SIMILAR_CHUNKS = 2000
+const MAX_SIMILAR_CHUNKS = 850
+
 const getWeights = (isCreative: boolean) => {
   return {
     tags: {
