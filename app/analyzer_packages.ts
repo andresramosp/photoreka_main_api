@@ -8,6 +8,8 @@ import {
   MESSAGE_TAGS_TEXT_EXTRACTION_FROM_TOPOLOGY,
 } from './utils/ModelsMessages.js'
 
+export type SplitMethods = 'split_by_props' | 'split_by_pipes' | 'split_by_size'
+
 export const packages = [
   {
     id: 'basic',
@@ -20,7 +22,7 @@ export const packages = [
         prompts: [MESSAGE_ANALYZER_GPT_CONTEXT_AND_STORY],
         overwrite: false,
         resolution: 'high',
-        imagesPerBatch: 6,
+        imagesPerBatch: 5,
         promptDependentField: null,
         promptsTarget: ['context', 'story'],
       },
@@ -38,6 +40,7 @@ export const packages = [
         prompt: null,
         model: null,
         overwrite: false,
+        descriptionSourceFields: ['context', 'story'],
         descriptionsChunksMethod: {
           context: 'split_by_size',
           story: 'split_by_size',
@@ -106,6 +109,7 @@ export const packages = [
         prompt: null,
         model: null,
         overwrite: false,
+        descriptionSourceFields: ['context', 'story'],
         descriptionsChunksMethod: {
           context: 'split_by_size',
           story: 'split_by_size',
@@ -164,6 +168,7 @@ export const packages = [
         prompt: null,
         model: null,
         overwrite: false,
+        descriptionSourceFields: ['topology'],
         descriptionsChunksMethod: {
           topology: 'split_by_pipes',
         },
@@ -180,7 +185,7 @@ export const packages = [
         sequential: false,
         prompts: [MESSAGE_ANALYZER_GPT_TOPOLOGIC_AREAS],
         imagesPerBatch: 4,
-        overwrite: true,
+        overwrite: false,
         resolution: 'low',
         promptDependentField: null,
         promptsTarget: ['topology'],
@@ -189,7 +194,7 @@ export const packages = [
         name: 'Etiquetado y Embeddings de Topology',
         type: 'TagTask',
         model: 'GPT',
-        overwrite: true,
+        overwrite: false,
         prompt: MESSAGE_TAGS_TEXT_EXTRACTION_FROM_TOPOLOGY,
         descriptionSourceFields: ['topology'],
       },
@@ -198,8 +203,9 @@ export const packages = [
         type: 'ChunkTask',
         prompt: null,
         model: null,
+        descriptionSourceFields: ['topology'],
         descriptionsChunksMethod: {
-          topology: 'split_by_pipes',
+          topology: 'split_by_props',
         },
       },
     ],
@@ -259,6 +265,7 @@ export const packages = [
         prompt: null,
         model: null,
         overwrite: false,
+        descriptionSourceFields: ['artistic'],
         descriptionsChunksMethod: {
           artistic: 'split_by_size',
         },

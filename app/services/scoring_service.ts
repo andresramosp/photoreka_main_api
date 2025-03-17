@@ -44,7 +44,7 @@ const getWeights = (isCreative: boolean) => {
       tags: 0,
       desc: 1,
       fullQuery: 2.5,
-      embeddingsDescsThreshold: 0.17,
+      embeddingsDescsThreshold: 0.1,
     },
     nuancesTags: {
       tags: 1,
@@ -238,6 +238,8 @@ export default class ScoringService {
       }))
   }
 
+  // TODO: cache
+  // TODO: Probar solo excluir area contraria
   public async getScoredPhotosByTopoAreas(
     photos: Photo[],
     queryByAreas: { left: string; right: string; upper: string; bottom: string; middle: string },
@@ -251,43 +253,37 @@ export default class ScoringService {
       totalScore: 1,
     }))
 
-    const prefixMap = {
-      right: 'Right half shows:',
-      left: 'Left half shows:',
-      upper: 'Upper half shows:',
-      bottom: 'Bottom half shows:',
-      middle: 'Middle half shows:',
-    }
-
-    const filledStrings = Object.entries(queryByAreas)
-      .filter(([_, value]) => value) // Filtra campos vacíos
-      .map(([key, value]) => `${prefixMap[key]} ${value}`)
+    // Determinar qué áreas tienen contenido en la consulta
+    const filledAreas = Object.entries(queryByAreas)
+      .filter(([_, value]) => value?.trim()) // Filtrar áreas vacías
+      .map(([area, value]) => ({ area, content: value })) // Mapeamos el área con su contenido
 
     const includedPromise = (async () => {
       let scores = aggregatedScores
-      for (const [index, segment] of filledStrings.entries()) {
+      for (const [index, { area, content }] of filledAreas.entries()) {
+        const areasToSearch = area != 'middle' ? [area, 'middle'] : ['middle']
+
         scores = await this.processSegment(
-          { name: segment, index },
+          { name: content, index }, // Pasamos el contenido real
           scores,
           weights.topological,
           searchMode == 'logical',
           [],
-          ['topology']
+          ['topology'],
+          areasToSearch
         )
       }
       return scores
     })()
 
-    // Esperamos ambas promesas en paralelo.
+    // Esperamos la promesa
     const [finalScores] = await Promise.all([includedPromise])
 
     let potentialMaxScore = 10 // //this.getMaxPotentialScore(structuredQuery, searchType, weights)
 
     return finalScores
       .filter((scores) => scores.totalScore > 0)
-      .sort((a, b) => {
-        return b.totalScore - a.totalScore
-      })
+      .sort((a, b) => b.totalScore - a.totalScore)
       .map((score) => ({
         ...score,
         matchPercent: Math.min(100, (score.totalScore * 100) / potentialMaxScore),
@@ -356,7 +352,8 @@ export default class ScoringService {
     weights: { tags: number; desc: number; fullQuery: number },
     strictInference: boolean,
     tagsCategories: string[],
-    descCategories: string[]
+    descCategories: string[],
+    areas: string[]
   ): Promise<ScoredPhoto[]> {
     const photosToReview = aggregatedScores.map((s) => s.photo)
     const tagPromise =
@@ -377,7 +374,8 @@ export default class ScoringService {
             weights.embeddingsDescsThreshold,
             strictInference,
             false,
-            descCategories
+            descCategories,
+            areas
           )
         : Promise.resolve([])
 
@@ -404,7 +402,8 @@ export default class ScoringService {
     embeddingsProximityThreshold: number = 0.2,
     strictInference: boolean,
     isFullQuery: boolean = false,
-    categories: string
+    categories: string[],
+    areas: string[]
   ): Promise<{ photo: Photo; descScore: number }[]> {
     // Obtener los chunks similares para el segmento
     const matchingChunks = await this.embeddingsService.findSimilarChunksToText(
@@ -413,7 +412,8 @@ export default class ScoringService {
       MAX_SIMILAR_CHUNKS,
       'cosine_similarity',
       photos.map((photo) => photo.id),
-      categories
+      categories,
+      areas
     )
 
     let adjustedChunks = await this.adjustProximities(

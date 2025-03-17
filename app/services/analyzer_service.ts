@@ -129,7 +129,7 @@ export default class AnalyzerProcessRunner {
     // Función que procesa cada batch
     const processBatch = async (batch: any[], idx: number) => {
       // Retraso incremental según el índice de batch
-      await this.sleep(idx * 750)
+      await this.sleep(idx * 1500)
 
       let response: any
       const injectedPrompts: any = await this.injectPromptsDpendencies(task, batch)
@@ -176,7 +176,7 @@ export default class AnalyzerProcessRunner {
 
     const pendingPhotos = await this.getPendingPhotosForTagsTask(task)
 
-    const cleanedResults = await this.cleanPhotosDescs(pendingPhotos, task.descriptionSourceFields)
+    const cleanedResults = await this.cleanPhotosDescs(pendingPhotos, task)
 
     console.log('[AnalyzerProcess]: TagTask: Fase 2 - Procesando solicitudes a GPT...')
 
@@ -259,6 +259,10 @@ export default class AnalyzerProcessRunner {
     for (const photo of photos) {
       const tagsToSaveForPhoto: Tag[] = []
 
+      if (!task.data[photo.id]) {
+        continue
+      }
+
       for (const tag of task.data[photo.id]) {
         await this.validateTag(tag, globalTagList, tagsToSaveForPhoto)
       }
@@ -306,13 +310,24 @@ export default class AnalyzerProcessRunner {
         throw new Error('No descriptions found for this photo')
       }
 
-      for (const category of Object.keys(photo.descriptions)) {
+      for (const category of task.descriptionSourceFields) {
         const description = photo.descriptions[category]
         if (!description) continue
 
         let descriptionChunks
-        if (task.descriptionsChunksMethod[category] === 'split_by_pipes') {
+        let splitMethod = task.descriptionsChunksMethod[category]
+          ? task.descriptionsChunksMethod[category]
+          : 'split_by_size'
+        if (splitMethod === 'split_by_pipes') {
           descriptionChunks = description.split('|').filter((ch: string) => ch.length > 0)
+        } else if (splitMethod === 'split_by_props') {
+          try {
+            descriptionChunks = Object.entries(description)
+              .filter(([_, value]) => value)
+              .map(([key, value]) => ({ chunk: value, area: category === 'topology' ? key : null }))
+          } catch (error) {
+            throw new Error(`Invalid JSON structure for category ${category}: ${error.message}`)
+          }
         } else {
           descriptionChunks = this.splitIntoChunks(description, description.length / 300)
         }
@@ -323,11 +338,12 @@ export default class AnalyzerProcessRunner {
           .delete()
 
         await Promise.all(
-          descriptionChunks.map((chunk: string) =>
+          descriptionChunks.map(({ chunk, area }) =>
             DescriptionChunk.create({
               photoId: photo.id,
               chunk,
               category,
+              area, // Se añade el área si existe
             })
           )
         )
@@ -471,13 +487,12 @@ export default class AnalyzerProcessRunner {
 
   @MeasureExecutionTime
   public async createChunksEmbeddings() {
-    // Asumimos que DescriptionChunk es el modelo y que ya existen registros en BD.
-    // Se consultan los chunks que aún no tienen embedding asignado.
     const chunks = await DescriptionChunk.query().whereNull('embedding')
 
     for (let i = 0; i < chunks.length; i += 16) {
       const batch = chunks.slice(i, i + 16)
       const texts = batch.map((chunk) => chunk.chunk)
+      // console.log(`[AnalyzerProcess]: Creando chunks para ${texts.join(' | ')}`)
       const { embeddings } = await this.modelsService.getEmbeddings(texts)
       await Promise.all(
         batch.map((chunk, index) => {
@@ -572,12 +587,7 @@ export default class AnalyzerProcessRunner {
     return chunks
   }
 
-  private async cleanPhotosDescs(
-    photos: Photo[],
-    descriptionFields: DescriptionType[],
-    batchSize = 5,
-    delayMs = 500
-  ) {
+  private async cleanPhotosDescs(photos: Photo[], task: TagTask, batchSize = 5, delayMs = 500) {
     const results = []
 
     for (let i = 0; i < photos.length; i += batchSize) {
@@ -586,7 +596,7 @@ export default class AnalyzerProcessRunner {
       const [cleanResult] = await Promise.all([
         this.modelsService.cleanDescriptions(
           batch.map((photo) => {
-            return this.getSourceTextFromPhoto(descriptionFields, photo)
+            return this.getSourceTextFromPhoto(task, photo)
           }),
           0.9
         ),
@@ -602,12 +612,28 @@ export default class AnalyzerProcessRunner {
     return results
   }
 
-  public getSourceTextFromPhoto(descriptionSourceFields: DescriptionType[], photo: Photo) {
+  public getSourceTextFromPhoto(task: TagTask, photo: Photo) {
     let text = ''
-    for (const desc of descriptionSourceFields) {
-      text += `${desc}: ${photo.descriptions?.[desc] ?? ''} |`
+
+    for (const category of task.descriptionSourceFields) {
+      const description = photo.descriptions?.[category]
+
+      let flattenedDescription: string
+
+      if (typeof description === 'object' && description !== null) {
+        // Si es un objeto (ya es JSON), concatenamos sus valores
+        flattenedDescription = Object.values(description)
+          .filter((value) => value) // Filtramos valores vacíos o nulos
+          .join(' ') // Espacio en lugar de '|'
+      } else {
+        // Si no es un objeto, lo tratamos como string normal
+        flattenedDescription = description ?? ''
+      }
+
+      text += `${category}: ${flattenedDescription} | ` // Pipe solo entre categorías
     }
-    return text
+
+    return text.trim().replace(/\|$/, '') // Eliminamos el pipe final si sobra
   }
 
   // Función auxiliar para reintentos (hasta 3 intentos con 5 segundos de espera)

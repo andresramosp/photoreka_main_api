@@ -74,7 +74,12 @@ export default class PhotosService {
       }
     })
 
-    await photo.save()
+    try {
+      await photo.save()
+    } catch (err) {
+      console.log(`[AnalyzerProcess] Error guardando foto ${id}`)
+    }
+
     return photo
   }
 

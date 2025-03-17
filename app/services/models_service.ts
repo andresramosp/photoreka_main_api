@@ -288,10 +288,10 @@ export default class ModelsService {
 
       // Check cache
       const cachedResponse = cache.get(cacheKey)
-      if (useCache && cachedResponse) {
-        console.log('Cache hit for getGPTResponse')
-        return cachedResponse
-      }
+      // if (useCache && cachedResponse) {
+      //   console.log('Cache hit for getGPTResponse')
+      //   return cachedResponse
+      // }
 
       const { data } = await axios.post(`${env.get('OPENAI_BASEURL')}/chat/completions`, payload, {
         headers: {

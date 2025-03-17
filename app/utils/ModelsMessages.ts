@@ -183,24 +183,48 @@ Return only the text in the correct format, with no additional comments.
 
 export const MESSAGE_ANALYZER_GPT_TOPOLOGIC_AREAS = (photosBatch: any[]) => `
  You are a bot in charge of analyzing photographs and returning a 'topological inventory' about each photo. 
+ You must divide the photo into 5 areas and give concise information about the relevant and concrete elements in each area. 
 
- For each image, include following properties:
+ For each image, include the following properties:
  
-- 'id': id of the image, using this comma-separated, ordered list: ${photosBatch.map((photo: any) => photo.id).join(',')}
-- 'topology': Divide the photo in 5 areas and return a text with this format: 
-   Left half shows: ... | Right half shows: ... | Bottom half shows: ... | Upper half shows: ... | Middle area shows: ... 
+- 'id': The unique ID of the image, using this comma-separated, ordered list: ${photosBatch.map((photo: any) => photo.id).join(',')}
+- 'topology': An object containing:
+  - 'left': What you see in the left half of the image.
+  - 'right': What you see in the right half of the image.
+  - 'upper': What you see in the upper half of the image.
+  - 'bottom': What you see in the bottom half of the image.
+  - 'middle': What you see in the middle area of the image.
 
-** Guidelines **
-1. Your job is only to detect relevant and concrete elements, isolated by area, in an inventoried manner. 
-2. Pay special attention to symbols/signs/paintings and describe their content.
-3. Mention whole items, avoid expressions like "half a car" or "partial woman"
-4. Maximum 80 words.
+** Guidelines **  
+1. Take each area as if it were an INDIVIDUAL photo. Just describe its content avoiding topological expresions within each area.
+3. Always describe WHOLE elements. Avoid partial expressions like "half woman," "part of a tree", etc.
+3. Pay special attention to symbols, signs, and paintings, and describe their content.  
+4. Maximum 100 words.  
 
 📌 **Example:**  
-json [
-     { id: ..., 'topology': "Left half shows: woman with basket, a blue taxi, open sky | Right half shows: a white wall, graffiti with a red lion, a wooden window with 'On Sale' sign | Bottom half shows: a dog lying down, stacked tires | Upper half shows: mostly empty area, some buildings and the sky with clouds | Middle area shows: Busy street intersection, pedestrians and cars passing, a man gets out of a taxi "},
-      ...
-   ]
+
+\`\`\`json
+[
+  {
+    "id": 1,
+    "topology": {
+      "left": "A woman with a basket, a blue taxi, open sky.",
+      "right": "A white wall with graffiti of a red lion, a wooden window with an 'On Sale' sign.",
+      "upper": "Mostly empty, with some buildings and a sky with clouds.",
+      "bottom": "A dog lying down, stacked tires.",
+      "middle": "Busy street intersection with pedestrians and cars passing, a man getting out of a taxi."
+    }
+  },
+  {
+    "id": 2,
+    "topology": {
+     ...
+    }
+  }
+  ...
+]
+\`\`\`
+Always return a JSON array, each item containing information about one image. 
 `
 
 export const MESSAGE_ANALYZER_MOLMO_TOPOLOGIC_SQUARES_PRETRAINED = (shortDesc: string) => `

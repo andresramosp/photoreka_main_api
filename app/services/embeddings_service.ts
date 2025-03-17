@@ -57,7 +57,8 @@ export default class EmbeddingsService {
     limit: number = 10,
     metric: 'distance' | 'inner_product' | 'cosine_similarity' = 'cosine_similarity',
     photoIds: number[] = null,
-    categories: DescriptionType[] = null
+    categories: DescriptionType[] = null,
+    areas: string[] = null
   ) {
     const modelsService = new ModelsService()
     let { embeddings } = await modelsService.getEmbeddings([term])
@@ -67,7 +68,8 @@ export default class EmbeddingsService {
       limit,
       metric,
       photoIds,
-      categories
+      categories,
+      areas
     )
   }
 
@@ -152,7 +154,8 @@ export default class EmbeddingsService {
     limit: number = 10,
     metric: 'distance' | 'inner_product' | 'cosine_similarity' = 'cosine_similarity',
     photoIds?: number[],
-    categories?: string[] // parámetro opcional agregado
+    categories?: string[],
+    areas?: string[] // parámetro opcional agregado
   ) {
     if (!embedding || embedding.length === 0) {
       throw new Error('Embedding no proporcionado o vacío')
@@ -213,6 +216,11 @@ export default class EmbeddingsService {
       additionalParams.categories = categories
     }
 
+    if (areas && areas.length > 0) {
+      whereCondition += ` AND area = ANY(:areas)`
+      additionalParams.areas = areas
+    }
+
     const embeddingString = `[${embedding.join(',')}]`
 
     const queryParameters: any = {
@@ -223,7 +231,7 @@ export default class EmbeddingsService {
 
     const result = await db.rawQuery(
       `
-      SELECT id, photo_id, chunk, ${metricQuery}
+      SELECT id, photo_id, chunk, area, ${metricQuery}
       FROM descriptions_chunks
       WHERE ${whereCondition}
       ORDER BY ${orderBy}

@@ -2,6 +2,7 @@ import DescriptionChunk from '#models/descriptionChunk'
 import { DescriptionType, PhotoDescriptions } from '#models/photo'
 import Tag from '#models/tag'
 import PhotosService from '#services/photos_service'
+import { SplitMethods } from '../../analyzer_packages.js'
 import { ModelType } from './analyzerProcess.js'
 
 export class AnalyzerTask {
@@ -25,12 +26,21 @@ export class VisionTask extends AnalyzerTask {
   declare complete: boolean // TODO: que serialize a BD, y usar para saber si la task ya se completó, en vez de mirar los fields
 
   public async commit() {
-    const photosService = new PhotosService()
-    await Promise.all(
-      Object.entries(this.data).map(([id, descriptions]) =>
-        photosService.updatePhoto(id, { descriptions: descriptions as PhotoDescriptions })
+    try {
+      const photosService = new PhotosService()
+      await Promise.all(
+        Object.entries(this.data).map(([id, descriptions]) => {
+          if (!isNaN(id)) {
+            return photosService.updatePhoto(id, {
+              descriptions: descriptions as PhotoDescriptions,
+            })
+          }
+          return Promise.resolve(null)
+        })
       )
-    )
+    } catch (err) {
+      console.log(`[AnalyzerProcess] Error guardando ${JSON.stringify(this.data)}`)
+    }
   }
 }
 
@@ -45,7 +55,8 @@ export class TagTask extends AnalyzerTask {
 }
 
 export class ChunkTask extends AnalyzerTask {
-  declare descriptionsChunksMethod: Record<DescriptionType, 'split_by_pipes' | 'split_by_size'>
+  declare descriptionSourceFields: DescriptionType[]
+  declare descriptionsChunksMethod: Record<DescriptionType, SplitMethods>
   declare data: Record<string, DescriptionChunk[]>
 
   public async commit() {

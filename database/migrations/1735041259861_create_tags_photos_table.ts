@@ -20,8 +20,9 @@ export default class extends BaseSchema {
         .inTable('tags')
         .onDelete('CASCADE')
       table.string('category')
+      table.string('area')
 
-      table.primary(['photo_id', 'tag_id', 'category'])
+      table.primary(['photo_id', 'tag_id', 'category', 'area'])
     })
   }
 
