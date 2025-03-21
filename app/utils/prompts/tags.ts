@@ -1,7 +1,7 @@
 import Photo from '#models/photo'
 import { tagGroups } from '#models/tag'
 
-export const MESSAGE_TAGS_TEXT_EXTRACTION_FROM_CONTEXT_STORY = `
+export const MESSAGE_TAGS_TEXT_EXTRACTION = `
 You are an chatbot designed to extract relevant tags from a photo description. 
 
 *Guidelines*

@@ -5,7 +5,7 @@ import {
 } from './utils/prompts/descriptions.js'
 import {
   MESSAGE_ANALYZER_GPT_TOPOLOGIC_TAGS,
-  MESSAGE_TAGS_TEXT_EXTRACTION_FROM_CONTEXT_STORY,
+  MESSAGE_TAGS_TEXT_EXTRACTION,
 } from './utils/prompts/tags.js'
 
 export type SplitMethods = 'split_by_props' | 'split_by_pipes' | 'split_by_size'
@@ -29,7 +29,7 @@ export const packages = [
         name: 'Etiquetado y Embeddings de Context + Story',
         type: 'TagTask',
         model: 'GPT',
-        prompt: MESSAGE_TAGS_TEXT_EXTRACTION_FROM_CONTEXT_STORY,
+        prompt: MESSAGE_TAGS_TEXT_EXTRACTION,
         descriptionSourceFields: ['context', 'story'],
       },
       {
@@ -47,7 +47,7 @@ export const packages = [
         name: 'Etiquetado y Embeddings de Visual Accents',
         type: 'TagTask',
         model: 'GPT',
-        prompt: MESSAGE_TAGS_TEXT_EXTRACTION_FROM_CONTEXT_STORY,
+        prompt: MESSAGE_TAGS_TEXT_EXTRACTION,
         descriptionSourceFields: ['visual_accents'],
       },
       {
@@ -81,23 +81,6 @@ export const packages = [
         promptsTarget: null,
         tagsTarget: 'area',
       },
-      // {
-      //   name: 'Etiquetado y Embeddings de Topology',
-      //   type: 'TagTask',
-      //   model: 'GPT',
-      //   prompt: MESSAGE_TAGS_TEXT_EXTRACTION_FROM_TOPOLOGY,
-      //   descriptionSourceFields: ['topology'],
-      // },
-      // {
-      //   name: 'Segmentación y Embeddings',
-      //   type: 'ChunkTask',
-      //   prompt: null,
-      //   model: null,
-      //   descriptionSourceFields: ['topology'],
-      //   descriptionsChunksMethod: {
-      //     topology: 'split_by_props',
-      //   },
-      // },
     ],
   },
 ]
