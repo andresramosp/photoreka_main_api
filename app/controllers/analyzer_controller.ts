@@ -4,18 +4,18 @@ import type { HttpContext } from '@adonisjs/core/http'
 import AnalyzerService from '#services/analyzer_service'
 import ws from '#services/ws'
 import Photo from '#models/photo'
-import PhotosService from '#services/photos_service'
+import PhotoManager from '../managers/photo_manager.js'
 
 const analysisProcesses = new Map<string, AsyncGenerator>()
 
 export default class AnalyzerController {
   public async analyze({ request, response }: HttpContext) {
     const analyzerService = new AnalyzerService()
-    const photosService = new PhotosService()
+    const photoManager = new PhotoManager()
 
     try {
       const { userId, packageId, processId } = request.body()
-      const photos = await photosService._getPhotosByUser(userId)
+      const photos = await photoManager._getPhotosByUser(userId)
 
       if (photos.length) {
         await analyzerService.initProcess(photos, packageId, 'first')

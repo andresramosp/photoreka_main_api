@@ -1,5 +1,6 @@
 import { BaseModel, column, belongsTo } from '@adonisjs/lucid/orm'
 import type { BelongsTo } from '@adonisjs/lucid/types/relations'
+import Tag from './tag.js'
 
 export default class TagPhoto extends BaseModel {
   public static table = 'tags_photos'
@@ -21,6 +22,11 @@ export default class TagPhoto extends BaseModel {
 
   @column()
   declare parentId?: number
+
+  @belongsTo(() => Tag, {
+    foreignKey: 'tagId',
+  })
+  declare tag: BelongsTo<typeof Tag>
 
   @belongsTo(() => TagPhoto, {
     localKey: 'id',

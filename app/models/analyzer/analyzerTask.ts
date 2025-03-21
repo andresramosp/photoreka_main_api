@@ -1,9 +1,13 @@
 import DescriptionChunk from '#models/descriptionChunk'
 import { DescriptionType, PhotoDescriptions } from '#models/photo'
 import Tag from '#models/tag'
-import PhotosService from '#services/photos_service'
+import PhotoManager from '../../managers/photo_manager.js'
 import { SplitMethods } from '../../analyzer_packages.js'
 import { ModelType } from './analyzerProcess.js'
+import TagPhoto from '#models/tag_photo'
+import TagPhotoManager from '../../managers/tag_photo_manager.js'
+import TagManager from '../../managers/tag_manager.js'
+import { STOPWORDS } from '../../utils/StopWords.js'
 
 export class AnalyzerTask {
   declare name: string
@@ -28,14 +32,14 @@ export class VisionTask extends AnalyzerTask {
 
   public async commit() {
     try {
-      const photosService = new PhotosService()
+      const photoManager = new PhotoManager()
+      const tagPhotoManager = new TagPhotoManager()
       if (this.tagsTarget == 'area') {
         await Promise.all(
           Object.entries(this.data).map(([id, tags]) => {
             if (!isNaN(id)) {
-              return photosService.updatePhoto(id, {
-                tags: tags as any,
-              })
+              // TODO: invocar a tagPhotoManager.updateTagPhoto por cada entrada en tags, que es un objeto con ids -> area
+              // OJO: el inject al message tendria que llevar el id del tagPhoto para facilitar el update
             }
             return Promise.resolve(null)
           })
@@ -44,7 +48,7 @@ export class VisionTask extends AnalyzerTask {
         await Promise.all(
           Object.entries(this.data).map(([id, descriptions]) => {
             if (!isNaN(id)) {
-              return photosService.updatePhoto(id, {
+              return photoManager.updatePhoto(id, {
                 descriptions: descriptions as PhotoDescriptions,
               })
             }
@@ -63,10 +67,31 @@ export class VisionTask extends AnalyzerTask {
 export class TagTask extends AnalyzerTask {
   declare prompt: string | Function
   declare descriptionSourceFields: DescriptionType[]
-  declare data: Record<string, Tag[]> // foto -> [tags]
+  declare data: Record<string, Tag[]> // foto -> { name, group...}
 
   public async commit() {
-    // TODO
+    const tagPhotoManager = new TagPhotoManager()
+    const photoManager = new PhotoManager()
+    const tagManager = new TagManager()
+    const category = this.descriptionSourceFields.join('_')
+    const tagPhotosList: TagPhoto[] = []
+
+    for (const photoId of Object.keys(this.data)) {
+      for (const tagData of this.data[photoId]) {
+        if (STOPWORDS.includes(tagData.name.toLocaleLowerCase())) {
+          continue
+        }
+        const existingOrCreatedTag: Tag = await tagManager.getOrCreateSimilarTag(tagData)
+        const tagPhoto = new TagPhoto()
+        tagPhoto.tagId = existingOrCreatedTag.id
+        tagPhoto.photoId = Number(photoId)
+        tagPhoto.category = category
+        tagPhotosList.push(tagPhoto)
+      }
+
+      await tagPhotoManager.deleteByPhotoAndCategory(photoId, category)
+      await photoManager.addTagsPhoto(photoId, tagPhotosList)
+    }
   }
 }
 

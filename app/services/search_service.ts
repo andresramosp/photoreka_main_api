@@ -11,7 +11,7 @@ import withCostWS from '../decorators/withCostWs.js'
 import ScoringService from './scoring_service.js'
 import { withCache } from '../decorators/withCache.js'
 
-import PhotosService from './photos_service.js'
+import PhotoManager from '../managers/photo_manager.js'
 import {
   MESSAGE_SEARCH_MODEL_CREATIVE,
   MESSAGE_SEARCH_MODEL_CREATIVE_ONLY_IMAGE,
@@ -40,13 +40,13 @@ export type SearchTopologicalOptions = SearchOptions & {
 
 export default class SearchService {
   public modelsService: ModelsService = null
-  public photosService: PhotosService = null
+  public photoManager: PhotoManager = null
   public queryService: QueryService = null
   public scoringService: ScoringService = null
 
   constructor() {
     this.modelsService = new ModelsService()
-    this.photosService = new PhotosService()
+    this.photoManager = new PhotoManager()
     this.queryService = new QueryService()
     this.scoringService = new ScoringService()
   }
@@ -64,7 +64,7 @@ export default class SearchService {
     }
   ) {
     let { searchMode, withInsights, pageSize, iteration } = options
-    const photos = await this.photosService.getPhotosByUser('1234')
+    const photos = await this.photoManager.getPhotosByUser('1234')
 
     const { structuredResult, sourceResult, useImage, expansionCost } =
       await this.queryService.structureQuery(query)
@@ -169,7 +169,7 @@ export default class SearchService {
   //   @withCostWS
   public async *searchByTags(options: SearchTagsOptions) {
     const { included, excluded, iteration, pageSize, searchMode } = options
-    const photos = await this.photosService.getPhotosByUser('1234')
+    const photos = await this.photoManager.getPhotosByUser('1234')
 
     let embeddingScoredPhotos = await this.scoringService.getScoredPhotosByTags(
       photos,
@@ -199,7 +199,7 @@ export default class SearchService {
   //   @withCostWS
   public async *searchTopological(query: any, options: SearchTopologicalOptions) {
     const { pageSize, iteration, searchMode } = options
-    const photos = await this.photosService.getPhotosByUser('1234')
+    const photos = await this.photoManager.getPhotosByUser('1234')
 
     let embeddingScoredPhotos = await this.scoringService.getScoredPhotosByTopoAreas(
       photos,

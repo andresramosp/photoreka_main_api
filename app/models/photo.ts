@@ -1,7 +1,7 @@
 import { DateTime } from 'luxon'
-import { BaseModel, belongsTo, column, computed, hasMany, manyToMany } from '@adonisjs/lucid/orm'
-import type { BelongsTo, HasMany, ManyToMany } from '@adonisjs/lucid/types/relations'
-import Tag from './tag.js'
+import { BaseModel, belongsTo, column, computed, hasMany } from '@adonisjs/lucid/orm'
+import type { BelongsTo, HasMany } from '@adonisjs/lucid/types/relations'
+import TagPhoto from './tag_photo.js'
 import DescriptionChunk from './descriptionChunk.js'
 import AnalyzerProcess from './analyzer/analyzerProcess.js'
 
@@ -33,15 +33,10 @@ export default class Photo extends BaseModel {
   @column.dateTime({ autoCreate: true, autoUpdate: true })
   declare updatedAt: DateTime
 
-  @manyToMany(() => Tag, {
-    pivotTable: 'tags_photos',
-    localKey: 'id',
-    pivotForeignKey: 'photo_id',
-    relatedKey: 'id',
-    pivotRelatedForeignKey: 'tag_id',
-    pivotColumns: ['category', 'area'],
+  @hasMany(() => TagPhoto, {
+    foreignKey: 'photoId',
   })
-  declare tags: ManyToMany<typeof Tag>
+  declare tagPhotos: HasMany<typeof TagPhoto>
 
   @hasMany(() => DescriptionChunk, {
     foreignKey: 'photoId',

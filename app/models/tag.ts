@@ -35,9 +35,6 @@ export default class Tag extends BaseModel {
     return this.$extras.pivot_area
   }
 
-  @column()
-  declare children: Record<string, []>
-
   @column({ serializeAs: null })
   declare embedding: string
 

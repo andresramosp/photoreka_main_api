@@ -69,7 +69,7 @@ export default class AnalyzerProcess extends BaseModel {
     // Procesamiento de imágenes originales
     const processes = await Promise.all(
       this.photos.map(async (photo) => {
-        await photo.load('tags')
+        await photo.load('tagPhotos')
         const filePath = path.join(uploadPath, photo.name)
         try {
           await fs.access(filePath)

@@ -1,33 +1,24 @@
-// @ts-nocheck
-
 import AnalyzerProcess, { AnalyzerMode, StageType } from '#models/analyzer/analyzerProcess'
-import EmbeddingsService from './embeddings_service.js'
 import ModelsService from './models_service.js'
 import NLPService from './nlp_service.js'
 import Photo, { DescriptionType } from '#models/photo'
-import { AnalyzerTask, VisionTask, TagTask, ChunkTask } from '#models/analyzer/analyzerTask'
+import { VisionTask, TagTask, ChunkTask } from '#models/analyzer/analyzerTask'
 import { Exception } from '@adonisjs/core/exceptions'
 import Tag from '#models/tag'
-import { STOPWORDS } from '../utils/StopWords.js'
 import DescriptionChunk from '#models/descriptionChunk'
 import MeasureExecutionTime from '../decorators/measureExecutionTime.js'
 import { getTaskList } from '../analyzer_packages.js'
 import ws from './ws.js'
 import PhotoImage from '#models/analyzer/photoImage'
-import db from '@adonisjs/lucid/services/db'
 import { parseJSONSafe } from '../utils/jsonUtils.js'
 
 export default class AnalyzerProcessRunner {
   private process: AnalyzerProcess
   private modelsService: ModelsService
-  private nlpService: NLPService
-  private embeddingsService: EmbeddingsService
 
   constructor() {
     this.process = new AnalyzerProcess()
     this.modelsService = new ModelsService()
-    this.nlpService = new NLPService()
-    this.embeddingsService = new EmbeddingsService()
   }
 
   public async initProcess(
@@ -36,17 +27,18 @@ export default class AnalyzerProcessRunner {
     mode: AnalyzerMode = 'first',
     processId: number
   ) {
+    let tasks
     if (mode == 'retry') {
       this.process = await AnalyzerProcess.query()
         .where('id', processId)
         .preload('photos')
         .firstOrFail()
-      const tasks = getTaskList(this.process?.packageId)
+      tasks = getTaskList(this.process?.packageId)
     }
     this.process.mode = mode
     const photosToProcess = this.getPhotosByMode(userPhotos)
 
-    const tasks = getTaskList(packageId)
+    tasks = getTaskList(packageId)
     this.process.currentStage = 'init' // TODO: esto puede variar en 'retry'
     this.process.packageId = packageId
     this.process.tasks = tasks
@@ -207,7 +199,7 @@ export default class AnalyzerProcessRunner {
 
     console.log('[AnalyzerProcess]: TagTask: Fase 3 - Filtrando y guardando en DB...')
 
-    await this.filterAndSaveTags(pendingPhotos, task)
+    await task.commit()
 
     console.log('[AnalyzerProcess]: TagTask: Finalizado.')
   }
@@ -232,38 +224,20 @@ export default class AnalyzerProcessRunner {
           const { tags: tagList } = extractedTagsResponse
 
           // Asegurar "no people" si no hay grupo 'person'
-          const hasPerson = tagList.some((t) => t.split('|')[1]?.trim() === 'person')
+          const hasPerson = tagList.some((t: string) => t.split('|')[1]?.trim() === 'person')
           if (!hasPerson) {
             tagList.push('no people | misc')
           }
 
-          // Sacar sustantivos de ciertos grupos
-          let sustantivesFromTag: string[] = []
-          for (const tag of tagList) {
-            const [tagName, group, area] = tag.split('|').map((i) => i.trim())
-            if (['person', 'animals'].includes(group)) {
-              const sustantives = this.nlpService.getSustantives(tagName)
-              if (sustantives?.length) {
-                const sustantivesWithGroupAndArea = sustantives.map(
-                  (sust) => `${sust} | misc | ${area}`
-                )
-                sustantivesFromTag.push(...sustantivesWithGroupAndArea)
-              }
-            }
-          }
-
-          const tagsToSave = [...tagList, ...new Set(sustantivesFromTag)]
           task.data[photo.id] = []
 
           // TODO: todo esto deberia trabajar con TagPhoto, y usar el validate para ver si hay que crear un nuevo tag en 'tags', o reusar uno.
 
-          tagsToSave.forEach((tagStr) => {
-            const [tag, group = 'misc', area = ''] = tagStr.split('|').map((i) => i.trim())
+          tagList.forEach((tagStr: string) => {
+            const [tag, group = 'misc'] = tagStr.split('|').map((i) => i.trim())
             const newTag = new Tag()
             newTag.name = tag
             newTag.group = group
-            newTag.$extras.area = area
-            // newTag.$extras.parent_id = NO puedo saber aun el ID del padre porque es de la tabla relacional, por eso es mejor trabajar con TagPhoto desde 0
             task.data[photo.id].push(newTag)
           })
           if (this.process.mode == 'retry') {
@@ -285,58 +259,6 @@ export default class AnalyzerProcessRunner {
 
     // Salta de línea al completar
     process.stdout.write('\n')
-  }
-
-  private async filterAndSaveTags(photos: Photo[], task: TagTask) {
-    const globalTagList = await Tag.all()
-
-    for (const photo of photos) {
-      const tagsToSaveForPhoto: Tag[] = []
-
-      // TODO: cuando se mejore la gestion de fotos globales (de la cual se deben ir borrando las fallidas), esto sobrará
-      if (!task.data[photo.id]) {
-        continue
-      }
-
-      for (const tag of task.data[photo.id]) {
-        await this.validateTag(tag, globalTagList, tagsToSaveForPhoto)
-      }
-
-      if (tagsToSaveForPhoto.length > 0) {
-        const uniqueTagToSave = Array.from(
-          new Map(tagsToSaveForPhoto.map((t) => [t.name.toLowerCase(), t])).values()
-        )
-        const category = task.descriptionSourceFields.join('_')
-
-        // Primero, eliminar las relaciones de tags bajo la categoría actual.
-        const attachedTags = await photo.related('tags').query()
-        const tagIdsToDetach = attachedTags
-          .filter((tag) => tag.$extras && tag.$extras.pivot_category === category)
-          .map((tag) => tag.id)
-        if (tagIdsToDetach.length > 0) {
-          // console.log(`[AnalyzerProcess]: Borrando tags de la categoría "${category}"...`)
-          await photo
-            .related('tags')
-            .pivotQuery()
-            .whereIn('tag_id', tagIdsToDetach)
-            .andWhere('category', category)
-            .delete()
-        }
-
-        // Construir el objeto con la categoría para los nuevos tags.
-        const tagsWithCategoryAndArea = uniqueTagToSave.reduce(
-          (acc, t) => {
-            acc[t.id] = { category, area: t.$extras.area }
-            return acc
-          },
-          {} as Record<number, { category: string }>
-        )
-
-        // console.log(`[AnalyzerProcess]: Añadiendo nuevos tags con categoría "${category}"...`)
-        // TODO: llamar a photoService a un metodo que use la clase pivot PhotoTag
-        await photo.related('tags').attach(tagsWithCategoryAndArea)
-      }
-    }
   }
 
   // TODO: hacerlo más selectivo, para que solo opere sobre las descriptions indicadas, como la tarea de tags
@@ -434,82 +356,18 @@ export default class AnalyzerProcessRunner {
   }
 
   // TODO: los tags deben compararse usando también el grupo (orange | fruit, orange | color)
-  public async validateTag(
-    tag: Tag,
-    globalTagList: Tag[],
-    tagsToSaveForPhoto: Tag[]
-  ): Promise<void> {
-    const tagNameLower = tag.name.toLowerCase()
-
-    // Si es una stopword, se ignora la etiqueta.
-    if (STOPWORDS.includes(tagNameLower)) {
-      console.log('Ignoring tag: ', tag.name)
-      return
-    }
-
-    // Si ya existe en la lista global, se añade y se retorna.
-    const existingTag = globalTagList.find((t) => t.name === tagNameLower)
-    if (existingTag) {
-      existingTag.$extras = tag.$extras // mantenemos el area al pasar a otro tag existente
-      tagsToSaveForPhoto.push(existingTag)
-      console.log(`Using existing exact tag for ${tag.name}: ${existingTag.name}`)
-      return
-    }
-
-    // Busca etiquetas similares.
-    let similarTagsResult: any[] = []
-    try {
-      similarTagsResult =
-        (await this.embeddingsService.findSimilarTagsToText(tag.name, 0.89, 5)) || []
-    } catch (error) {
-      console.log('Error in findSimilarTagsToText')
-    }
-    if (similarTagsResult.length > 0) {
-      for (const similarTag of similarTagsResult) {
-        const found = globalTagList.find((t) => t.name === similarTag.name.toLowerCase())
-        if (found) {
-          found.$extras = tag.$extras // mantenemos el area al pasar a otro tag existente
-          tagsToSaveForPhoto.push(found)
-        }
-      }
-      console.log(
-        `Using existing similar tags for ${tag.name}: ${JSON.stringify(similarTagsResult.map((t) => t.name))}`
-      )
-      return
-    }
-
-    // Si no se encontró etiqueta existente ni similar, se intenta guardar la nueva.
-    try {
-      await tag.save()
-      tagsToSaveForPhoto.push(tag)
-      globalTagList.push(tag)
-    } catch (err: any) {
-      if (err.code === '23505') {
-        console.log(
-          `Tried to save tag (${tag.name}) already existing in BD, fetching existing one.`
-        )
-        const concurrentTag = await Tag.query().where('name', tag.name).firstOrFail()
-        concurrentTag.$extras = tag.$extras
-        tagsToSaveForPhoto.push(concurrentTag)
-      } else {
-        throw err
-      }
-    }
-  }
 
   @MeasureExecutionTime
   public async createTagsEmbeddings() {
     // Recorremos todas las fotos y recogemos los tags sin embedding (sin duplicados)
     const allTagsMap = new Map<string, Tag>()
     for (const photo of this.process.photos) {
-      await photo.load('tags')
-      if (photo.tags && Array.isArray(photo.tags)) {
-        for (const tag of photo.tags) {
-          if (!tag.embedding) {
-            const key = tag.name.toLowerCase()
-            if (!allTagsMap.has(key)) {
-              allTagsMap.set(key, tag)
-            }
+      await photo.load('tagPhotos')
+      for (const tagPhoto of photo.tagPhotos) {
+        if (!tagPhoto.tag.embedding) {
+          const key = tagPhoto.tag.name.toLowerCase()
+          if (!allTagsMap.has(key)) {
+            allTagsMap.set(key, tagPhoto.tag)
           }
         }
       }
@@ -624,7 +482,7 @@ export default class AnalyzerProcessRunner {
 
   private async getPendingPhotosForTagsTask(task: TagTask): Promise<Photo[]> {
     await this.process.load('photos', (query) => {
-      query.preload('tags')
+      query.preload('tagPhotos')
     })
 
     let pendingPhotos: Photo[] = []
