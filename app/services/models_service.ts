@@ -136,20 +136,7 @@ export default class ModelsService {
       const payload = {
         texts,
         extract_ratio,
-        purge_list: [
-          'Upper left box shows',
-          'Bottom left box shows',
-          'Upper right box shows',
-          'Upper left box of the photo shows',
-          'The upper left box of the photo shows',
-          'The upper right box of the photo shows',
-          'The bottom right box of the photo shows',
-          'The bottom left box of the photo shows',
-          'Left half shows',
-          'Right half shows',
-          'Upper half shows',
-          'Bottom half shows',
-        ],
+        purge_list: [],
       }
       const { url, requestPayload, headers } = this.buildRequestConfig('clean_texts', payload)
 
@@ -214,11 +201,11 @@ export default class ModelsService {
             images: imagesArray,
             prompts,
             prompts_per_image: promptsPerImage,
-            batch_size: 16,
+            batch_size: 4,
             generation_config: {
               temperature: 0.1,
-              max_new_tokens: 300,
-              max_crops: 8,
+              max_new_tokens: 200,
+              max_crops: 12,
               overlap_margins: [4, 4],
               float16: true,
             },

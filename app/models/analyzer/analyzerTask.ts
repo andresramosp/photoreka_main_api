@@ -8,7 +8,6 @@ import { ModelType } from './analyzerProcess.js'
 export class AnalyzerTask {
   declare name: string
   declare model: ModelType
-  declare overwrite: boolean // esto solo tiene sentido para determinar si se cogen fotos ya procesadas o no. Pero una tarea siempre hacer overwrite de sus descs/tags, no añade...
 
   toJSON() {
     return { name: this.name }
@@ -19,7 +18,9 @@ export class VisionTask extends AnalyzerTask {
   declare prompts: string[] | Function[]
   declare resolution: 'low' | 'high'
   declare sequential: boolean
+  declare tagsTarget: string
   declare imagesPerBatch: number
+  declare useGuideLines: boolean
   declare promptDependentField: DescriptionType
   declare promptsTarget: DescriptionType[]
   declare data: Record<string, Record<string, string>> // foto -> { description_field -> text }
@@ -28,16 +29,31 @@ export class VisionTask extends AnalyzerTask {
   public async commit() {
     try {
       const photosService = new PhotosService()
-      await Promise.all(
-        Object.entries(this.data).map(([id, descriptions]) => {
-          if (!isNaN(id)) {
-            return photosService.updatePhoto(id, {
-              descriptions: descriptions as PhotoDescriptions,
-            })
-          }
-          return Promise.resolve(null)
-        })
-      )
+      if (this.tagsTarget == 'area') {
+        await Promise.all(
+          Object.entries(this.data).map(([id, tags]) => {
+            if (!isNaN(id)) {
+              return photosService.updatePhoto(id, {
+                tags: tags as any,
+              })
+            }
+            return Promise.resolve(null)
+          })
+        )
+      } else {
+        await Promise.all(
+          Object.entries(this.data).map(([id, descriptions]) => {
+            if (!isNaN(id)) {
+              return photosService.updatePhoto(id, {
+                descriptions: descriptions as PhotoDescriptions,
+              })
+            }
+            return Promise.resolve(null)
+          })
+        )
+      }
+
+      // this.data = {} // TODO: probar
     } catch (err) {
       console.log(`[AnalyzerProcess] Error guardando ${JSON.stringify(this.data)}`)
     }

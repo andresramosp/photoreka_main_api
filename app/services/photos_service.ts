@@ -49,9 +49,10 @@ export default class PhotosService {
       .preload('descriptionChunks')
       .preload('analyzerProcess')
       .preload('tags', (tagsQuery) => {
-        tagsQuery.pivotColumns(['category'])
+        tagsQuery.pivotColumns(['category', 'area'])
       })
-      .orderBy('created_at', 'desc')
+      .orderBy('created_at', 'asc')
+      .limit(100)
 
     return photos
   }
@@ -62,22 +63,44 @@ export default class PhotosService {
       throw new Error('Photo not found')
     }
 
+    // Actualizar descripciones si están en el update
     if (updates.descriptions && typeof updates.descriptions === 'object') {
       photo.descriptions = {
         ...(photo.descriptions || {}),
         ...updates.descriptions,
       }
     }
+
+    // Actualizar otros campos de la foto, excepto los tags
     Object.entries(updates).forEach(([key, value]) => {
-      if (key !== 'descriptions') {
+      if (key !== 'descriptions' && key !== 'tags') {
         ;(photo as any)[key] = value
       }
     })
 
+    // TODO: mejorar, que sea lista de tags en condiciones
+    if (updates.tags && typeof updates.tags === 'object') {
+      // Obtener los tags reales de la foto
+      const existingTags = await photo.related('tags').query().select('id', 'name')
+
+      // Mapear nombres de tags a IDs
+      const tagsWithAreas = Object.entries(updates.tags)
+        .map(([tagName, area]) => {
+          const tag = existingTags.find((t) => t.name === tagName)
+          return tag ? { id: tag.id, area } : null
+        })
+        .filter(Boolean) as { id: number; area: string }[]
+
+      // Actualizar las áreas en la tabla intermedia `tags_photos`
+      for (const { id: tagId, area } of tagsWithAreas) {
+        await photo.related('tags').pivotQuery().where('tag_id', tagId).update({ area })
+      }
+    }
+
     try {
       await photo.save()
     } catch (err) {
-      console.log(`[AnalyzerProcess] Error guardando foto ${id}`)
+      console.error(`[AnalyzerProcess] Error guardando foto ${id}`, err)
     }
 
     return photo

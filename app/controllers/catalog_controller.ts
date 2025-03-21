@@ -23,7 +23,7 @@ export default class CatalogController {
       const outputPath = path.join(uploadPath, fileName)
 
       await sharp(photoData.buffer)
-        .resize({ width: 1500, fit: 'inside' })
+        .resize({ width: 1000, fit: 'inside' })
         .toFormat('jpeg')
         .toFile(outputPath)
 

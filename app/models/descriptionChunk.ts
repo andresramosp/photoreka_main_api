@@ -13,7 +13,7 @@ export default class DescriptionChunk extends BaseModel {
   declare category: string
 
   @column()
-  declare area: 'left' | 'right' | 'upper' | 'bottom' | 'middle'
+  declare area: 'left' | 'right' | 'middle'
 
   @column()
   declare chunk: string

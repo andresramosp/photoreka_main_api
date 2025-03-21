@@ -17,6 +17,11 @@ export default class Tag extends BaseModel {
     return this.$extras.pivot_category
   }
 
+  @computed()
+  public get area() {
+    return this.$extras.pivot_area
+  }
+
   @column()
   declare children: Record<string, []>
 

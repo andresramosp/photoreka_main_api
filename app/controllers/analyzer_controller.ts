@@ -14,12 +14,11 @@ export default class AnalyzerController {
     const photosService = new PhotosService()
 
     try {
-      const { userId, packageId } = request.body()
+      const { userId, packageId, processId } = request.body()
       const photos = await photosService._getPhotosByUser(userId)
 
-      // TODO: aqui debemos mirar si ya se hizo este package_id, en cuyo caso solo seguimos si es overwrite (ya veremos cómo se indica, puede ser una variable en el process)
       if (photos.length) {
-        await analyzerService.initProcess(photos, packageId, true)
+        await analyzerService.initProcess(photos, packageId, 'adding')
         // await analyzerService.resumeProcess(photos, 38)
 
         if (!analysisProcesses.has(userId)) {
@@ -32,42 +31,6 @@ export default class AnalyzerController {
       }
 
       return response.ok({ message: 'Nothing to analyze', userId })
-    } catch (error) {
-      console.error(error)
-      return response.internalServerError({ message: 'Something went wrong', error: error.message })
-    }
-  }
-
-  public async analyzeOld({ request, response }: HttpContext) {
-    const analyzerService = new AnalyzerService()
-
-    try {
-      // Obtener los IDs de las imágenes desde el frontend
-      const { userId } = request.body()
-
-      // Aqui sacariamos las photos de este usuario
-      const photos = (await Photo.all()).filter((photo) => photo.needProcess)
-
-      if (!Array.isArray(photos) || photos.length === 0) {
-        return response.badRequest({ message: 'No image IDs provided' })
-      }
-
-      if (!userId) {
-        return response.badRequest({ message: 'User ID is required' })
-      }
-
-      const photosIds = photos.map((photo) => photo.id)
-
-      // Si el usuario ya tiene un análisis en curso, no iniciar otro
-      if (!analysisProcesses.has(userId)) {
-        const process = analyzerService.analyze(photosIds)
-        analysisProcesses.set(userId, process)
-
-        // Ejecutar el stream y emitir los eventos por WebSocket
-        this.handleAnalysisStream(userId, process)
-      }
-
-      return response.ok({ message: 'Analysis started', userId })
     } catch (error) {
       console.error(error)
       return response.internalServerError({ message: 'Something went wrong', error: error.message })

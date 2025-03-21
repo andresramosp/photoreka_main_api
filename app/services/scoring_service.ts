@@ -44,7 +44,7 @@ const getWeights = (isCreative: boolean) => {
       tags: 0,
       desc: 1,
       fullQuery: 2.5,
-      embeddingsDescsThreshold: 0.1,
+      embeddingsDescsThreshold: 0.07,
     },
     nuancesTags: {
       tags: 1,
@@ -242,29 +242,42 @@ export default class ScoringService {
   // TODO: Probar solo excluir area contraria
   public async getScoredPhotosByTopoAreas(
     photos: Photo[],
-    queryByAreas: { left: string; right: string; upper: string; bottom: string; middle: string },
+    queryByAreas: { left: string; right: string; middle: string },
     searchMode: SearchMode
   ): Promise<ScoredPhoto[] | undefined> {
     let weights = getWeights(searchMode == 'creative')
 
     let aggregatedScores: ScoredPhoto[] = photos.map((photo) => ({
       photo,
+      descScore: 0,
       tagScore: 0,
       totalScore: 1,
     }))
 
+    // Diccionario de áreas opuestas
+    const oppositeAreas: { [key: string]: string } = {
+      left: 'right',
+      right: 'left',
+    }
+
     // Determinar qué áreas tienen contenido en la consulta
     const filledAreas = Object.entries(queryByAreas)
-      .filter(([_, value]) => value?.trim()) // Filtrar áreas vacías
-      .map(([area, value]) => ({ area, content: value })) // Mapeamos el área con su contenido
+      .filter(([_, value]) => value?.trim())
+      .map(([area, value]) => ({ area, content: value }))
 
     const includedPromise = (async () => {
       let scores = aggregatedScores
       for (const [index, { area, content }] of filledAreas.entries()) {
-        const areasToSearch = area != 'middle' ? [area, 'middle'] : ['middle']
+        let areasToSearch: string[] = [area]
+        // if (area === 'middle') {
+        //   areasToSearch = ['middle']
+        // } else {
+        //   // Se usan todas las áreas menos la opuesta
+        //   areasToSearch = Object.keys(queryByAreas).filter((a) => a !== oppositeAreas[area])
+        // }
 
         scores = await this.processSegment(
-          { name: content, index }, // Pasamos el contenido real
+          { name: content, index },
           scores,
           weights.topological,
           searchMode == 'logical',
@@ -276,10 +289,8 @@ export default class ScoringService {
       return scores
     })()
 
-    // Esperamos la promesa
     const [finalScores] = await Promise.all([includedPromise])
-
-    let potentialMaxScore = 10 // //this.getMaxPotentialScore(structuredQuery, searchType, weights)
+    let potentialMaxScore = 10
 
     return finalScores
       .filter((scores) => scores.totalScore > 0)
@@ -405,9 +416,12 @@ export default class ScoringService {
     categories: string[],
     areas: string[]
   ): Promise<{ photo: Photo; descScore: number }[]> {
-    // Obtener los chunks similares para el segmento
+    // Solo lematizamos para casos sencillos, tipo tags
+    const numberOfWords = segment.name.split(' ').length
+    const term = numberOfWords < 2 ? pluralize.singular(segment.name.toLowerCase()) : segment.name
+
     const matchingChunks = await this.embeddingsService.findSimilarChunksToText(
-      segment.name,
+      term,
       embeddingsProximityThreshold,
       MAX_SIMILAR_CHUNKS,
       'cosine_similarity',
@@ -419,7 +433,7 @@ export default class ScoringService {
     let adjustedChunks = await this.adjustProximities(
       segment.name,
       matchingChunks.map((mc) => ({
-        name: mc.chunk,
+        name: mc.chunk.replace(/\.$/, ''), // quitamos el punto y final si lo tiene
         proximity: mc.proximity,
         id: mc.id,
       })),

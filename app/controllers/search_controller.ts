@@ -66,8 +66,6 @@ export default class SearchController {
       const stream = searchService.searchTopological(query, {
         left: query.left,
         right: query.right,
-        upper: query.upper,
-        bottom: query.bottom,
         middle: query.middle,
         pageSize: query.options.pageSize,
         iteration: query.options.iteration,

@@ -1,3 +1,5 @@
+import Photo from '#models/photo'
+
 export const MESSAGE_TAGS_TEXT_EXTRACTION_FROM_CONTEXT_STORY = `
 You are an chatbot designed to extract relevant tags from a photo description. 
 
@@ -23,19 +25,29 @@ You are an chatbot designed to extract relevant tags from a photo description.
 export const MESSAGE_TAGS_TEXT_EXTRACTION_FROM_TOPOLOGY = `
 You are an chatbot designed to extract relevant tags from a photo description. 
 
+You will receive a json of descriptions divided into 3 areas, like this:
+
+ {
+      "left": ...,
+      "middle": ...,
+      "right": ...,
+ }   
+
+ Your task is to extract the relevant tags, keeping the information about the areas.
+
 *Guidelines*
-  - Adjectivize tags whenever you can or add relevant nuances. For actions tags, always include the subject of the action. 
-  - Disambiguates problematic terms. Example: orange (fruit), scooter (motorcycle)
-  - For each tag, add the category after a pipe |. The categories are: person, animals, objects, places, atmosphere, weather, symbols, abstract concept. 
-    Examples: 'funny kids | person', 'orange (fruit) | objects', 'sad evening | atmosphere' 
-  - Since the description can be by areas, purge prefixes of the type: "partial view of", "continuation of..."
+-   For each tag, create a item like this: name | category | area.
+    The categories are: person, animals, objects, places, atmosphere, weather, symbols, abstract concept. 
+    The areas are the keys of the source object (left, middle, right)
+    Examples: 'funny kids | person | right', 'orange (fruit) | objects | middle', 'white wall | objects | right' 
   - Extract as many tags as needed to cover all the elements in the text.
+  - When finding expressions like "part of...", "half side of...", just remove them and take the whole element. 
   - Maximum words per tag is 5
 
 📌 **Output example:**  
 \`\`\`json
 {
-  'tags': ['funny kids | person', 'man playing tennis | person', 'traditional building | place', ...], 
+  'tags': ['funny kids | person | middle', 'man playing tennis | person | right', 'traditional building | place | middle', ...], 
 }
 \`\`\`
 
@@ -121,33 +133,6 @@ Follow these 3 instructions:
 Return only the description text, with no additional comments.  
 `
 
-export const MESSAGE_ANALYZER_MOLMO_PEOPLE_PRETRAINED = (shortDesc: string) => `
-
-We already know this image have this general context: ${shortDesc}.
-
-Now look at the image and focus to understand the people activities. Return a description of 160 words maximum. 
-
-Follow these 3 instructions:  
-1. Focus on most relevant characters, rather than on the whole scene or the context.
-2. Describe what they are doing and their interactions.
-3. Don't speculate, stick to what you clearly see. 
-
-Return only the description text, with no additional comments.  
-`
-
-export const MESSAGE_ANALYZER_MOLMO_RELEVANCE_CLASSIFIER = (tagList: string[]) => `
-In this photo, classify the following elements as "prominent", "distant" Where:
-Prominent means it is clearly visible looking at the image
-Distant means it is really hard to find in the image and you have to zoom in or use computer tools.
-
-- cellphone
-- red arrow
-- motorbike
-- english lesson poster
-- boy
-
-Just return the classified list without additional comments`
-
 // EXPLICAR BIEN: 1) lineas guia, framed, perfiles, eye catcher, etc. Que lo haga bien para que merezca la pena.
 export const MESSAGE_ANALYZER_MOLMO_STREET_PHOTO_PRETRAINED = (shortDesc: string) => `
 
@@ -166,59 +151,169 @@ Return only the description text, with no additional comments.
 
 export const MESSAGE_ANALYZER_MOLMO_TOPOLOGIC_AREAS_PRETRAINED = (shortDesc: string) => `
 
-We already know this image have this general context: ${shortDesc}.
+We already know this image have this general context: '${shortDesc}'.
 
-And now we need a topological description about this photo. Maximum 80 words. 
+And now we need a topological description. For this purpose, divide the image into three areas (left, middle, right) and return a text with this format:
 
-Divide the photo in 5 areas and return a text with this format:
+{ 
+  "topology": 
+    {
+      "left_area_shows": ...,
+      "middle_area_shows": ...,
+      "right_area_shows": ...,
+    }   
+}
 
-Left half shows: ... | Right half shows: ... | Bottom half shows: ... | Upper half shows: ... | Middle area shows: ... 
+For each area, describe all the relevant elements that you see. 
+Pay special attention to symbols, signs, and paintings, and describe their content.
+Minimum 60 words. Maximum 90 words (depending on photo complexity)
+ 
+Return only the text in the mentioned format, using english language, with no additional comments.  
+`
+
+export const MESSAGE_ANALYZER_MOLMO_TOPOLOGIC_AREAS_NOT_PRETRAINED = (shortDesc: string) => `
+
+For this image we need a topological description. For this purpose, divide the image into three areas (left, middle, right) and return a text with this format:
+{ 
+  "topology": 
+    {
+      "left_area_shows": ...,
+      "middle_area_shows": ...,
+      "right_area_shows": ...,
+    }   
+}
+
+For each area, describe all the relevant things that you see. You must cover the whole image using the 3 areas.
+Minimum 60 words. Maximum 90 words (depending on photo complexity)
+ 
+Return only the text in the mentioned format, using english language, with no additional comments.  
+`
+
+export const MESSAGE_ANALYZER_MOLMO_TOPOLOGIC_AREAS_PRETRAINED_TAGS = (shortDesc: string) => `
+
+We already know this image features all this elements: '${shortDesc}'.
+
+But now we need to know where they are in the image. For this purpose, the image is divided in three areas (left, middle, right) by superimposed white lines.
+Using this areas as a guide return a text with this format:
+
+{ 
+  "element_1": area,
+  "element_2": area,
+  "element_3": area,
+  ...
+}
+
+*Guidelines*
+1. For each element on the photo, set its corresponding area.
+2. Put each element only in one area.
+3. Write each element completely and exactly as it appears on the list you have been given.
+ 
+Return only the text in the mentioned format, with no additional comments.  
+`
+
+export const MESSAGE_ANALYZER_MOLMO_TOPOLOGIC_AREAS = (shortDesc: string) => `
+
+For this photo we need a topological description. For this purpose, the image is divided into three areas (left, middle, right) 
+by superimposed vertical white lines. Use this preset areas as a guide and return a text with this format:
+
+{ 
+  "topology": 
+    {
+      "left_area_shows": ...,
+      "middle_area_shows": ...,
+      "right_area_shows": ...,
+    }   
+}
 
 For each area, describe the elements you see. Consider also empty spaces, if any.
 Pay attention to: people, symbols, shapes, paintings, animals and objects.
-Pipes (|) can only be used to separate areas.
+Maximum 90 words. 
  
-Return only the text in the correct format, with no additional comments.  
+Return only the text in the mentioned format, with no additional comments.  
 `
 
-export const MESSAGE_ANALYZER_GPT_TOPOLOGIC_AREAS = (photosBatch: any[]) => `
+export const MESSAGE_ANALYZER_GPT_TOPOLOGIC_3_AREAS_TAGS = (photosBatch: Photo[]) => `
+You are a chatbot tasked with locating elements (tags) in photographs. For each image, you have a list of tags, 
+and you must place it in one of three areas (left, center, right), which are already delimited in each image by superimposed vertical white lines.
+
+For each image, include the following properties:
+
+- 'id': The unique ID of the image
+- 'tag_name_1': 'left' | 'right' | 'middle'
+- 'tag_name_2': 'left' | 'right' | 'middle'
+...
+
+📌 **Useful Example:**  
+
+\`\`\`json
+[
+  {
+    "id": 1,
+    "girl with red hat": "left",
+    "blue taxi": "middle",
+    ...
+  },
+  {
+    "id": 2,
+    "elephant walking": "right",
+    ...
+  },
+  ...
+]
+\`\`\`
+
+List of ordered images with tags: ${JSON.stringify(
+  photosBatch.map((photo: Photo) => ({
+    id: photo.id,
+    ...Object.fromEntries(
+      photo.tags
+        .filter((t) => t.group == 'person' || t.group == 'objects' || t.group == 'animals')
+        .map((tag) => [tag.name, null])
+    ),
+  })),
+  null,
+  2
+)}
+
+Always return a JSON array, each item containing information about one image.
+`
+
+export const MESSAGE_ANALYZER_GPT_TOPOLOGIC_3_AREAS = (photosBatch: any[]) => `
  You are a bot in charge of analyzing photographs and returning a 'topological inventory' about each photo. 
- You must divide the photo into 5 areas and give concise information about the relevant and concrete elements in each area. 
+ Each image is divided into three areas (left, middle, right) by superimposed vertical white lines
+ Using these preset areas, you must give concise information about the relevant and concrete elements in each one
 
  For each image, include the following properties:
  
-- 'id': The unique ID of the image, using this comma-separated, ordered list: ${photosBatch.map((photo: any) => photo.id).join(',')}
+- 'id': The unique ID of the image, using this comma-separated, ordered list: ${photosBatch.map((photo: any) => photo.id).join(', ')}
 - 'topology': An object containing:
   - 'left': What you see in the left half of the image.
   - 'right': What you see in the right half of the image.
-  - 'upper': What you see in the upper half of the image.
-  - 'bottom': What you see in the bottom half of the image.
   - 'middle': What you see in the middle area of the image.
 
 ** Guidelines **  
-1. Take each area as if it were an INDIVIDUAL photo. Just describe its content avoiding topological expresions within each area.
-3. Always describe WHOLE elements. Avoid partial expressions like "half woman," "part of a tree", etc.
-3. Pay special attention to symbols, signs, and paintings, and describe their content.  
-4. Maximum 100 words.  
+1. First, get a full view of the image to get the general context, and then describe the content of each area.
+2. Always describe WHOLE elements. Partial expressions like "half woman," "part of a tree", etc. are PROHIBITED.
+3. NOTE that the middle area is narrower than the side areas. Only place items in 'middle' that are clearly contained within it. In case of doubt, use left/right.
+4. Pay special attention to symbols, signs, and paintings, and describe their content.  
+5. Maximum 100 words per image.  
 
-📌 **Example:**  
+📌 **Useful Example:**  
 
 \`\`\`json
 [
   {
     "id": 1,
     "topology": {
-      "left": "A woman with a basket, a blue taxi, open sky.",
+      "left": "A woman with a basket on head, a yellow taxi with child looking out the window, open sky.",
       "right": "A white wall with graffiti of a red lion, a wooden window with an 'On Sale' sign.",
-      "upper": "Mostly empty, with some buildings and a sky with clouds.",
-      "bottom": "A dog lying down, stacked tires.",
       "middle": "Busy street intersection with pedestrians and cars passing, a man getting out of a taxi."
     }
   },
   {
     "id": 2,
     "topology": {
-     ...
+        ...
     }
   }
   ...

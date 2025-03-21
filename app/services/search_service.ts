@@ -34,8 +34,6 @@ export type SearchTagsOptions = SearchOptions & {
 export type SearchTopologicalOptions = SearchOptions & {
   left: string
   right: string
-  upper: string
-  bottom: string
   middle: string
 }
 
@@ -205,8 +203,6 @@ export default class SearchService {
     let embeddingScoredPhotos = await this.scoringService.getScoredPhotosByTopoAreas(
       photos,
       {
-        bottom: options.bottom,
-        upper: options.upper,
         left: options.left,
         right: options.right,
         middle: options.middle,

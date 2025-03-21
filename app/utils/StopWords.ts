@@ -1,6 +1,7 @@
 export const STOPWORDS = [
   'Environment',
   'Activity',
+  'pipe',
   'background',
   'Scene',
   'Atmosphere',
