@@ -41,10 +41,10 @@ const getWeights = (isCreative: boolean) => {
       embeddingsFullQueryThreshold: 0.3,
     },
     topological: {
-      tags: 0,
-      desc: 1,
-      fullQuery: 2.5,
-      embeddingsDescsThreshold: 0.07,
+      tags: 1,
+      desc: 0,
+      fullQuery: 0,
+      embeddingsTagsThreshold: 0.13,
     },
     nuancesTags: {
       tags: 1,
@@ -95,7 +95,7 @@ export default class ScoringService {
           weights.semantic.embeddingsFullQueryThreshold,
           strictInference,
           true,
-          ['context', 'story']
+          ['context', 'story', 'visual_accents']
         )
       : Promise.resolve([])
 
@@ -110,8 +110,8 @@ export default class ScoringService {
               aggregatedScores,
               weights.nuancesTags,
               strictInference,
-              ['context_story', 'topology'],
-              ['context', 'story']
+              ['context_story', 'visual_accents'],
+              ['context', 'story', 'visual_accents']
             )
           )
         )
@@ -125,7 +125,7 @@ export default class ScoringService {
           scores,
           weights.semantic,
           strictInference,
-          ['context_story', 'topology'],
+          ['context_story', 'visual_accents'],
           ['context', 'story']
         )
       }
@@ -215,7 +215,7 @@ export default class ScoringService {
           scores,
           weights.tags,
           searchMode == 'logical',
-          ['context_story', 'topology'],
+          ['context_story', 'visual_accents'],
           ['context', 'story']
         )
       }
@@ -275,14 +275,13 @@ export default class ScoringService {
         //   // Se usan todas las áreas menos la opuesta
         //   areasToSearch = Object.keys(queryByAreas).filter((a) => a !== oppositeAreas[area])
         // }
-
         scores = await this.processSegment(
           { name: content, index },
           scores,
           weights.topological,
           searchMode == 'logical',
+          ['context_story', 'visual_accents'],
           [],
-          ['topology'],
           areasToSearch
         )
       }
@@ -374,7 +373,8 @@ export default class ScoringService {
             segment,
             weights.embeddingsTagsThreshold,
             strictInference,
-            tagsCategories
+            tagsCategories,
+            areas
           )
         : Promise.resolve([])
     const descPromise =
@@ -490,9 +490,11 @@ export default class ScoringService {
     segment: { name: string; index: number },
     embeddingsProximityThreshold: number = 0.15,
     strictInference: boolean,
-    categories?: string[] // parámetro opcional para filtrar por categoría
+    categories?: string[], // parámetro opcional para filtrar por categoría
+    areas: string[]
   ): Promise<{ photo: Photo; tagScore: number }[]> {
-    const allTags = await Tag.all() // By user!
+    let allTags = await Tag.all() // By user!
+    allTags = allTags.filter((tag: Tag) => !areas || areas.includes(tag.area))
 
     // Obtenemos los matching tags directamente del segmento
     const { matchingTags } = await this.findMatchingTagsForSegment(
@@ -501,7 +503,8 @@ export default class ScoringService {
       embeddingsProximityThreshold,
       strictInference,
       photos,
-      categories
+      categories,
+      areas
     )
     const tagMap = new Map<string, number>()
     matchingTags.forEach((tag: any) => {
@@ -540,9 +543,11 @@ export default class ScoringService {
     embeddingsProximityThreshold: number,
     strictInference: boolean,
     photos: Photo[],
-    categories: string[]
+    categories: string[],
+    areas: string[]
   ) {
     // 1) Comparación por cadenas
+
     const { lematizedTerm, stringMatches, remainingTags } = this.getStringMatches(segment, tags)
 
     // 2) Comparación y ajuste semántico/lógico
@@ -553,6 +558,7 @@ export default class ScoringService {
       embeddingsProximityThreshold,
       photos,
       categories,
+      areas,
       strictInference
     )
 
@@ -602,6 +608,7 @@ export default class ScoringService {
     embeddingsProximityThreshold: number,
     photos: Photo[],
     categories: string[],
+    areas: string[],
     strictInference: boolean
   ) {
     const { embeddings } = await this.modelsService.getEmbeddings([lematizedTerm])
@@ -614,6 +621,7 @@ export default class ScoringService {
       'cosine_similarity',
       remainingTags.map((t) => t.id),
       categories,
+      areas,
       photos.map((p) => p.id)
     )
 

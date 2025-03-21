@@ -166,10 +166,10 @@ export default class AnalyzerProcessRunner {
         return
       }
 
-      // Guardamos descripciones en task.data
+      // Guardamos resultados en task.data
       for (const res of response.result) {
-        const { id, ...descriptions } = res
-        task.data[id] = { ...task.data[id], ...descriptions }
+        const { id, ...results } = res
+        task.data[id] = { ...task.data[id], ...results }
       }
 
       // Confirmamos estado del task
@@ -255,12 +255,15 @@ export default class AnalyzerProcessRunner {
           const tagsToSave = [...tagList, ...new Set(sustantivesFromTag)]
           task.data[photo.id] = []
 
+          // TODO: todo esto deberia trabajar con TagPhoto, y usar el validate para ver si hay que crear un nuevo tag en 'tags', o reusar uno.
+
           tagsToSave.forEach((tagStr) => {
             const [tag, group = 'misc', area = ''] = tagStr.split('|').map((i) => i.trim())
             const newTag = new Tag()
             newTag.name = tag
             newTag.group = group
             newTag.$extras.area = area
+            // newTag.$extras.parent_id = NO puedo saber aun el ID del padre porque es de la tabla relacional, por eso es mejor trabajar con TagPhoto desde 0
             task.data[photo.id].push(newTag)
           })
           if (this.process.mode == 'retry') {
@@ -311,7 +314,7 @@ export default class AnalyzerProcessRunner {
           .filter((tag) => tag.$extras && tag.$extras.pivot_category === category)
           .map((tag) => tag.id)
         if (tagIdsToDetach.length > 0) {
-          console.log(`[AnalyzerProcess]: Borrando tags de la categoría "${category}"...`)
+          // console.log(`[AnalyzerProcess]: Borrando tags de la categoría "${category}"...`)
           await photo
             .related('tags')
             .pivotQuery()
@@ -329,7 +332,8 @@ export default class AnalyzerProcessRunner {
           {} as Record<number, { category: string }>
         )
 
-        console.log(`[AnalyzerProcess]: Añadiendo nuevos tags con categoría "${category}"...`)
+        // console.log(`[AnalyzerProcess]: Añadiendo nuevos tags con categoría "${category}"...`)
+        // TODO: llamar a photoService a un metodo que use la clase pivot PhotoTag
         await photo.related('tags').attach(tagsWithCategoryAndArea)
       }
     }
@@ -357,14 +361,6 @@ export default class AnalyzerProcessRunner {
           : 'split_by_size'
         if (splitMethod === 'split_by_pipes') {
           descriptionChunks = description.split('|').filter((ch: string) => ch.length > 0)
-        } else if (splitMethod === 'split_by_props') {
-          try {
-            descriptionChunks = Object.entries(description)
-              .filter(([_, value]) => value)
-              .map(([key, value]) => ({ chunk: value, area: category === 'topology' ? key : null }))
-          } catch (error) {
-            throw new Error(`Invalid JSON structure for category ${category}: ${error.message}`)
-          }
         } else {
           descriptionChunks = this.splitIntoChunks(description, description.length / 300)
         }
@@ -375,12 +371,11 @@ export default class AnalyzerProcessRunner {
           .delete()
 
         await Promise.all(
-          descriptionChunks.map(({ chunk, area }) =>
+          descriptionChunks.map((chunk) =>
             DescriptionChunk.create({
               photoId: photo.id,
               chunk,
               category,
-              area, // Se añade el área si existe
             })
           )
         )

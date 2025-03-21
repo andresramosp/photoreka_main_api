@@ -251,6 +251,7 @@ export default class EmbeddingsService {
     metric: 'distance' | 'inner_product' | 'cosine_similarity' = 'cosine_similarity',
     tagIds?: number[],
     categories?: string[], // garantizamos que pertenece a esa categorías, pero aún no sabemos para qué foto
+    areas?: string[],
     photoIds?: number[],
     userId?: number // 🔥 Se deja opcional para el futuro
   ) {
@@ -303,17 +304,19 @@ export default class EmbeddingsService {
     const tagFilterCondition = tagIds && tagIds.length > 0 ? 'AND tags.id = ANY(:tagIds)' : ''
     const categoryFilterCondition =
       categories && categories.length > 0 ? 'AND tags_photos.category = ANY(:categories)' : ''
+    const areaFilterCondition =
+      areas && areas.length > 0 ? 'AND tags_photos.area = ANY(:areas)' : ''
     const photoFilterCondition =
       photoIds && photoIds.length > 0 ? 'AND photos.id = ANY(:photoIds)' : ''
     const userFilterCondition = userId ? 'AND photos.user_id = :userId' : ''
 
-    whereCondition = `${thresholdCondition} ${tagFilterCondition} ${categoryFilterCondition} ${photoFilterCondition} ${userFilterCondition}`
+    whereCondition = `${thresholdCondition} ${tagFilterCondition} ${categoryFilterCondition} ${areaFilterCondition} ${photoFilterCondition} ${userFilterCondition}`
 
     const embeddingString = `[${embedding.join(',')}]`
 
     const result = await db.rawQuery(
       `
-      SELECT DISTINCT tags.id, tags.name, tags."group", tags_photos.category, tags.created_at, tags.updated_at, ${metricQuery}
+      SELECT DISTINCT tags.id, tags.name, tags."group", tags_photos.category, tags_photos.area, tags.created_at, tags.updated_at, ${metricQuery}
       FROM tags
       JOIN tags_photos ON tags_photos.tag_id = tags.id
       JOIN photos ON photos.id = tags_photos.photo_id
@@ -326,6 +329,7 @@ export default class EmbeddingsService {
         limit,
         tagIds: tagIds || [],
         categories: categories || [],
+        areas: areas || [],
         photoIds: photoIds || [],
         userId: userId || null, // 🔥 Se pasa null si no hay userId para evitar errores
         ...additionalParams,

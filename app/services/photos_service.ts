@@ -14,10 +14,6 @@ import QueryService from './query_service.js'
 import withCostWS from '../decorators/withCostWs.js'
 import ScoringService from './scoring_service.js'
 import { withCache } from '../decorators/withCache.js'
-import {
-  MESSAGE_SEARCH_MODEL_CREATIVE,
-  MESSAGE_SEARCH_MODEL_CREATIVE_ONLY_IMAGE,
-} from '../utils/ModelsMessages.js'
 
 export default class PhotosService {
   sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -52,7 +48,7 @@ export default class PhotosService {
         tagsQuery.pivotColumns(['category', 'area'])
       })
       .orderBy('created_at', 'asc')
-      .limit(100)
+    // .limit(100)
 
     return photos
   }
@@ -85,8 +81,8 @@ export default class PhotosService {
 
       // Mapear nombres de tags a IDs
       const tagsWithAreas = Object.entries(updates.tags)
-        .map(([tagName, area]) => {
-          const tag = existingTags.find((t) => t.name === tagName)
+        .map(([tagId, area]) => {
+          const tag = existingTags.find((t) => t.id == tagId)
           return tag ? { id: tag.id, area } : null
         })
         .filter(Boolean) as { id: number; area: string }[]

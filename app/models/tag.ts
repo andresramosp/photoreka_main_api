@@ -1,6 +1,19 @@
 import { DateTime } from 'luxon'
-import { BaseModel, beforeSave, column, computed, manyToMany } from '@adonisjs/lucid/orm'
-import Photo from './photo.js'
+import { BaseModel, beforeSave, column, computed } from '@adonisjs/lucid/orm'
+
+export const tagGroups = [
+  'person',
+  'animals',
+  'objects',
+  'toponym',
+  'environment',
+  'mood',
+  'weather',
+  'symbols',
+  'abstract concept',
+] as const
+
+export type TagGroups = (typeof tagGroups)[number]
 
 export default class Tag extends BaseModel {
   @column({ isPrimary: true })
@@ -10,7 +23,7 @@ export default class Tag extends BaseModel {
   declare name: string
 
   @column()
-  declare group: string
+  declare group: TagGroups
 
   @computed()
   public get category() {

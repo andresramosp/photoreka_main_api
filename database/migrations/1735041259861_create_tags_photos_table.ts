@@ -5,6 +5,7 @@ export default class extends BaseSchema {
 
   async up() {
     this.schema.createTable(this.tableName, (table) => {
+      table.increments('id')
       table
         .integer('photo_id')
         .unsigned()
@@ -21,8 +22,15 @@ export default class extends BaseSchema {
         .onDelete('CASCADE')
       table.string('category')
       table.string('area')
+      table
+        .integer('parent_id')
+        .unsigned()
+        .nullable()
+        .references('id')
+        .inTable('tags_photos')
+        .onDelete('SET NULL')
 
-      table.primary(['photo_id', 'tag_id', 'category', 'area'])
+      table.unique(['photo_id', 'tag_id', 'category', 'area'])
     })
   }
 

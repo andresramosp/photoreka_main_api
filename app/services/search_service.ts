@@ -10,11 +10,12 @@ import QueryService from './query_service.js'
 import withCostWS from '../decorators/withCostWs.js'
 import ScoringService from './scoring_service.js'
 import { withCache } from '../decorators/withCache.js'
+
+import PhotosService from './photos_service.js'
 import {
   MESSAGE_SEARCH_MODEL_CREATIVE,
   MESSAGE_SEARCH_MODEL_CREATIVE_ONLY_IMAGE,
-} from '../utils/ModelsMessages.js'
-import PhotosService from './photos_service.js'
+} from '../utils/prompts/insights.js'
 
 export type SearchMode = 'logical' | 'creative'
 export type SearchType = 'semantic' | 'tags' | 'topological'

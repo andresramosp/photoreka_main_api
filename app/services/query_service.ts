@@ -2,7 +2,7 @@
 
 import { withCache } from '../decorators/withCache.js'
 import withCost from '../decorators/withCost.js'
-import { MESSAGE_QUERY_STRUCTURE } from '../utils/ModelsMessages.js'
+import { MESSAGE_QUERY_STRUCTURE } from '../utils/prompts/query.js'
 import AnalyzerService from './analyzer_service.js'
 import EmbeddingsService from './embeddings_service.js'
 import ModelsService from './models_service.js'
@@ -20,7 +20,7 @@ export default class QueryService {
 
   public async structureQuery(query) {
     const numberOfWords = query.split(' ').length
-    if (numberOfWords > 4) {
+    if (numberOfWords > 3) {
       return this.structureQueryLLM(query)
     } else {
       return this.structureQueryNLP(query)

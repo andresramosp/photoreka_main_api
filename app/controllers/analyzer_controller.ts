@@ -18,7 +18,7 @@ export default class AnalyzerController {
       const photos = await photosService._getPhotosByUser(userId)
 
       if (photos.length) {
-        await analyzerService.initProcess(photos, packageId, 'adding')
+        await analyzerService.initProcess(photos, packageId, 'first')
         // await analyzerService.resumeProcess(photos, 38)
 
         if (!analysisProcesses.has(userId)) {
