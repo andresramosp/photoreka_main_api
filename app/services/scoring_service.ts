@@ -9,6 +9,9 @@ import { createRequire } from 'module'
 import EmbeddingsService from './embeddings_service.js'
 import { withCache } from '../decorators/withCache.js'
 import type { SearchMode, SearchType } from './search_service.js'
+import TagPhotoManager from '../managers/tag_photo_manager.js'
+import TagManager from '../managers/tag_manager.js'
+import TagPhoto from '#models/tag_photo'
 const require = createRequire(import.meta.url)
 const pluralize = require('pluralize')
 
@@ -58,10 +61,14 @@ const getWeights = (isCreative: boolean) => {
 export default class ScoringService {
   public modelsService: ModelsService = null
   public embeddingsService: EmbeddingsService = null
+  public tagManager: TagManager = null
+  public tagPhotoManager: TagPhotoManager = null
 
   constructor() {
     this.modelsService = new ModelsService()
     this.embeddingsService = new EmbeddingsService()
+    this.tagManager = new TagManager()
+    this.tagPhotoManager = new TagPhotoManager()
   }
 
   // @MeasureExecutionTime
@@ -168,7 +175,7 @@ export default class ScoringService {
   // TODO: replantear: tiene
   private async filterExcludedPhotosByTags(photos: Photo[], excluded: string[]) {
     const proximityThreshold = 1 + 0.6
-    const allTags = await Tag.all()
+    const allTags = await this.tagManager.getTagsByUser('1234')
 
     const matchingPromises = excluded.map((tag) =>
       this.findMatchingTagsForSegment({ name: tag, index: 1 }, allTags, 0.2, true, photos)
@@ -181,7 +188,10 @@ export default class ScoringService {
 
     console.log(`Excluded: ${excludedTagNames}`)
 
-    return photos.filter((photo) => !photo.tags?.some((tag) => excludedTagNames.includes(tag.name)))
+    return photos.filter(
+      (photo) =>
+        !photo.tags?.some((tagPhoto: TagPhoto) => excludedTagNames.includes(tagPhoto.tag.name))
+    )
   }
 
   // TODO: userid!!
@@ -493,22 +503,22 @@ export default class ScoringService {
     categories?: string[], // parámetro opcional para filtrar por categoría
     areas: string[]
   ): Promise<{ photo: Photo; tagScore: number }[]> {
-    let allTags = await Tag.all() // By user!
-    allTags = allTags.filter((tag: Tag) => !areas || areas.includes(tag.area))
+    let userTags = await this.tagManager.getTagsByUser('1234')
+    userTags = userTags.filter((tag: Tag) => !areas || areas.includes(tag.area))
 
     // Obtenemos los matching tags directamente del segmento
     const { matchingTags } = await this.findMatchingTagsForSegment(
       segment,
-      allTags,
+      userTags,
       embeddingsProximityThreshold,
       strictInference,
       photos,
       categories,
       areas
     )
-    const tagMap = new Map<string, number>()
+    const tagMap = new Map<number, {}>()
     matchingTags.forEach((tag: any) => {
-      tagMap.set(tag.name, tag.proximity)
+      tagMap.set(tag.id, { proximity: tag.proximity, name: tag.name })
     })
 
     // Calcular el score para cada foto basándonos en los tags coincidentes,
@@ -516,16 +526,23 @@ export default class ScoringService {
     let scoredPhotos = photos.map((photo) => {
       photo.matchingTags = photo.matchingTags || []
       const matchingPhotoTags =
-        photo.tags?.filter((tag) => {
-          return tagMap.has(tag.name) && (!categories || categories.includes(tag.category))
+        photo.tags?.filter((tagPhoto: TagPhoto) => {
+          return (
+            tagMap.has(tagPhoto.tag.id) && (!categories || categories.includes(tagPhoto.category))
+          )
         }) || []
       photo.matchingTags = [
         ...photo.matchingTags,
-        ...matchingPhotoTags.map((tag) => ({ name: tag.name, proximity: tagMap.get(tag.name) })),
+        ...matchingPhotoTags.map((tagPhoto: TagPhoto) => ({
+          name: tagPhoto.tag.name,
+          ...tagMap.get(tagPhoto.tag.id),
+        })),
       ]
       let tagScore = 0
       if (matchingPhotoTags.length > 0) {
-        const proximities = matchingPhotoTags.map((tag) => tagMap.get(tag.name)!)
+        const proximities = matchingPhotoTags.map(
+          (tagPhoto: TagPhoto) => tagMap.get(tagPhoto.tag.id).proximity!
+        )
         tagScore = this.calculateProximitiesScores(proximities)
       }
       return { photo, tagScore }
@@ -539,7 +556,7 @@ export default class ScoringService {
 
   public async findMatchingTagsForSegment(
     segment: { name: string; index: number },
-    tags,
+    userTags,
     embeddingsProximityThreshold: number,
     strictInference: boolean,
     photos: Photo[],
@@ -548,7 +565,7 @@ export default class ScoringService {
   ) {
     // 1) Comparación por cadenas
 
-    const { lematizedTerm, stringMatches, remainingTags } = this.getStringMatches(segment, tags)
+    const { lematizedTerm, stringMatches, remainingTags } = this.getStringMatches(segment, userTags)
 
     // 2) Comparación y ajuste semántico/lógico
     const semanticMatches = await this.getSemanticMatches(
@@ -571,11 +588,11 @@ export default class ScoringService {
     return { matchingTags: uniqueMatches, lematizedTerm }
   }
 
-  private getStringMatches(segment: { name: string; index: number }, tags) {
+  private getStringMatches(segment: { name: string; index: number }, userTags) {
     const lematizedTerm = pluralize.singular(segment.name.toLowerCase())
     const termWordCount = lematizedTerm.split(' ').length
 
-    const lematizedTagNames = tags.map((tag) => ({
+    const lematizedTagNames = userTags.map((tag) => ({
       name: pluralize.singular(tag.name.toLowerCase()),
       id: tag.id,
     }))
@@ -589,7 +606,8 @@ export default class ScoringService {
     const regex = new RegExp(`(^|\\s)${lematizedTerm}($|\\s)`, 'i')
     const matchedTagsByString = equalOrShorterTags.filter((tag) => regex.test(tag.name))
     const stringMatches = matchedTagsByString.map((tag) => ({
-      name: tags.find((t) => t.id === tag.id).name,
+      id: tag.id,
+      name: userTags.find((t) => t.id === tag.id).name,
       proximity: 1.9,
     }))
 
@@ -604,7 +622,7 @@ export default class ScoringService {
   private async getSemanticMatches(
     lematizedTerm: string,
     originalSegmentName: string,
-    remainingTags,
+    userTags,
     embeddingsProximityThreshold: number,
     photos: Photo[],
     categories: string[],
@@ -619,7 +637,7 @@ export default class ScoringService {
       embeddingsProximityThreshold,
       MAX_SIMILAR_TAGS,
       'cosine_similarity',
-      remainingTags.map((t) => t.id),
+      userTags.map((t) => t.id),
       categories,
       areas,
       photos.map((p) => p.id)
@@ -634,6 +652,7 @@ export default class ScoringService {
     )
 
     return adjustedSimilarTags.map((tag) => ({
+      id: tag.id,
       name: tag.name,
       proximity: tag.proximity,
       embeddingsProximity: tag.embeddingsProximity,

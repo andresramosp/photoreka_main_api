@@ -22,12 +22,12 @@ export default class TagPhoto extends BaseModel {
 
   @computed()
   public get name() {
-    return this.tag.name
+    return this.tag?.name
   }
 
   @computed()
   public get group() {
-    return this.tag.group
+    return this.tag?.group
   }
 
   @column()

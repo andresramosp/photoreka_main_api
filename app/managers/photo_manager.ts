@@ -31,14 +31,16 @@ export default class PhotoManager {
     return photos
   }
 
-  @withCache({
-    key: (arg1) => `getPhotosByUser_${arg1}`,
-    provider: 'redis',
-    ttl: 50 * 5,
-  })
+  // @withCache({
+  //   key: (arg1) => `getPhotosByUser_${arg1}`,
+  //   provider: 'redis',
+  //   ttl: 50 * 5,
+  // })
   public async getPhotosByUser(userId: string[]) {
     let photos = await Photo.query()
-      .preload('tags')
+      .preload('tags', (query) => {
+        query.preload('tag')
+      })
       .preload('descriptionChunks')
       .preload('analyzerProcess')
     return photos.map((photo) => ({
@@ -112,6 +114,7 @@ export default class PhotoManager {
     if (replaceAll) {
       await photo.related('tags').query().delete()
     }
+
     await photo.related('tags').createMany(newTags)
     await photo.load('tags')
 
@@ -122,8 +125,6 @@ export default class PhotoManager {
 
     return photo
   }
-
-  public
 
   // Eliminar una foto por ID
   public async deletePhoto(id: string) {

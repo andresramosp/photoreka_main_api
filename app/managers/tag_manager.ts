@@ -24,7 +24,7 @@ export default class TagManager {
   }
 
   // Obtiene todos los Tags
-  public async getAllTags(): Promise<Tag[]> {
+  public async getTagsByUser(userId: string): Promise<Tag[]> {
     const tags = await Tag.all()
     return tags
   }

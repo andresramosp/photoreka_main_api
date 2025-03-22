@@ -1,3 +1,5 @@
+// @ts-nocheck
+
 import AnalyzerProcess, { AnalyzerMode, StageType } from '#models/analyzer/analyzerProcess'
 import ModelsService from './models_service.js'
 import Photo, { DescriptionType } from '#models/photo'
@@ -78,34 +80,34 @@ export default class AnalyzerProcessRunner {
 
     const visionTasks = this.process.tasks.filter((task) => task instanceof VisionTask)
     for (const task of visionTasks) {
-      await this.changeStage(`Initiating vision task: ${task.name}`, 'vision_tasks')
+      await this.changeStage(`Vision Task initiating: ${task.name}`, 'vision_tasks')
       await this.executeVisionTask(task, task.sequential)
       await this.changeStage(`Vision task complete: ${task.name}`)
     }
 
     const tagsTasks = this.process.tasks.filter((task) => task instanceof TagTask)
     for (const task of tagsTasks) {
-      await this.changeStage(`Initiating tags task: ${task.name}`, 'tags_tasks')
+      await this.changeStage(`Tag Task initiating: ${task.name}`, 'tags_tasks')
       await this.executeTagsTask(task)
       await this.changeStage(`Tags task complete: ${task.name}`)
     }
 
     if (tagsTasks.length) {
-      await this.changeStage('Initiating tags embeddings task', 'embeddings_tags')
+      await this.changeStage('Tags Embeddings initiating', 'embeddings_tags')
       await this.createTagsEmbeddings()
       await this.changeStage('Tags Embeddings complete')
     }
 
     const chunkTasks = this.process.tasks.filter((task) => task instanceof ChunkTask)
     for (const task of chunkTasks) {
-      await this.changeStage(`Initiating chunks task: ${task.name}`, 'chunks_tasks')
+      await this.changeStage(`Chunks Task initiating: ${task.name}`, 'chunks_tasks')
       await this.executeChunksTask(task)
       await task.commit()
       await this.changeStage(`Chunk task complete: ${task.name}`)
     }
 
     if (chunkTasks.length) {
-      await this.changeStage('Initiating chunks embeddings task', 'embeddings_chunks')
+      await this.changeStage('Chunks Embeddings initiating', 'embeddings_chunks')
       await this.createChunksEmbeddings()
       await this.changeStage('Chunks Embeddings complete')
     }

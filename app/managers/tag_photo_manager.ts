@@ -74,7 +74,11 @@ export default class TagPhotoManager {
         tagPhoto.photoId = Number(parentTagPhoto.photoId)
         tagPhoto.category = parentTagPhoto.category
         tagPhoto.parentId = parentTagPhoto.id
-        await tagPhoto.save()
+        try {
+          await tagPhoto.save()
+        } catch (err) {
+          console.log(`[addSustantive] Error: ${err}`)
+        }
       }
     }
   }

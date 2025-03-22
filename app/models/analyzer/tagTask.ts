@@ -17,9 +17,9 @@ export class TagTask extends AnalyzerTask {
     const photoManager = new PhotoManager()
     const tagManager = new TagManager()
     const category = this.descriptionSourceFields.join('_')
-    const tagPhotosList: TagPhoto[] = []
 
     for (const photoId of Object.keys(this.data)) {
+      const tagPhotosList: TagPhoto[] = []
       for (const tagData of this.data[photoId]) {
         if (STOPWORDS.includes(tagData.name.toLocaleLowerCase())) {
           continue
@@ -29,6 +29,14 @@ export class TagTask extends AnalyzerTask {
         tagPhoto.tagId = existingOrCreatedTag.id
         tagPhoto.photoId = Number(photoId)
         tagPhoto.category = category
+        if (
+          tagPhotosList.find(
+            (tp: TagPhoto) => tp.tagId == tagPhoto.tagId && tp.category == tagPhoto.category
+          )
+        ) {
+          console.log(`[AnalyzerProcess] TagTask: skipping duplicate tagPhoto: ${tagPhoto.tagId}`)
+          continue
+        }
         tagPhotosList.push(tagPhoto)
       }
 
