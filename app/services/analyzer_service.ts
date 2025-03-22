@@ -1,8 +1,6 @@
 import AnalyzerProcess, { AnalyzerMode, StageType } from '#models/analyzer/analyzerProcess'
 import ModelsService from './models_service.js'
-import NLPService from './nlp_service.js'
 import Photo, { DescriptionType } from '#models/photo'
-import { VisionTask, TagTask, ChunkTask } from '#models/analyzer/analyzerTask'
 import { Exception } from '@adonisjs/core/exceptions'
 import Tag from '#models/tag'
 import DescriptionChunk from '#models/descriptionChunk'
@@ -11,6 +9,9 @@ import { getTaskList } from '../analyzer_packages.js'
 import ws from './ws.js'
 import PhotoImage from '#models/analyzer/photoImage'
 import { parseJSONSafe } from '../utils/jsonUtils.js'
+import { VisionTask } from '#models/analyzer/visionTask'
+import { TagTask } from '#models/analyzer/tagTask'
+import { ChunkTask } from '#models/analyzer/chunkTask'
 
 export default class AnalyzerProcessRunner {
   private process: AnalyzerProcess
@@ -362,8 +363,9 @@ export default class AnalyzerProcessRunner {
     // Recorremos todas las fotos y recogemos los tags sin embedding (sin duplicados)
     const allTagsMap = new Map<string, Tag>()
     for (const photo of this.process.photos) {
-      await photo.load('tagPhotos')
-      for (const tagPhoto of photo.tagPhotos) {
+      await photo.load('tags')
+      for (const tagPhoto of photo.tags) {
+        await tagPhoto.load('tag')
         if (!tagPhoto.tag.embedding) {
           const key = tagPhoto.tag.name.toLowerCase()
           if (!allTagsMap.has(key)) {
@@ -482,7 +484,7 @@ export default class AnalyzerProcessRunner {
 
   private async getPendingPhotosForTagsTask(task: TagTask): Promise<Photo[]> {
     await this.process.load('photos', (query) => {
-      query.preload('tagPhotos')
+      query.preload('tags')
     })
 
     let pendingPhotos: Photo[] = []

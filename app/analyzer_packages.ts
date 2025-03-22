@@ -1,4 +1,7 @@
-import { AnalyzerTask, VisionTask, TagTask, ChunkTask } from '#models/analyzer/analyzerTask'
+import { AnalyzerTask } from '#models/analyzer/analyzerTask'
+import { ChunkTask } from '#models/analyzer/chunkTask'
+import { TagTask } from '#models/analyzer/tagTask'
+import { VisionTask } from '#models/analyzer/visionTask'
 import {
   MESSAGE_ANALYZER_GPT_CONTEXT_AND_STORY,
   MESSAGE_ANALYZER_GPT_VISUAL_ACCENTS,
@@ -15,7 +18,7 @@ export const packages = [
     id: 'basic',
     tasks: [
       {
-        name: 'Análisis Context + Story',
+        name: 'vision_context_story',
         type: 'VisionTask',
         model: 'GPT',
         sequential: false,
@@ -26,42 +29,42 @@ export const packages = [
         promptsTarget: ['context', 'story'],
       },
       {
-        name: 'Etiquetado y Embeddings de Context + Story',
+        name: 'tags_context_story',
         type: 'TagTask',
         model: 'GPT',
         prompt: MESSAGE_TAGS_TEXT_EXTRACTION,
         descriptionSourceFields: ['context', 'story'],
       },
-      {
-        name: 'Análisis Visual Accents',
-        type: 'VisionTask',
-        model: 'GPT',
-        sequential: false,
-        prompts: [MESSAGE_ANALYZER_GPT_VISUAL_ACCENTS],
-        resolution: 'high',
-        imagesPerBatch: 8,
-        promptDependentField: null,
-        promptsTarget: ['visual_accents'],
-      },
-      {
-        name: 'Etiquetado y Embeddings de Visual Accents',
-        type: 'TagTask',
-        model: 'GPT',
-        prompt: MESSAGE_TAGS_TEXT_EXTRACTION,
-        descriptionSourceFields: ['visual_accents'],
-      },
-      {
-        name: 'Segmentación y Embeddings',
-        type: 'ChunkTask',
-        prompt: null,
-        model: null,
-        descriptionSourceFields: ['context', 'story', 'visual_accents'],
-        descriptionsChunksMethod: {
-          context: 'split_by_size',
-          story: 'split_by_size',
-          visual_accents: 'split_by_pipes',
-        },
-      },
+      // {
+      //   name: 'vision_visual_accents',
+      //   type: 'VisionTask',
+      //   model: 'GPT',
+      //   sequential: false,
+      //   prompts: [MESSAGE_ANALYZER_GPT_VISUAL_ACCENTS],
+      //   resolution: 'high',
+      //   imagesPerBatch: 8,
+      //   promptDependentField: null,
+      //   promptsTarget: ['visual_accents'],
+      // },
+      // {
+      //   name: 'tags_visual_accents',
+      //   type: 'TagTask',
+      //   model: 'GPT',
+      //   prompt: MESSAGE_TAGS_TEXT_EXTRACTION,
+      //   descriptionSourceFields: ['visual_accents'],
+      // },
+      // {
+      //   name: 'chunks_context_story_visual_accents',
+      //   type: 'ChunkTask',
+      //   prompt: null,
+      //   model: null,
+      //   descriptionSourceFields: ['context', 'story', 'visual_accents'],
+      //   descriptionsChunksMethod: {
+      //     context: 'split_by_size',
+      //     story: 'split_by_size',
+      //     visual_accents: 'split_by_pipes',
+      //   },
+      // },
     ],
   },
 

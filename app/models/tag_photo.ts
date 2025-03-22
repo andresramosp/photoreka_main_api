@@ -1,4 +1,4 @@
-import { BaseModel, column, belongsTo } from '@adonisjs/lucid/orm'
+import { BaseModel, column, belongsTo, computed } from '@adonisjs/lucid/orm'
 import type { BelongsTo } from '@adonisjs/lucid/types/relations'
 import Tag from './tag.js'
 
@@ -19,6 +19,16 @@ export default class TagPhoto extends BaseModel {
 
   @column()
   declare area: string
+
+  @computed()
+  public get name() {
+    return this.tag.name
+  }
+
+  @computed()
+  public get group() {
+    return this.tag.group
+  }
 
   @column()
   declare parentId?: number

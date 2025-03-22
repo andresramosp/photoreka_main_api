@@ -65,10 +65,10 @@ export default class TagPhotoManager {
       const sustantives = nlpService.getSustantives(parentTagPhoto.tag.name)
       if (!sustantives) return
       for (const sustantive of sustantives) {
-        const existingOrCreatedTag: Tag = await tagManager.getOrCreateSimilarTag({
-          name: sustantive,
-          group: 'misc',
-        })
+        const sustTag = new Tag()
+        sustTag.name = sustantive
+        sustTag.group = 'misc'
+        const existingOrCreatedTag: Tag = await tagManager.getOrCreateSimilarTag(sustTag)
         const tagPhoto = new TagPhoto()
         tagPhoto.tagId = existingOrCreatedTag.id
         tagPhoto.photoId = Number(parentTagPhoto.photoId)

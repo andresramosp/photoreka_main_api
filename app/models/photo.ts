@@ -5,7 +5,7 @@ import TagPhoto from './tag_photo.js'
 import DescriptionChunk from './descriptionChunk.js'
 import AnalyzerProcess from './analyzer/analyzerProcess.js'
 
-export type DescriptionType = 'context' | 'story' | 'topology' | 'artistic'
+export type DescriptionType = 'context' | 'story' | 'visual_accents' | 'artistic'
 export type PhotoDescriptions = Record<DescriptionType, string>
 
 export default class Photo extends BaseModel {
@@ -36,7 +36,7 @@ export default class Photo extends BaseModel {
   @hasMany(() => TagPhoto, {
     foreignKey: 'photoId',
   })
-  declare tagPhotos: HasMany<typeof TagPhoto>
+  declare tags: HasMany<typeof TagPhoto>
 
   @hasMany(() => DescriptionChunk, {
     foreignKey: 'photoId',

@@ -11,6 +11,7 @@ export const tagGroups = [
   'weather',
   'symbols',
   'abstract concept',
+  'misc',
 ] as const
 
 export type TagGroups = (typeof tagGroups)[number]

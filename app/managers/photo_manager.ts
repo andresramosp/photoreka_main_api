@@ -1,6 +1,6 @@
 // @ts-nocheck
 
-import Photo from '#models/photo'
+import Photo, { PhotoDescriptions } from '#models/photo'
 import TagPhoto from '#models/tag_photo'
 
 import { withCache } from '../decorators/withCache.js'
@@ -15,7 +15,7 @@ export default class PhotoManager {
       .where('id', id)
       .preload('analyzerProcess')
       .preload('descriptionChunks')
-      .preload('tagPhotos')
+      .preload('tags')
     if (!photo) {
       throw new Error('Photo not found')
     }
@@ -26,7 +26,7 @@ export default class PhotoManager {
   public async getPhotosByIds(photoIds: string[]) {
     const photos = await Photo.query()
       .whereIn('id', photoIds)
-      .preload('tagPhotos')
+      .preload('tags')
       .preload('analyzerProcess')
     return photos
   }
@@ -38,12 +38,12 @@ export default class PhotoManager {
   })
   public async getPhotosByUser(userId: string[]) {
     let photos = await Photo.query()
-      .preload('tagPhotos')
+      .preload('tags')
       .preload('descriptionChunks')
       .preload('analyzerProcess')
     return photos.map((photo) => ({
       ...photo.$attributes,
-      tagPhotos: photo.tagPhotos,
+      tags: photo.tags,
       descriptionChunks: photo.descriptionChunks,
       descriptions: photo.descriptions,
       tempID: Math.random().toString(36).substr(2, 4),
@@ -54,7 +54,9 @@ export default class PhotoManager {
     let photos = await Photo.query()
       .preload('descriptionChunks')
       .preload('analyzerProcess')
-      .preload('tagPhotos')
+      .preload('tags', (query) => {
+        query.preload('tag')
+      })
       .orderBy('created_at', 'asc')
     return photos
   }
@@ -80,7 +82,7 @@ export default class PhotoManager {
     return photo
   }
 
-  public async addPhotoDescriptions(id: string, newDescriptions: Partial<Photo['descriptions']>) {
+  public async updatePhotoDescriptions(id: string, newDescriptions: PhotoDescriptions) {
     const photo = await Photo.find(id)
     if (!photo) {
       throw new Error('Photo not found')
@@ -97,7 +99,7 @@ export default class PhotoManager {
     return photo
   }
 
-  public async addTagsPhoto(
+  public async updateTagsPhoto(
     photoId: string,
     newTags: Partial<TagPhoto>[],
     replaceAll: boolean = false
@@ -108,15 +110,16 @@ export default class PhotoManager {
       throw new Error('Photo not found')
     }
     if (replaceAll) {
-      await photo.related('tagPhotos').query().delete()
+      await photo.related('tags').query().delete()
     }
-    await photo.related('tagPhotos').createMany(newTags)
+    await photo.related('tags').createMany(newTags)
+    await photo.load('tags')
 
-    for (const tagPhoto of newTags) {
+    for (const tagPhoto of photo.tags) {
+      await tagPhoto.load('tag')
       await tagPhotoManager.addSustantives(tagPhoto)
     }
 
-    await photo.load('tagPhotos')
     return photo
   }
 

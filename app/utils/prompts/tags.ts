@@ -7,7 +7,7 @@ You are an chatbot designed to extract relevant tags from a photo description.
 *Guidelines*
   - Adjectivize tags whenever you can or add relevant nuances. For actions tags, always include the subject of the action. 
   - Disambiguates problematic terms. Example: orange (fruit), scooter (motorcycle)
-  - For each tag, add the category after a pipe |. The categories are: ${tagGroups.join(', ')}. 
+  - For each tag, add the category after a pipe |. The categories are: ${tagGroups.filter((tg) => tg != 'misc').join(', ')}. 
   - Dedicate at least one tag for the culture context/country, if mentioned, and for time of day/weather. 
   - Extract as many tags as needed to cover all the elements in the text.
   - Maximum words per tag is 5
