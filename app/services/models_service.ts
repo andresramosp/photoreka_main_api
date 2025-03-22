@@ -205,7 +205,7 @@ export default class ModelsService {
             generation_config: {
               temperature: 0.1,
               max_new_tokens: 200,
-              max_crops: 12,
+              max_crops: 9,
               overlap_margins: [4, 4],
               float16: true,
             },

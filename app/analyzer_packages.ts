@@ -4,7 +4,9 @@ import { TagTask } from '#models/analyzer/tagTask'
 import { VisionTask } from '#models/analyzer/visionTask'
 import {
   MESSAGE_ANALYZER_GPT_CONTEXT_AND_STORY,
+  MESSAGE_ANALYZER_GPT_CONTEXT_STORY_ACCENTS,
   MESSAGE_ANALYZER_GPT_VISUAL_ACCENTS,
+  MESSAGE_ANALYZER_MOLMO_VISUAL_ACCENTS,
 } from './utils/prompts/descriptions.js'
 import {
   MESSAGE_ANALYZER_GPT_TOPOLOGIC_TAGS,
@@ -15,11 +17,55 @@ export type SplitMethods = 'split_by_props' | 'split_by_pipes' | 'split_by_size'
 
 export const packages = [
   {
-    // 0,0082 por foto (0,0061 con Batch API aprox.)
-    id: 'basic',
+    // Context + Story + Accents en una sola llamada GPT
+    id: 'basic_1',
     tasks: [
       {
-        // xxxx por foto (xxxx con Batch API aprox.)
+        // 0,0048 por foto (0,0024 con Batch API.)
+        name: 'vision_context_story_accents',
+        type: 'VisionTask',
+        model: 'GPT',
+        sequential: false,
+        targetFieldType: 'descriptions',
+        prompts: [MESSAGE_ANALYZER_GPT_CONTEXT_STORY_ACCENTS], // TODO: ver por que falla el parseo a veces, safeParse?
+        resolution: 'high',
+        imagesPerBatch: 4,
+        promptDependentField: null,
+      },
+      {
+        name: 'tags_context_story',
+        type: 'TagTask',
+        model: 'GPT',
+        prompt: MESSAGE_TAGS_TEXT_EXTRACTION,
+        descriptionSourceFields: ['context', 'story'],
+      },
+      {
+        name: 'tags_visual_accents',
+        type: 'TagTask',
+        model: 'GPT',
+        prompt: MESSAGE_TAGS_TEXT_EXTRACTION,
+        descriptionSourceFields: ['visual_accents'],
+      },
+      {
+        name: 'chunks_context_story_visual_accents',
+        type: 'ChunkTask',
+        prompt: null,
+        model: null,
+        descriptionSourceFields: ['context', 'story', 'visual_accents'],
+        descriptionsChunksMethod: {
+          context: 'split_by_size',
+          story: 'split_by_size',
+          visual_accents: 'split_by_pipes',
+        },
+      },
+    ],
+  },
+  // Basic context-story + visual_accents GPT separados
+  {
+    // 0,0082 por foto (0,0061 con Batch API aprox.)
+    id: 'basic_2',
+    tasks: [
+      {
         name: 'vision_context_story',
         type: 'VisionTask',
         model: 'GPT',
@@ -27,7 +73,7 @@ export const packages = [
         targetFieldType: 'descriptions',
         prompts: [MESSAGE_ANALYZER_GPT_CONTEXT_AND_STORY],
         resolution: 'high',
-        imagesPerBatch: 5,
+        imagesPerBatch: 4,
         promptDependentField: null,
       },
       // TODO: intentar mandar visual_accents con 1000px
@@ -71,7 +117,63 @@ export const packages = [
       },
     ],
   },
-
+  {
+    // Context Story GPT + Accents Molmo
+    // Habria que arreglar tema crops + revisar pequeñas alucinaciones (que no saque elementos borrosos o distantes). Plantear inyección contexto.
+    id: 'basic_3',
+    tasks: [
+      {
+        name: 'vision_context_story',
+        type: 'VisionTask',
+        model: 'GPT',
+        sequential: false,
+        targetFieldType: 'descriptions',
+        prompts: [MESSAGE_ANALYZER_GPT_CONTEXT_AND_STORY],
+        resolution: 'high',
+        imagesPerBatch: 4,
+        promptDependentField: null,
+      },
+      // TODO: intentar mandar visual_accents con 1000px
+      {
+        // xxxx por foto (xxxx con Batch API aprox.)
+        name: 'vision_visual_accents',
+        type: 'VisionTask',
+        model: 'Molmo',
+        sequential: true,
+        targetFieldType: 'descriptions',
+        prompts: [MESSAGE_ANALYZER_MOLMO_VISUAL_ACCENTS], // no va del todo mal, decirle que no coja elementos distantes o poco visibles
+        imagesPerBatch: 4,
+        promptsNames: ['visual_accents'],
+        promptDependentField: null,
+      },
+      {
+        name: 'tags_context_story',
+        type: 'TagTask',
+        model: 'GPT',
+        prompt: MESSAGE_TAGS_TEXT_EXTRACTION,
+        descriptionSourceFields: ['context', 'story'],
+      },
+      {
+        name: 'tags_visual_accents',
+        type: 'TagTask',
+        model: 'GPT',
+        prompt: MESSAGE_TAGS_TEXT_EXTRACTION,
+        descriptionSourceFields: ['visual_accents'],
+      },
+      {
+        name: 'chunks_context_story_visual_accents',
+        type: 'ChunkTask',
+        prompt: null,
+        model: null,
+        descriptionSourceFields: ['context', 'story', 'visual_accents'],
+        descriptionsChunksMethod: {
+          context: 'split_by_size',
+          story: 'split_by_size',
+          visual_accents: 'split_by_pipes',
+        },
+      },
+    ],
+  },
   {
     // 0,002 por foto
     id: 'topological_upgrade',

@@ -339,21 +339,21 @@ export default class AnalyzerProcessRunner {
       task.promptsNames.forEach((targetPrompt) => {
         try {
           const descObj = photoResult.descriptions.find((d: any) => d.id_prompt === targetPrompt)
-          descriptionsByPrompt = descObj
-            ? parseJSONSafe(`${descObj.description}`, {
-                left_area_shows: 'left',
-                right_area_shows: 'right',
-                middle_area_shows: 'middle',
-              })
-            : null
+          descriptionsByPrompt = descObj.description
+          // descriptionsByPrompt = descObj
+          //   ? parseJSONSafe(`${descObj.description}`, {
+          //       left_area_shows: 'left',
+          //       right_area_shows: 'right',
+          //       middle_area_shows: 'middle',
+          //     })
+          //   : null
         } catch (err) {
           console.log(`[AnalyzerProcess]: Error en ${task.model} for ${photoResult.id} images...`)
           this.process.addFailed([photoResult.id], task.name)
         }
       })
       return {
-        id: photoResult.id,
-        ...descriptionsByPrompt,
+        [task.promptsNames[0]]: descriptionsByPrompt,
       }
     })
     return { result: homogenizedResult }
@@ -425,7 +425,7 @@ export default class AnalyzerProcessRunner {
   private async injectPromptsDpendencies(task: VisionTask, batch: PhotoImage[]): Promise<any> {
     let result = task.prompts
 
-    if (task.promptDependentField) {
+    if (task.promptDependentField || task.model == 'Molmo') {
       const promptList = task.promptsNames.map((target: DescriptionType, index: number) => ({
         id: target,
         prompt: task.prompts[index],
@@ -438,7 +438,7 @@ export default class AnalyzerProcessRunner {
             id: photoImage.photo.id,
             prompts: promptList.map((p) => ({
               id: p.id,
-              text: p.prompt(photoImage.photo.descriptions[task.promptDependentField]),
+              text: p.prompt(), //p.prompt(photoImage.photo.descriptions[task.promptDependentField]),
             })),
           }
         })

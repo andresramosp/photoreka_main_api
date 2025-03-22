@@ -19,6 +19,33 @@ json [
 Always return a JSON array, each item containing information about one image, in the same order of the input images.
 `
 
+export const MESSAGE_ANALYZER_GPT_CONTEXT_STORY_ACCENTS = (photosBatch: Photo[]) => `
+ You are a bot in charge of analyzing photographs and returning diverse and structured information for each photo, from a 'street photography' point of view. 
+
+ For each image, include following properties:
+ 
+1. 'context': mention the place where the scene takes place, the time of day, as well as the cultural context. 
+   Also, when it becomes clear, add the country and/or city. Minimum 20 - 25 words. 
+2. 'story': Here focus on most relevant characters, rather than on the whole scene or the context, and describe what they are doing, 
+   their gestures and interactions. Discard elements too distant or barely visible. Minimum 130 - 160 words. 
+3. 'visual_accents': Here you must re-analyze the photo more carefully to detect others elements that may have gone unnoticed but add value to the scene/composition.
+   Typically, you'll look for things like: Drawings, signs, symbols whose content adds visual value. Not obvious secondary characters but with some interest. 
+   An object / dress carried by someone that adds a nuance. Any subtle but relevant detail on the edges of the image or in the background.
+   Be specific. Don't describe "a table with many items" but rather find a specific, interesting item and mention it. Split the elements with pipes (|)
+   
+
+📌 **Output Format + Example:**  
+json [
+     { 'context': "This image features a bustling city...", 
+       'story': "The main character is a woman standing...", 
+       'visual_accents': "poster with a flying dragon drawing | advertisement with a sensual woman's face | part of hand with icecream..."
+      },
+      ...
+   ]
+
+Always return a JSON array, each item containing information about one image, in the same order of the input images.
+`
+
 // TODO: 1) volver a intentar meter arriba con esta desc, 2) darle otra oportunidad a Molmo... con o sin pretrained, a max_crops 8 o 9
 export const MESSAGE_ANALYZER_GPT_VISUAL_ACCENTS = (photosBatch: Photo[]) => `
  You are a chatbot tasked with adding visual information to photographs. For each of them, we've already extracted a list of prominent elements, 
@@ -51,55 +78,22 @@ For each image, return these properties:
 Always return a JSON array, each item containing information about one image, in the same order of the input images.
 `
 
-export const MESSAGE_ANALYZER_GPT_VISUAL_ACCENTS_PRETRAINED = (photosBatch: any[]) => `
- You are a chatbot tasked with adding visual information to photographs. For each of them, we've already extracted a list of prominent elements, 
+// TODO: pruebas con un enrichment de Molmo?
+
+export const MESSAGE_ANALYZER_MOLMO_VISUAL_ACCENTS = (photosBatch: Photo[]) => `
+ You are a chatbot tasked with adding visual information to a photograph. We've already extracted a list of prominent elements for this one, 
  but now you must re-analyze the photo more carefully to detect others that may have gone unnoticed but add value to the scene/composition from a
  'street photography' point of view. 
 
  *Guidelines*
-- Typically, you'll look for things like: 1) Drawings, signs, symbols whose content adds visual value. 2) Undetected secondary characters with some interest. 
-  3) An object / dress carried by a character that adds a nuance. 4) Any subtle but relevant detail on the edges of the image or in the background.
+- Typically, you'll look for things like: 1) Drawings, signs, symbols whose content adds visual value. 2) Not obvious secondary characters but with some interest. 
+  3) An object / dress carried by someone that adds a nuance. 4) Any subtle but relevant detail on the edges of the image or in the background.
 - Be specific. Don't describe "a table with many items" but rather find a specific, interesting item and mention it.
-- 📌 A crucial rule is that the elements you contribute must not already be present in the list of provided tags. If there is nothing to add, add nothing 📌
 
 Maximum number of elements per image is 5. 
 
-For each image, return:
-- id: the unique ID of the image
-- visual_accents: "element_1 | element_2 | element_2, ..."
-- ...
-
-📌 **Example:**
-
-\`\`\`json
-[
-  {
-    "id": 1,
-    "visual_accents": "elderly man looking curiously from window | no entry red sign | advertisement with a sensual woman's face | funny jester's hat on a pedestrian's head",
-  },
- {
-    "id": 2,
-    "visual_accents": "poster with a growling tiger drawing | signs on the wall, including a big blue circle | for sale sign on wooden door | part of hand with ice cream",
-  },
-]
-\`\`\`
-
-List of ordered images with tags already extracted: ${JSON.stringify(
-  photosBatch.map((photo: Photo) => ({
-    id: photo.id,
-    tags: photo.tags
-      .filter((t) => ['person', 'objects', 'animals', 'environment', 'symbols'].includes(t.group))
-      .map((tag) => tag.name)
-      .join(', '),
-  })),
-  null,
-  2
-)}
-
-Always return a JSON array, each item containing information about one image.
+Return only the text with the elements, with no additional comments
 `
-
-// TODO: pruebas con un enrichment de Molmo?
 
 export const MESSAGE_ANALYZER_MOLMO_STREET_PHOTO_PRETRAINED = (shortDesc: string) => `
 
