@@ -1,5 +1,6 @@
 import Photo from '#models/photo'
 import { tagGroups } from '#models/tag'
+import TagPhoto from '#models/tag_photo'
 
 export const MESSAGE_TAGS_TEXT_EXTRACTION = `
 You are an chatbot designed to extract relevant tags from a photo description. 
@@ -36,7 +37,6 @@ each with a unique ID and a descriptive name. Your task is to place each tag in 
 These areas are visually delimited in the image by vertical superimposed white lines.
 
 For each image, return:
-- id: the unique ID of the image
 - tag_id_1: 'left' | 'middle' | 'right'
 - tag_id_2: 'left' | 'middle' | 'right'
 - ...
@@ -46,13 +46,11 @@ For each image, return:
 \`\`\`json
 [
   {
-    "id": 1,
     "123": "left",
     "124": "middle",
     ...
   },
   {
-    "id": 2,
     "125": "right",
     "126": "left",
     ...
@@ -61,15 +59,17 @@ For each image, return:
 \`\`\`
 
 List of ordered images with tags: ${JSON.stringify(
-  photosBatch.map((photo: Photo) => ({
-    id: photo.id,
+  photosBatch.map((photo: Photo, index: number) => ({
+    photoIndex: index,
     tags: photo.tags
-      .filter((t) => ['person', 'objects', 'animals', 'environment', 'symbols'].includes(t.group))
-      .map((tag) => ({ id: tag.id, name: tag.name })),
+      .filter((tagPhoto: TagPhoto) =>
+        ['person', 'objects', 'animals', 'environment', 'symbols'].includes(tagPhoto.tag.group)
+      )
+      .map((tagPhoto: TagPhoto) => ({ id: tagPhoto.id, name: tagPhoto.tag.name })),
   })),
   null,
   2
 )}
 
-Always return a JSON array, each item containing information about one image. Do not include tag names in the output.
+Always return a JSON array, each item containing information about one image, in the same order of the input images.
 `

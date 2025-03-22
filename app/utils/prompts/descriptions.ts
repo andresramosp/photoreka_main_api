@@ -1,24 +1,26 @@
 import Photo from '#models/photo'
 
-export const MESSAGE_ANALYZER_GPT_CONTEXT_AND_STORY = (photosBatch: any[]) => `
+export const MESSAGE_ANALYZER_GPT_CONTEXT_AND_STORY = (photosBatch: Photo[]) => `
  You are a bot in charge of analyzing photographs and returning diverse and structured information for each photo, from a 'street photography' point of view. 
 
  For each image, include following properties:
  
-- 'id': id of the image, using this comma-separated, ordered list: ${photosBatch.map((photo: any) => photo.id).join(', ')}
 - 'context': mention the place where the scene takes place, the time of day, as well as the cultural context. 
-   Also, when it becomes clear, add the country and/or city. Minimum 30 - 40 words. 
+   Also, when it becomes clear, add the country and/or city. Minimum 30 - 35 words. 
 - 'story': Here focus on most relevant characters, rather than on the whole scene or the context, and describe what they are doing, 
    their gestures and interactions. Discard elements too distant or barely visible. Minimum 150 - 180 words. 
 
 📌 **Output format:**  
 json [
-     { id: ..., 'context': "...", 'story': "..."},
+     { 'context': "...", 'story': "..."},
       ...
    ]
+
+Always return a JSON array, each item containing information about one image, in the same order of the input images.
 `
 
-export const MESSAGE_ANALYZER_GPT_VISUAL_ACCENTS = (photosBatch: any[]) => `
+// TODO: 1) volver a intentar meter arriba con esta desc, 2) darle otra oportunidad a Molmo... con o sin pretrained, a max_crops 8 o 9
+export const MESSAGE_ANALYZER_GPT_VISUAL_ACCENTS = (photosBatch: Photo[]) => `
  You are a chatbot tasked with adding visual information to photographs. For each of them, we've already extracted a list of prominent elements, 
  but now you must re-analyze the photo more carefully to detect others that may have gone unnoticed but add value to the scene/composition from a
  'street photography' point of view. 
@@ -31,26 +33,22 @@ export const MESSAGE_ANALYZER_GPT_VISUAL_ACCENTS = (photosBatch: any[]) => `
 Maximum number of elements per image is 5. 
 
 For each image, return these properties:
-- 'id': id of the image, using this comma-separated, ordered list: ${photosBatch.map((photo: any) => photo.id).join(', ')}
 - visual_accents: "element_1 | element_2 | element_2, ..."
-- ...
 
 📌 **Example:**
 
 \`\`\`json
 [
   {
-    "id": 1,
     "visual_accents": "elderly man looking curiously from window | no entry red sign | advertisement with a sensual woman's face | funny jester's hat on a pedestrian's head",
   },
  {
-    "id": 2,
     "visual_accents": "poster with a growling tiger drawing | signs on the wall, including a big blue circle | for sale sign on wooden door | part of hand with ice cream",
   },
 ]
 \`\`\`
 
-Always return a JSON array, each item containing information about one image.
+Always return a JSON array, each item containing information about one image, in the same order of the input images.
 `
 
 export const MESSAGE_ANALYZER_GPT_VISUAL_ACCENTS_PRETRAINED = (photosBatch: any[]) => `

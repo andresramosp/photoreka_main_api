@@ -124,17 +124,17 @@ export default class AnalyzerProcessRunner {
     }
 
     // 1. Obtenemos el listado completo de imágenes a procesar
-    const pendingPhotoImages = await this.getPendingPhotosForVisionTask(task)
+    const pendingPhotoImages: PhotoImage[] = await this.getPendingPhotosForVisionTask(task)
 
     // 2. Agrupamos las imágenes en lotes ("batches")
-    const batches: any[][] = []
+    const batches: PhotoImage[][] = []
     for (let i = 0; i < pendingPhotoImages.length; i += task.imagesPerBatch) {
       const batch = pendingPhotoImages.slice(i, i + task.imagesPerBatch)
       batches.push(batch)
     }
 
     // Función que procesa cada batch
-    const processBatch = async (batch: any[], idx: number) => {
+    const processBatch = async (batch: PhotoImage[], idx: number) => {
       // Retraso incremental según el índice de batch
       await this.sleep(idx * 1500)
 
@@ -162,10 +162,11 @@ export default class AnalyzerProcessRunner {
       }
 
       // Guardamos resultados en task.data
-      for (const res of response.result) {
-        const { id, ...results } = res
-        task.data[id] = { ...task.data[id], ...results }
-      }
+      response.result.forEach((res, photoIndex) => {
+        const { ...results } = res
+        const photoId = batch[photoIndex].photo.id
+        task.data[photoId] = { ...task.data[photoId], ...results }
+      })
 
       // Confirmamos estado del task
       await task.commit()
@@ -335,7 +336,7 @@ export default class AnalyzerProcessRunner {
     const { result } = response
     const homogenizedResult = result.map((photoResult: any) => {
       let descriptionsByPrompt: { [key: string]: any } = {}
-      task.promptsTarget.forEach((targetPrompt) => {
+      task.promptsNames.forEach((targetPrompt) => {
         try {
           const descObj = photoResult.descriptions.find((d: any) => d.id_prompt === targetPrompt)
           descriptionsByPrompt = descObj
@@ -421,12 +422,11 @@ export default class AnalyzerProcessRunner {
     console.log(`[AnalyzerProcess]: ${message}`)
   }
 
-  // caso de inyectar id's de fotos
   private async injectPromptsDpendencies(task: VisionTask, batch: PhotoImage[]): Promise<any> {
     let result = task.prompts
 
-    if (task.model === 'Molmo') {
-      const promptList = task.promptsTarget.map((target: DescriptionType, index: number) => ({
+    if (task.promptDependentField) {
+      const promptList = task.promptsNames.map((target: DescriptionType, index: number) => ({
         id: target,
         prompt: task.prompts[index],
       }))
@@ -438,26 +438,13 @@ export default class AnalyzerProcessRunner {
             id: photoImage.photo.id,
             prompts: promptList.map((p) => ({
               id: p.id,
-              // text: p.prompt(photoImage.photo.descriptions[task.promptDependentField]),
-              text: p.prompt(
-                photoImage.photo.tags
-                  .filter(
-                    (t) =>
-                      t.category == 'context_story' &&
-                      (t.group == 'person' ||
-                        t.group == 'objects' ||
-                        t.group == 'places' ||
-                        t.group == 'animals')
-                  )
-                  .map((t) => t.name)
-                  .join(', ')
-              ),
+              text: p.prompt(photoImage.photo.descriptions[task.promptDependentField]),
             })),
           }
         })
       )
     } else {
-      result = task.prompts.map((p) => p(batch.map((b) => b.photo))) // Inyección de ID por defecto
+      result = task.prompts.map((p) => p(batch.map((b) => b.photo))) // Inyección de fotos por defecto
     }
 
     return result
@@ -592,7 +579,9 @@ export default class AnalyzerProcessRunner {
 
     // Asocia las nuevas fotos al proceso
     await Photo.query().whereIn('id', newPhotosIds).update({ analyzer_process_id: this.process.id })
-    await this.process.load('photos')
+    await this.process.load('photos', (query) =>
+      query.preload('tags', (query) => query.preload('tag'))
+    )
   }
 
   private sleep(ms: number) {

@@ -20,14 +20,14 @@ export default class TagPhotoManager {
   }
 
   // Obtiene todos los TagPhotos (opcionalmente filtra por photoId)
-  public async getAllTagPhotos(photoId?: string): Promise<TagPhoto[]> {
+  public async getAllTagPhotos(photoId?: number): Promise<TagPhoto[]> {
     const query = TagPhoto.query()
     if (photoId) query.where('photo_id', photoId)
     return await query
   }
 
   // Actualiza un TagPhoto existente
-  public async updateTagPhoto(id: string, data: Partial<TagPhoto>): Promise<TagPhoto> {
+  public async updateTagPhoto(id: number, data: Partial<TagPhoto>): Promise<TagPhoto> {
     const tagPhoto = await TagPhoto.find(id)
     if (!tagPhoto) throw new Error('TagPhoto not found')
     Object.assign(tagPhoto, data)
@@ -36,7 +36,7 @@ export default class TagPhotoManager {
   }
 
   // Elimina un TagPhoto por su ID
-  public async deleteTagPhoto(id: string): Promise<{ message: string }> {
+  public async deleteTagPhoto(id: number): Promise<{ message: string }> {
     const tagPhoto = await TagPhoto.find(id)
     if (!tagPhoto) throw new Error('TagPhoto not found')
     await tagPhoto.delete()
@@ -77,7 +77,7 @@ export default class TagPhotoManager {
         try {
           await tagPhoto.save()
         } catch (err) {
-          console.log(`[addSustantive] Error: ${err}`)
+          // console.log(`[addSustantive] Error duplicidad: ${err}`)
         }
       }
     }

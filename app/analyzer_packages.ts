@@ -15,18 +15,33 @@ export type SplitMethods = 'split_by_props' | 'split_by_pipes' | 'split_by_size'
 
 export const packages = [
   {
+    // 0,0082 por foto (0,0061 con Batch API aprox.)
     id: 'basic',
     tasks: [
       {
+        // xxxx por foto (xxxx con Batch API aprox.)
         name: 'vision_context_story',
         type: 'VisionTask',
         model: 'GPT',
         sequential: false,
+        targetFieldType: 'descriptions',
         prompts: [MESSAGE_ANALYZER_GPT_CONTEXT_AND_STORY],
         resolution: 'high',
         imagesPerBatch: 5,
         promptDependentField: null,
-        promptsTarget: ['context', 'story'],
+      },
+      // TODO: intentar mandar visual_accents con 1000px
+      {
+        // xxxx por foto (xxxx con Batch API aprox.)
+        name: 'vision_visual_accents',
+        type: 'VisionTask',
+        model: 'GPT',
+        sequential: false,
+        targetFieldType: 'descriptions',
+        prompts: [MESSAGE_ANALYZER_GPT_VISUAL_ACCENTS],
+        resolution: 'high',
+        imagesPerBatch: 8,
+        promptDependentField: null,
       },
       {
         name: 'tags_context_story',
@@ -34,17 +49,6 @@ export const packages = [
         model: 'GPT',
         prompt: MESSAGE_TAGS_TEXT_EXTRACTION,
         descriptionSourceFields: ['context', 'story'],
-      },
-      {
-        name: 'vision_visual_accents',
-        type: 'VisionTask',
-        model: 'GPT',
-        sequential: false,
-        prompts: [MESSAGE_ANALYZER_GPT_VISUAL_ACCENTS],
-        resolution: 'high',
-        imagesPerBatch: 8,
-        promptDependentField: null,
-        promptsTarget: ['visual_accents'],
       },
       {
         name: 'tags_visual_accents',
@@ -69,20 +73,20 @@ export const packages = [
   },
 
   {
-    id: 'topological_upgrade_gpt',
+    // 0,002 por foto
+    id: 'topological_upgrade',
     tasks: [
       {
-        name: 'Análisis Topológico',
+        name: 'topological_tags',
         type: 'VisionTask',
         model: 'GPT',
         sequential: false,
         resolution: 'low',
+        targetFieldType: 'tag_area',
         prompts: [MESSAGE_ANALYZER_GPT_TOPOLOGIC_TAGS],
         imagesPerBatch: 6,
         useGuideLines: true,
         promptDependentField: null,
-        promptsTarget: null,
-        tagsTarget: 'area',
       },
     ],
   },
