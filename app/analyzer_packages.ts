@@ -13,8 +13,6 @@ import {
   MESSAGE_TAGS_TEXT_EXTRACTION,
 } from './utils/prompts/tags.js'
 
-export type SplitMethods = 'split_by_props' | 'split_by_pipes' | 'split_by_size'
-
 export const packages = [
   {
     // Context + Story + Accents en una sola llamada GPT
@@ -27,7 +25,7 @@ export const packages = [
         model: 'GPT',
         sequential: false,
         targetFieldType: 'descriptions',
-        prompts: [MESSAGE_ANALYZER_GPT_CONTEXT_STORY_ACCENTS], // TODO: ver por que falla el parseo a veces, safeParse?
+        prompts: [MESSAGE_ANALYZER_GPT_CONTEXT_STORY_ACCENTS],
         resolution: 'high',
         imagesPerBatch: 4,
         promptDependentField: null,
@@ -53,9 +51,9 @@ export const packages = [
         model: null,
         descriptionSourceFields: ['context', 'story', 'visual_accents'],
         descriptionsChunksMethod: {
-          context: 'split_by_size',
-          story: 'split_by_size',
-          visual_accents: 'split_by_pipes',
+          context: { type: 'split_by_size', maxLength: 300 },
+          story: { type: 'split_by_size', maxLength: 300 },
+          visual_accents: { type: 'split_by_size', maxLength: 15 },
         },
       },
     ],
@@ -110,9 +108,9 @@ export const packages = [
         model: null,
         descriptionSourceFields: ['context', 'story', 'visual_accents'],
         descriptionsChunksMethod: {
-          context: 'split_by_size',
-          story: 'split_by_size',
-          visual_accents: 'split_by_pipes',
+          context: { type: 'split_by_size', maxLength: 300 },
+          story: { type: 'split_by_size', maxLength: 300 },
+          visual_accents: { type: 'split_by_size', maxLength: 15 },
         },
       },
     ],
@@ -167,9 +165,9 @@ export const packages = [
         model: null,
         descriptionSourceFields: ['context', 'story', 'visual_accents'],
         descriptionsChunksMethod: {
-          context: 'split_by_size',
-          story: 'split_by_size',
-          visual_accents: 'split_by_pipes',
+          context: { type: 'split_by_size', maxLength: 300 },
+          story: { type: 'split_by_size', maxLength: 300 },
+          visual_accents: { type: 'split_by_size', maxLength: 15 },
         },
       },
     ],

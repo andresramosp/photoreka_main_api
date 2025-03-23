@@ -14,11 +14,11 @@ export default class AnalyzerController {
     const photoManager = new PhotoManager()
 
     try {
-      const { userId, packageId, processId } = request.body()
+      const { userId, packageId, processId, mode } = request.body()
       const photos = await photoManager._getPhotosByUser(userId)
 
       if (photos.length) {
-        await analyzerService.initProcess(photos, packageId, 'remake')
+        await analyzerService.initProcess(photos, packageId, mode)
         // await analyzerService.resumeProcess(photos, 38)
 
         if (!analysisProcesses.has(userId)) {

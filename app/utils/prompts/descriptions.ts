@@ -20,28 +20,36 @@ Always return a JSON array, each item containing information about one image, in
 `
 
 export const MESSAGE_ANALYZER_GPT_CONTEXT_STORY_ACCENTS = (photosBatch: Photo[]) => `
- You are a bot in charge of analyzing photographs and returning diverse and structured information for each photo, from a 'street photography' point of view. 
+ You are a bot in charge of analyzing photographs and returning diverse and structured information for each photo from a 'street photography' point of view. 
 
  For each image, include following properties:
  
-1. 'context': mention the place where the scene takes place, the time of day, as well as the cultural context. 
-   Also, when it becomes clear, add the country and/or city. Minimum 20 - 25 words. 
+1. 'context': mention the place where the scene takes place, the time of day, as well as the cultural context. when it becomes clear, add the country and/or city.
+
 2. 'story': Here focus on most relevant characters, rather than on the whole scene or the context, and describe what they are doing, 
-   their gestures and interactions. Discard elements too distant or barely visible. Minimum 130 - 160 words. 
+   their gestures and interactions. Discard elements too distant or barely visible.  
+   
 3. 'visual_accents': Here you must re-analyze the photo more carefully to detect others elements that may have gone unnoticed but add value to the scene/composition.
    Typically, you'll look for things like: Drawings, signs, symbols whose content adds visual value. Not obvious secondary characters but with some interest. 
-   An object / dress carried by someone that adds a nuance. Any subtle but relevant detail on the edges of the image or in the background.
-   Be specific. Don't describe "a table with many items" but rather find a specific, interesting item and mention it. Split the elements with pipes (|)
+   An object / dress weared by someone that adds a nuance. Any subtle but relevant detail on the edges of the image or in the background.
+   Be specific. Don't describe "a table with many items" but rather find a specific, interesting item and mention it. 
    
+Minimum lenghts for properties:
+1. 'context': 20 - 25 words
+2. 'story': 130 - 160 words
+3. 'visual_accents': 5 - 6 elements.
 
-📌 **Output Format + Example:**  
-json [
-     { 'context': "This image features a bustling city...", 
-       'story': "The main character is a woman standing...", 
-       'visual_accents': "poster with a flying dragon drawing | advertisement with a sensual woman's face | part of hand with icecream..."
-      },
-      ...
-   ]
+📌 **Output Example:**  
+\`\`\`json
+[
+   { 
+      'context': "This image features a bustling city...", 
+      'story': "The main character is a woman standing...", 
+      'visual_accents': "A poster with a red dragon drawing. Advertisement with a sensual woman's face. Hand sticking out with an ice cream"
+   },
+   ...
+]
+\`\`\`
 
 Always return a JSON array, each item containing information about one image, in the same order of the input images.
 `

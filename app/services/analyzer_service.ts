@@ -197,11 +197,11 @@ export default class AnalyzerProcessRunner {
 
     const cleanedResults = await this.cleanPhotosDescs(pendingPhotos, task)
 
-    console.log('[AnalyzerProcess]: TagTask: Fase 2 - Procesando solicitudes a GPT...')
+    console.log('[AnalyzerProcess]: TagTask: Procesando extracción de tags...')
 
     await this.requestTagsFromGPT(pendingPhotos, task, cleanedResults)
 
-    console.log('[AnalyzerProcess]: TagTask: Fase 3 - Filtrando y guardando en DB...')
+    console.log('[AnalyzerProcess]: TagTask: Filtrando y guardando en DB...')
 
     await task.commit()
 
@@ -282,13 +282,13 @@ export default class AnalyzerProcessRunner {
         if (!description) continue
 
         let descriptionChunks
-        let splitMethod = task.descriptionsChunksMethod[category]
+        let { type: splitMethod, maxLength } = task.descriptionsChunksMethod[category]
           ? task.descriptionsChunksMethod[category]
           : 'split_by_size'
         if (splitMethod === 'split_by_pipes') {
           descriptionChunks = description.split('|').filter((ch: string) => ch.length > 0)
         } else {
-          descriptionChunks = this.splitIntoChunks(description, description.length / 300)
+          descriptionChunks = this.splitIntoChunks(description, maxLength)
         }
 
         await DescriptionChunk.query()
@@ -493,14 +493,35 @@ export default class AnalyzerProcessRunner {
   }
 
   // Método auxiliar para dividir una descripción en chunks
-  private splitIntoChunks(desc: string, numChunks: number = 5): string[] {
+  // private splitIntoChunks(desc: string, numChunks: number = 5): string[] {
+  //   const sentences = desc.split(/(?<=[.!?])\s+/)
+  //   const totalSentences = sentences.length
+  //   const chunkSize = Math.ceil(totalSentences / numChunks)
+  //   const chunks: string[] = []
+  //   for (let i = 0; i < totalSentences; i += chunkSize) {
+  //     chunks.push(sentences.slice(i, i + chunkSize).join(' '))
+  //   }
+  //   return chunks
+  // }
+
+  private splitIntoChunks(desc: string, maxLength: number = 300): string[] {
     const sentences = desc.split(/(?<=[.!?])\s+/)
-    const totalSentences = sentences.length
-    const chunkSize = Math.ceil(totalSentences / numChunks)
     const chunks: string[] = []
-    for (let i = 0; i < totalSentences; i += chunkSize) {
-      chunks.push(sentences.slice(i, i + chunkSize).join(' '))
+    let currentChunk = ''
+
+    for (const sentence of sentences) {
+      const withSentence = currentChunk ? currentChunk + ' ' + sentence : sentence
+
+      if (withSentence.length <= maxLength) {
+        currentChunk = withSentence
+      } else {
+        if (currentChunk) chunks.push(currentChunk)
+        currentChunk = sentence // empieza nuevo chunk incluso si ya pasa de maxLength
+      }
     }
+
+    if (currentChunk) chunks.push(currentChunk)
+
     return chunks
   }
 

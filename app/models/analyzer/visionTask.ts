@@ -34,7 +34,6 @@ export class VisionTask extends AnalyzerTask {
                 }))
 
                 // Se podría re-chequear que los id's pertenecen a la foto (usando photoId)
-                console.log(`update de tagPhotos: ${JSON.stringify(tagPhotosToUpdate)}`)
 
                 return tagPhotosToUpdate.map((tagPhotoDelta) =>
                   tagPhotoManager.updateTagPhoto(tagPhotoDelta.id, {
