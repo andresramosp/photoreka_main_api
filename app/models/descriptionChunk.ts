@@ -1,4 +1,4 @@
-import { BaseModel, beforeSave, column } from '@adonisjs/lucid/orm'
+import { BaseModel, beforeSave, column, computed } from '@adonisjs/lucid/orm'
 
 export default class DescriptionChunk extends BaseModel {
   public static table = 'descriptions_chunks'
@@ -20,6 +20,11 @@ export default class DescriptionChunk extends BaseModel {
 
   @column({ serializeAs: null })
   declare embedding: string
+
+  @computed()
+  public get parsedEmbedding(): number[] {
+    return JSON.parse(this.embedding)
+  }
 
   // Hook para formatear embedding antes de guardar
   @beforeSave()

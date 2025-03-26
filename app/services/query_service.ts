@@ -20,7 +20,8 @@ export default class QueryService {
 
   public async structureQuery(query) {
     const numberOfWords = query.split(' ').length
-    if (numberOfWords > 3) {
+    if (false) {
+      //} (numberOfWords > 3) {
       return this.structureQueryLLM(query)
     } else {
       return this.structureQueryNLP(query)
@@ -29,11 +30,11 @@ export default class QueryService {
 
   // withCost()
   // TODO: userid!!
-  @withCache({
-    key: (arg1) => `structureQuery_${arg1}`,
-    provider: 'redis',
-    ttl: 60 * 10,
-  })
+  // @withCache({
+  //   key: (arg1) => `structureQuery_${arg1}`,
+  //   provider: 'redis',
+  //   ttl: 60 * 10,
+  // })
   public async structureQueryNLP(query) {
     let expansionCost = 0
     let structuredResult = await this.modelsService.getStructuredQuery(query)

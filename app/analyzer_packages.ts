@@ -173,7 +173,8 @@ export const packages = [
     ],
   },
   {
-    // 0,002 por foto
+    // con request de 6, 0,002 por foto
+    // probar request de 4 para ver si va mejor, si no high
     id: 'topological_upgrade',
     tasks: [
       {
@@ -184,7 +185,7 @@ export const packages = [
         resolution: 'low',
         targetFieldType: 'tag_area',
         prompts: [MESSAGE_ANALYZER_GPT_TOPOLOGIC_TAGS],
-        imagesPerBatch: 6,
+        imagesPerBatch: 4,
         useGuideLines: true,
         promptDependentField: null,
       },

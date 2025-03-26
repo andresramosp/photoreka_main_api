@@ -16,6 +16,8 @@ import {
   MESSAGE_SEARCH_MODEL_CREATIVE,
   MESSAGE_SEARCH_MODEL_CREATIVE_ONLY_IMAGE,
 } from '../utils/prompts/insights.js'
+import DescriptionChunk from '#models/descriptionChunk'
+import EmbeddingsService from './embeddings_service.js'
 
 export type SearchMode = 'logical' | 'creative'
 export type SearchType = 'semantic' | 'tags' | 'topological'
@@ -38,17 +40,31 @@ export type SearchTopologicalOptions = SearchOptions & {
   middle: string
 }
 
+export type SearchByPhotoOptions = {
+  photoIds: number[]
+  currentPhotosIds: number[]
+  criteria: 'semantic' | 'aesthetic' | 'chromatic' | 'topological' | 'geometrical' | 'tags'
+  opposite: boolean
+  tagsIds: number[] // para criteria 'tags'
+  descriptionCategory: string // para criteria 'semantic'
+  iteration: number
+  pageSize: number
+  withInsights?: boolean
+}
+
 export default class SearchService {
   public modelsService: ModelsService = null
   public photoManager: PhotoManager = null
   public queryService: QueryService = null
   public scoringService: ScoringService = null
+  public embeddingsService: EmbeddingsService = null
 
   constructor() {
     this.modelsService = new ModelsService()
     this.photoManager = new PhotoManager()
     this.queryService = new QueryService()
     this.scoringService = new ScoringService()
+    this.embeddingsService = new EmbeddingsService()
   }
 
   sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -196,7 +212,6 @@ export default class SearchService {
     }
   }
 
-  //   @withCostWS
   public async *searchTopological(query: any, options: SearchTopologicalOptions) {
     const { pageSize, iteration, searchMode } = options
     const photos = await this.photoManager.getPhotosByUser('1234')
@@ -229,6 +244,62 @@ export default class SearchService {
     }
   }
 
+  public async searchByPhotos(query: SearchByPhotoOptions) {
+    const { pageSize, iteration } = query
+    const photos = await this.photoManager.getPhotosByUser('1234')
+    const selectedPhotos = await this.photoManager.getPhotosByIds(query.photoIds)
+
+    let scoredPhotos: Photo[]
+
+    if (query.criteria == 'semantic') {
+      const photosToSearch = photos.filter(
+        (photo: Photo) => !query.currentPhotosIds.includes(photo.id)
+      )
+      const selectedPhoto = selectedPhotos[0]
+      await selectedPhoto.load('descriptionChunks')
+      const descChunk = selectedPhotos[0].descriptionChunks.find(
+        (dc: DescriptionChunk) => dc.category == query.descriptionCategory
+      )
+      const similarChunks = await this.embeddingsService.findSimilarChunkToEmbedding(
+        descChunk?.parsedEmbedding,
+        0.4,
+        3,
+        'cosine_similarity',
+        photosToSearch.map((p) => p.id),
+        [query.descriptionCategory]
+      )
+
+      const chunkMap = new Map<string | number, number>(
+        similarChunks.map((chunk) => [chunk.id, chunk.proximity])
+      )
+
+      const relevantPhotos = photos.filter((photo) =>
+        photo.descriptionChunks?.some((chunk) => chunkMap.has(chunk.id))
+      )
+      scoredPhotos = relevantPhotos.map((photo) => {
+        const matchingPhotoChunks =
+          photo.descriptionChunks?.filter((chunk) => chunkMap.has(chunk.id)) || []
+
+        const proximities = matchingPhotoChunks.map((chunk) => chunkMap.get(chunk.id)!)
+        let descScore = this.scoringService.calculateProximitiesScores(proximities)
+
+        return { photo, descScore }
+      })
+
+      scoredPhotos = scoredPhotos
+        .filter((score) => score.descScore > 0)
+        .sort((a, b) => b.descScore - a.descScore)
+        .map((sc) => sc.photo)
+    }
+
+    // const { paginatedPhotos, hasMore } = this.getPaginatedPhotosByPage(
+    //   embeddingScoredPhotos,
+    //   pageSize,
+    //   iteration
+    // )
+
+    return scoredPhotos
+  }
   // AUXILIARES //
 
   private getPaginatedPhotosByPage(embeddingScoredPhotos, pageSize, currentIteration) {

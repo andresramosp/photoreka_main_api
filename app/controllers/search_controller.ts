@@ -82,4 +82,19 @@ export default class SearchController {
       return response.internalServerError({ message: 'Error fetching photos' })
     }
   }
+
+  public async searchByPhotos({ response, request }: HttpContext) {
+    try {
+      const searchService = new SearchService()
+
+      const query: any = request.body()
+
+      const result = await searchService.searchByPhotos(query)
+
+      return response.ok(result)
+    } catch (error) {
+      console.error('Error fetching photos:', error)
+      return response.internalServerError({ message: 'Error fetching photos' })
+    }
+  }
 }
