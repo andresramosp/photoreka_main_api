@@ -251,35 +251,39 @@ export default class SearchService {
 
     let scoredPhotos: Photo[]
 
-    if (query.criteria == 'semantic') {
+    if (query.criteria === 'semantic') {
+      // Excluir fotos ya mostradas
       const photosToSearch = photos.filter(
         (photo: Photo) => !query.currentPhotosIds.includes(photo.id)
       )
-      const basePhoto = selectedPhotos[0]
-      await basePhoto.load('descriptionChunks')
 
-      // Obtener todos los chunks que correspondan a la categoría
-      const baseChunks = basePhoto.descriptionChunks.filter(
-        (dc: DescriptionChunk) => dc.category === query.descriptionCategory
-      )
+      // Recopilar todos los chunks de todas las fotos base
+      let baseChunks: DescriptionChunk[] = []
+      for (const basePhoto of selectedPhotos) {
+        await basePhoto.load('descriptionChunks')
+        baseChunks.push(
+          ...basePhoto.descriptionChunks.filter(
+            (dc: DescriptionChunk) => dc.category === query.descriptionCategory
+          )
+        )
+      }
 
-      // Buscar chunks similares para cada chunk de la foto base
+      // Buscar chunks similares para cada chunk base
       const similarChunksArrays = await Promise.all(
         baseChunks.map((dc) =>
           this.embeddingsService.findSimilarChunkToEmbedding(
             dc.parsedEmbedding,
             0.4,
-            100,
+            50,
             'cosine_similarity',
             photosToSearch.map((p) => p.id),
             [query.descriptionCategory]
           )
         )
       )
-      // Unificar los resultados de cada llamada
       const similarChunks = similarChunksArrays.flat()
 
-      // Combinar resultados: tomar el máximo score para cada chunk único
+      // Combinar resultados: tomar el mayor proximity para cada chunk único
       const chunkMap = new Map<string | number, number>()
       similarChunks.forEach((chunk) => {
         if (!chunkMap.has(chunk.id) || chunk.proximity > chunkMap.get(chunk.id)) {
@@ -287,26 +291,100 @@ export default class SearchService {
         }
       })
 
-      // Filtrar y puntuar las fotos según los chunks encontrados
+      // Filtrar y puntuar las fotos candidatas según los chunks coincidentes
       const relevantPhotos = photos.filter((photo) =>
         photo.descriptionChunks?.some((chunk) => chunkMap.has(chunk.id))
       )
       scoredPhotos = relevantPhotos.map((photo) => {
-        const matchingPhotoChunks =
+        const matchingChunks =
           photo.descriptionChunks?.filter((chunk) => chunkMap.has(chunk.id)) || []
-        const proximities = matchingPhotoChunks.map((chunk) => chunkMap.get(chunk.id)!)
+        const proximities = matchingChunks.map((chunk) => chunkMap.get(chunk.id)!)
         const descScore = this.scoringService.calculateProximitiesScores(proximities)
         return { photo, descScore }
       })
 
       scoredPhotos = scoredPhotos
-        .filter((score) => score.descScore > 0)
+        .filter((sc) => sc.descScore > 0)
         .sort((a, b) => b.descScore - a.descScore)
         .map((sc) => sc.photo)
     }
 
     return scoredPhotos.slice(0, 3)
   }
+
+  public async searchByPhotosV2(query: SearchByPhotoOptions): Promise<Photo[]> {
+    const { pageSize, iteration } = query
+    const photos = await this.photoManager.getPhotosByUser('1234')
+    const selectedPhotos = await this.photoManager.getPhotosByIds(query.photoIds)
+
+    let scoredPhotos: Photo[] = []
+
+    if (query.criteria === 'semantic') {
+      // Excluir fotos ya mostradas
+      const photosToSearch = photos.filter(
+        (photo: Photo) => !query.currentPhotosIds.includes(photo.id)
+      )
+
+      // Recopilar todos los chunks de todas las fotos base
+      let baseChunks: DescriptionChunk[] = []
+      for (const basePhoto of selectedPhotos) {
+        await basePhoto.load('descriptionChunks')
+        baseChunks.push(
+          ...basePhoto.descriptionChunks.filter(
+            (dc: DescriptionChunk) => dc.category === query.descriptionCategory
+          )
+        )
+      }
+
+      if (baseChunks.length === 0) return []
+
+      // Calcular el vector combinado (promedio aritmético de los embeddings)
+      const combinedEmbedding = baseChunks
+        .reduce((acc: number[], dc: DescriptionChunk, idx: number) => {
+          if (idx === 0) return dc.parsedEmbedding.slice() // copia del primer embedding
+          return acc.map((val, i) => val + dc.parsedEmbedding[i])
+        }, [])
+        .map((val) => val / baseChunks.length)
+
+      // Buscar chunks similares usando el embedding combinado
+      const similarChunks = await this.embeddingsService.findSimilarChunkToEmbedding(
+        combinedEmbedding,
+        0.4,
+        50,
+        'cosine_similarity',
+        photosToSearch.map((p) => p.id),
+        [query.descriptionCategory]
+      )
+
+      // Crear un mapa para conservar el mayor proximity de cada chunk
+      const chunkMap = new Map<string | number, number>()
+      similarChunks.forEach((chunk) => {
+        if (!chunkMap.has(chunk.id) || chunk.proximity > chunkMap.get(chunk.id)) {
+          chunkMap.set(chunk.id, chunk.proximity)
+        }
+      })
+
+      // Filtrar y puntuar las fotos candidatas según los chunks coincidentes
+      const relevantPhotos = photos.filter((photo) =>
+        photo.descriptionChunks?.some((chunk) => chunkMap.has(chunk.id))
+      )
+      scoredPhotos = relevantPhotos.map((photo) => {
+        const matchingChunks =
+          photo.descriptionChunks?.filter((chunk) => chunkMap.has(chunk.id)) || []
+        const proximities = matchingChunks.map((chunk) => chunkMap.get(chunk.id)!)
+        const descScore = this.scoringService.calculateProximitiesScores(proximities)
+        return { photo, descScore }
+      })
+
+      scoredPhotos = scoredPhotos
+        .filter((sc) => sc.descScore > 0)
+        .sort((a, b) => b.descScore - a.descScore)
+        .map((sc) => sc.photo)
+    }
+
+    return scoredPhotos.slice(0, 3)
+  }
+
   // AUXILIARES //
 
   private getPaginatedPhotosByPage(embeddingScoredPhotos, pageSize, currentIteration) {
