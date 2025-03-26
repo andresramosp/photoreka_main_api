@@ -255,34 +255,47 @@ export default class SearchService {
       const photosToSearch = photos.filter(
         (photo: Photo) => !query.currentPhotosIds.includes(photo.id)
       )
-      const selectedPhoto = selectedPhotos[0]
-      await selectedPhoto.load('descriptionChunks')
-      const descChunk = selectedPhotos[0].descriptionChunks.find(
-        (dc: DescriptionChunk) => dc.category == query.descriptionCategory
-      )
-      const similarChunks = await this.embeddingsService.findSimilarChunkToEmbedding(
-        descChunk?.parsedEmbedding,
-        0.4,
-        3,
-        'cosine_similarity',
-        photosToSearch.map((p) => p.id),
-        [query.descriptionCategory]
+      const basePhoto = selectedPhotos[0]
+      await basePhoto.load('descriptionChunks')
+
+      // Obtener todos los chunks que correspondan a la categoría
+      const baseChunks = basePhoto.descriptionChunks.filter(
+        (dc: DescriptionChunk) => dc.category === query.descriptionCategory
       )
 
-      const chunkMap = new Map<string | number, number>(
-        similarChunks.map((chunk) => [chunk.id, chunk.proximity])
+      // Buscar chunks similares para cada chunk de la foto base
+      const similarChunksArrays = await Promise.all(
+        baseChunks.map((dc) =>
+          this.embeddingsService.findSimilarChunkToEmbedding(
+            dc.parsedEmbedding,
+            0.4,
+            100,
+            'cosine_similarity',
+            photosToSearch.map((p) => p.id),
+            [query.descriptionCategory]
+          )
+        )
       )
+      // Unificar los resultados de cada llamada
+      const similarChunks = similarChunksArrays.flat()
 
+      // Combinar resultados: tomar el máximo score para cada chunk único
+      const chunkMap = new Map<string | number, number>()
+      similarChunks.forEach((chunk) => {
+        if (!chunkMap.has(chunk.id) || chunk.proximity > chunkMap.get(chunk.id)) {
+          chunkMap.set(chunk.id, chunk.proximity)
+        }
+      })
+
+      // Filtrar y puntuar las fotos según los chunks encontrados
       const relevantPhotos = photos.filter((photo) =>
         photo.descriptionChunks?.some((chunk) => chunkMap.has(chunk.id))
       )
       scoredPhotos = relevantPhotos.map((photo) => {
         const matchingPhotoChunks =
           photo.descriptionChunks?.filter((chunk) => chunkMap.has(chunk.id)) || []
-
         const proximities = matchingPhotoChunks.map((chunk) => chunkMap.get(chunk.id)!)
-        let descScore = this.scoringService.calculateProximitiesScores(proximities)
-
+        const descScore = this.scoringService.calculateProximitiesScores(proximities)
         return { photo, descScore }
       })
 
@@ -292,13 +305,7 @@ export default class SearchService {
         .map((sc) => sc.photo)
     }
 
-    // const { paginatedPhotos, hasMore } = this.getPaginatedPhotosByPage(
-    //   embeddingScoredPhotos,
-    //   pageSize,
-    //   iteration
-    // )
-
-    return scoredPhotos
+    return scoredPhotos.slice(0, 3)
   }
   // AUXILIARES //
 
