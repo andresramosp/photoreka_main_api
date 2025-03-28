@@ -15,6 +15,7 @@ import PhotoManager from '../managers/photo_manager.js'
 import {
   MESSAGE_SEARCH_MODEL_CREATIVE,
   MESSAGE_SEARCH_MODEL_CREATIVE_ONLY_IMAGE,
+  MESSAGE_SEARCH_MODEL_STRICT,
 } from '../utils/prompts/insights.js'
 import DescriptionChunk from '#models/descriptionChunk'
 import EmbeddingsService from './embeddings_service.js'
@@ -128,27 +129,27 @@ export default class SearchService {
         photoBatches.push(paginatedPhotos.slice(i, i + batchSize))
       }
 
-      const batchPromises = photoBatches.map(async (batch) => {
-        const { modelResult, modelCost } = await this.processBatch(
+      const batchPromises = photoBatches.map(async (batch, index) => {
+        await this.sleep(250 * index)
+        const { modelResult, modelCost } = await this.processBatchInsightsDesc(
           batch,
           structuredResult,
-          sourceResult,
-          searchMode,
-          paginatedPhotos
+          searchMode
         )
 
         modelCosts.push(modelCost)
 
         return batch
           .map((item) => {
+            console.log(modelResult)
             const result = modelResult.find((res) => res.id === item.photo.tempID)
             const reasoning = result?.reasoning || ''
-            const isIncluded =
-              result?.isIncluded == true || result?.isIncluded == 'true' ? true : false
+            const isInsight =
+              result?.isInsight == true || result?.isInsight == 'true' ? true : false
 
             return reasoning
-              ? { photo: item.photo, score: item.tagScore, isIncluded, reasoning }
-              : { photo: item.photo, score: item.tagScore, isIncluded }
+              ? { photo: item.photo, score: item.tagScore, isInsight, reasoning }
+              : { photo: item.photo, score: item.tagScore, isInsight }
           })
           .filter((item) => modelResult.find((res) => res.id === item.photo.tempID))
       })
@@ -179,7 +180,7 @@ export default class SearchService {
       }
 
       await this.sleep(750)
-    } while (!photosResult.some((p) => p.isIncluded))
+    } while (!photosResult.some((p) => p.isInsight))
   }
 
   //   @withCostWS
@@ -387,6 +388,120 @@ export default class SearchService {
 
   // AUXILIARES //
 
+  public async processBatchInsightsDesc(
+    batch: any[],
+    structuredResult: any,
+    searchMode: SearchMode
+  ) {
+    const searchModelMessage =
+      searchMode == 'creative' ? MESSAGE_SEARCH_MODEL_CREATIVE(true) : MESSAGE_SEARCH_MODEL_STRICT()
+    const photosWithChunks = []
+    const defaultResultsMap: { [key: string]: any } = {}
+
+    // Prellenamos defaultResultsMap para todas las fotos
+    for (const batchedPhoto of batch) {
+      defaultResultsMap[batchedPhoto.photo.tempID] = {
+        id: batchedPhoto.photo.tempID,
+        isInsight: false,
+        reasoning: null,
+      }
+    }
+
+    // Procesamos cada foto: si se obtienen chunks se añaden a la colección para el modelo
+    for (const batchedPhoto of batch) {
+      const descChunks = await this.scoringService.getNearChunksFromDesc(
+        batchedPhoto.photo,
+        structuredResult.no_prefix,
+        0.1
+      )
+      const chunkedDesc = descChunks.map((dc) => dc.text_chunk).join(' ... ')
+      if (chunkedDesc) {
+        photosWithChunks.push({
+          id: batchedPhoto.photo.tempID,
+          description: chunkedDesc,
+          visual_accents: batchedPhoto.photo.descriptions.visual_accents,
+        })
+      }
+    }
+
+    // Llamamos al modelo con las fotos que tienen chunks
+    let modelResponse
+    if (photosWithChunks.length) {
+      modelResponse = await this.modelsService.getGPTResponse(
+        searchModelMessage,
+        JSON.stringify({
+          query: structuredResult.original,
+          collection: photosWithChunks,
+        }),
+        'gpt-4o', //deepseek-chat
+        null,
+        1.1,
+        false
+      )
+    }
+
+    // Sobreescribimos defaultResultsMap con los resultados que devuelve el modelo
+    const modelResults = modelResponse ? modelResponse.result : []
+    for (const result of modelResults) {
+      defaultResultsMap[result.id] = result
+    }
+
+    const combinedResults = batch.map(
+      (batchedPhoto) => defaultResultsMap[batchedPhoto.photo.tempID]
+    )
+
+    return {
+      modelResult: combinedResults,
+      modelCost: modelResponse ? modelResponse.cost : 0,
+    }
+  }
+
+  public async processBatchInsightsImage(
+    batch: any[],
+    structuredResult: any,
+    paginatedPhotos: any[]
+  ) {
+    // Se asume siempre creative y requireSource === 'image'
+    const searchModelMessage = MESSAGE_SEARCH_MODEL_CREATIVE_ONLY_IMAGE
+    const chunkPromises = batch.map(async (batchedPhoto) => {
+      const descChunks = await this.scoringService.getNearChunksFromDesc(
+        batchedPhoto.photo,
+        structuredResult.no_prefix,
+        0.1
+      )
+      return {
+        tempID: batchedPhoto.photo.tempID,
+        chunkedDesc: descChunks.map((dc) => dc.text_chunk).join(' ... '),
+      }
+    })
+    let chunkResults = await Promise.all(chunkPromises)
+    chunkResults = chunkResults.filter((cp) => cp.chunkedDesc)
+
+    if (chunkResults.length) {
+      const imagesPayload = await this.generateImagesPayload(
+        paginatedPhotos.map((pp) => pp.photo),
+        batch.map((cp) => cp.photo.id)
+      )
+      const { result: modelResult, cost: modelCost } = await this.modelsService.getGPTResponse(
+        searchModelMessage(chunkResults.map((cp) => cp.tempID)),
+        [
+          {
+            type: 'text',
+            text: JSON.stringify({ query: structuredResult.original }),
+          },
+          ...imagesPayload,
+        ],
+        'gpt-4o',
+        null,
+        1.1,
+        false
+      )
+      return { modelResult, modelCost }
+    } else {
+      return { modelResult: [], modelCost: 0 }
+    }
+  }
+
   private getPaginatedPhotosByPage(embeddingScoredPhotos, pageSize, currentIteration) {
     const offset = (currentIteration - 1) * pageSize
     const paginatedPhotos = embeddingScoredPhotos.slice(offset, offset + pageSize)
@@ -409,74 +524,6 @@ export default class SearchService {
     // Determinar si hay más fotos en rangos inferiores
     const hasMore = embeddingScoredPhotos.some((photo) => photo.matchPercent < lowerBound)
     return { hasMore, paginatedPhotos }
-  }
-
-  public async processBatch(
-    batch: any[],
-    structuredResult: any,
-    sourceResult: any,
-    searchMode: SearchMode,
-    paginatedPhotos: any[]
-  ) {
-    let searchModelMessage
-
-    if (searchMode === 'creative' || searchMode === 'semantic') {
-      searchModelMessage =
-        sourceResult.requireSource === 'image'
-          ? MESSAGE_SEARCH_MODEL_CREATIVE_ONLY_IMAGE
-          : MESSAGE_SEARCH_MODEL_CREATIVE(true)
-    }
-
-    let needImage = sourceResult.requireSource == 'image'
-    const method = 'getGPTResponse' // !needImage ? 'getDSResponse' : 'getGPTResponse'
-    let chunkPromises = batch.map(async (batchedPhoto) => {
-      const descChunks = await this.scoringService.getNearChunksFromDesc(
-        batchedPhoto.photo,
-        structuredResult.no_prefix,
-        0.1
-      )
-      return {
-        tempID: batchedPhoto.photo.tempID,
-        chunkedDesc: descChunks.map((dc) => dc.text_chunk).join(' ... '),
-      }
-    })
-    let chunkResults = await Promise.all(chunkPromises)
-    chunkResults = chunkResults.filter((cp) => cp.chunkedDesc)
-    if (chunkResults.length) {
-      const { result: modelResult, cost: modelCost } = await this.modelsService[method](
-        !needImage ? searchModelMessage : searchModelMessage(chunkResults.map((cp) => cp.tempID)),
-        !needImage
-          ? JSON.stringify({
-              query: structuredResult.original,
-              collection: chunkResults.map((chunkedPhoto) => ({
-                id: chunkedPhoto.tempID,
-                description: chunkedPhoto.chunkedDesc,
-                tags: undefined,
-              })),
-            })
-          : [
-              {
-                type: 'text',
-                text: JSON.stringify({ query: structuredResult.original }),
-              },
-              ...(await this.generateImagesPayload(
-                paginatedPhotos.map((pp) => pp.photo),
-                batch.map((cp) => cp.photo.id)
-              )),
-            ],
-        method == 'getGPTResponse' ? 'gpt-4o' : 'deepseek-chat',
-        null,
-        searchMode === 'creative' ? 1.1 : 0.5,
-        false
-      )
-
-      return {
-        modelResult,
-        modelCost,
-      }
-    } else {
-      return { modelResult: [], modelCost: 0 }
-    }
   }
 
   public async generateImagesPayload(photos: Photo[], photoIds: string[]) {

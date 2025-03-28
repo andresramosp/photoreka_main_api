@@ -14,6 +14,7 @@ const SearchController = () => import('#controllers/search_controller')
 const TagsController = () => import('#controllers/tags_controller')
 
 router.get('/api/catalog', [CatalogController, 'getPhotos'])
+router.post('/api/catalog/photosByIds', [CatalogController, 'getPhotosByIds'])
 router.get('/api/catalog/google/sync', [CatalogController, 'syncGooglePhotos'])
 router.get('/api/catalog/google/callback', [CatalogController, 'callbackGooglePhotos'])
 router.post('/api/catalog/uploadLocal', [CatalogController, 'uploadLocal'])

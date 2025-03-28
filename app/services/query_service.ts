@@ -20,8 +20,7 @@ export default class QueryService {
 
   public async structureQuery(query) {
     const numberOfWords = query.split(' ').length
-    if (false) {
-      //} (numberOfWords > 3) {
+    if (numberOfWords > 3) {
       return this.structureQueryLLM(query)
     } else {
       return this.structureQueryNLP(query)
@@ -60,18 +59,20 @@ export default class QueryService {
 
     const { result: modelResult, cost: modelCost } = await this.modelsService.getGPTResponse(
       MESSAGE_QUERY_STRUCTURE,
-      JSON.stringify({ query: noPrefixResult }),
+      JSON.stringify({ noPrefixResult }),
       'gpt-4o-mini'
     )
 
     modelResult.original = query
-    modelResult.positive_segments = [
-      ...new Set([...modelResult.positive_segments, ...modelResult.named_entities]),
-    ]
-    modelResult.nuances_segments = [
-      ...new Set(Object.values(modelResult.expanded_named_entities).flat()),
-    ]
+    modelResult.positive_segments = [...new Set([...modelResult.positive_segments])]
     modelResult.no_prefix = noPrefixResult
+
+    // modelResult.positive_segments = [
+    //   ...new Set([...modelResult.positive_segments, ...modelResult.named_entities]),
+    // ]
+    // modelResult.nuances_segments = [
+    //   ...new Set(Object.values(modelResult.expanded_named_entities).flat()),
+    // ]
 
     console.log(
       `[processQuery]: Result for ${query} -> ${JSON.stringify(modelResult.positive_segments)} | ${JSON.stringify(modelResult.nuances_segments)}`

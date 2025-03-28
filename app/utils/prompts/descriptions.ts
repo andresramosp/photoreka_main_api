@@ -35,7 +35,7 @@ export const MESSAGE_ANALYZER_GPT_CONTEXT_STORY_ACCENTS = (photosBatch: Photo[])
    Be specific. Don't describe "a table with many items" but rather find a specific, interesting item and mention it. 
    
 Minimum lenghts for properties:
-1. 'context': 20 - 25 words
+1. 'context': 25 - 30 words
 2. 'story': 130 - 160 words
 3. 'visual_accents': 5 - 6 elements.
 

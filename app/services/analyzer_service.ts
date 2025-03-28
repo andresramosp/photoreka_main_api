@@ -14,6 +14,7 @@ import { parseJSONSafe } from '../utils/jsonUtils.js'
 import { VisionTask } from '#models/analyzer/visionTask'
 import { TagTask } from '#models/analyzer/tagTask'
 import { ChunkTask } from '#models/analyzer/chunkTask'
+import { AnalyzerTask } from '#models/analyzer/analyzerTask'
 
 export default class AnalyzerProcessRunner {
   private process: AnalyzerProcess
@@ -39,7 +40,7 @@ export default class AnalyzerProcessRunner {
       tasks = getTaskList(this.process?.packageId)
     }
     this.process.mode = mode
-    const photosToProcess = this.getPhotosByMode(userPhotos)
+    const photosToProcess = this.getInitialPhotos(userPhotos)
 
     tasks = getTaskList(packageId)
     this.process.currentStage = 'init' // TODO: esto puede variar en 'retry'
@@ -54,22 +55,14 @@ export default class AnalyzerProcessRunner {
     )
   }
 
-  public getPhotosByMode(userPhotos: Photo[]) {
-    // Se añaden nuevas fotos al catálogo para hacelres un análisis ya hecho antes a otras fotos
+  public getInitialPhotos(userPhotos: Photo[]) {
     if (this.process.mode == 'adding') {
       return userPhotos.filter((photo: Photo) => !photo.analyzerProcess)
-    }
-    // Primera vez (o upgrade) o rehaciendo de nuevo desde 0
-    if (this.process.mode == 'first' || this.process.mode == 'remake') {
+    } else if (this.process.mode == 'first' || this.process.mode == 'remake') {
       return userPhotos
-    }
-    // Reintento de un proceso en curso fallido en algunas fotos / fases
-    // Nos basamos en el registro de failed
-    if (this.process.mode == 'retry') {
-      const failedPhotos = Object.keys(this.process.failed).map((id: string) =>
-        userPhotos.find((photo) => photo.id == id)
-      )
-      return failedPhotos
+    } else {
+      // En retry no hay fotos iniciales, la primera stage cogerá sus fallidas
+      return []
     }
   }
 
@@ -124,7 +117,7 @@ export default class AnalyzerProcessRunner {
     }
 
     // 1. Obtenemos el listado completo de imágenes a procesar
-    const pendingPhotoImages: PhotoImage[] = await this.getPendingPhotosForVisionTask(task)
+    const pendingPhotoImages: PhotoImage[] = await this.getPendingPhotosForTask(task)
 
     // 2. Agrupamos las imágenes en lotes ("batches")
     const batches: PhotoImage[][] = []
@@ -165,6 +158,9 @@ export default class AnalyzerProcessRunner {
       response.result.forEach((res, photoIndex) => {
         const { ...results } = res
         const photoId = batch[photoIndex].photo.id
+        // if (photoId == 129) {
+        //   console.log()
+        // }
         task.data[photoId] = { ...task.data[photoId], ...results }
       })
 
@@ -193,7 +189,7 @@ export default class AnalyzerProcessRunner {
       task.data = {}
     }
 
-    const pendingPhotos = await this.getPendingPhotosForTagsTask(task)
+    const pendingPhotos = await this.getPendingPhotosForTask(task)
 
     const cleanedResults = await this.cleanPhotosDescs(pendingPhotos, task)
 
@@ -450,59 +446,37 @@ export default class AnalyzerProcessRunner {
     return result
   }
 
-  private async getPendingPhotosForVisionTask(task: VisionTask): Promise<PhotoImage[]> {
+  // Dada una tarea obtiene las fotos que quedan en el "embudo" del pipeline y añada sus propias fallidas si las hay
+  private async getPendingPhotosForTask(task: AnalyzerTask): Promise<PhotoImage[] | Photo[]> {
     await this.process.load('photos')
-    let pendingPhotosIds: string[] = []
+    // Cogemos las fotos actualmente en el pipeline (las fallidas de fases previas se habrán borrado)
+    let pendingPhotosPipelineIds: string[] = this.process.photos.map((p) => p.id)
+    let currentTaskIndex = this.process.tasks?.findIndex((t) => t.name == task.name)
+    let previousTaskNames = this.process.tasks?.slice(0, currentTaskIndex).map((t) => t.name)
+    let failedInPreviousStagesIds: string[] = this.process.failed
+      ? Object.keys(this.process.failed).filter((nameId) => previousTaskNames.includes(nameId))
+      : []
+    pendingPhotosPipelineIds = pendingPhotosPipelineIds.filter(
+      (id) => !failedInPreviousStagesIds.includes(id)
+    )
 
-    if (this.process.mode !== 'retry') {
-      // En modo normal, se usan todas las fotos
-      pendingPhotosIds = this.process.photos.map((p) => p.id)
-    } else {
-      // Procesamos siempre todas las fallidas en cada fase, hasta afinar proceso
-      pendingPhotosIds = this.process.photos
-        // .filter((p: Photo) => {
-        //   const failedStages: string[] = this.process.failed ? this.process.failed[p.id] || [] : []
-        //   return failedStages.includes(task.name)
-        // })
-        .map((p: Photo) => p.id)
+    // Si retry, añadimos las fallidas de esta fase
+    if (this.process.mode == 'retry') {
+      const failedPhotosForStageIds = Object.keys(this.process.failed).filter(
+        (id) => this.process.failed[id] == task.name
+      )
+      pendingPhotosPipelineIds = pendingPhotosPipelineIds.concat(failedPhotosForStageIds)
     }
 
-    const field = task.useGuideLines ? 'photoImagesWithGuides' : 'photoImages'
-    return this.process[field].filter((pi: PhotoImage) => pendingPhotosIds.includes(pi.photo.id))
-  }
-
-  private async getPendingPhotosForTagsTask(task: TagTask): Promise<Photo[]> {
-    await this.process.load('photos', (query) => {
-      query.preload('tags')
-    })
-
-    let pendingPhotos: Photo[] = []
-
-    if (this.process.mode !== 'retry') {
-      pendingPhotos = this.process.photos
+    if (task instanceof VisionTask) {
+      const field = task.useGuideLines ? 'photoImagesWithGuides' : 'photoImages'
+      return this.process[field].filter((pi: PhotoImage) =>
+        pendingPhotosPipelineIds.includes(pi.photo.id)
+      )
     } else {
-      // Procesamos siempre todas las fallidas en cada fase, hasta afinar proceso
-      pendingPhotos = this.process.photos
-      // .filter((p: Photo) => {
-      //   const failedStages: string[] = this.process.failed ? this.process.failed[p.id] || [] : []
-      //   return failedStages.includes(task.name)
-      // })
+      return this.process.photos.filter((p: Photo) => pendingPhotosPipelineIds.includes(p.id))
     }
-
-    return pendingPhotos
   }
-
-  // Método auxiliar para dividir una descripción en chunks
-  // private splitIntoChunks(desc: string, numChunks: number = 5): string[] {
-  //   const sentences = desc.split(/(?<=[.!?])\s+/)
-  //   const totalSentences = sentences.length
-  //   const chunkSize = Math.ceil(totalSentences / numChunks)
-  //   const chunks: string[] = []
-  //   for (let i = 0; i < totalSentences; i += chunkSize) {
-  //     chunks.push(sentences.slice(i, i + chunkSize).join(' '))
-  //   }
-  //   return chunks
-  // }
 
   private splitIntoChunks(desc: string, maxLength: number = 300): string[] {
     const sentences = desc.split(/(?<=[.!?])\s+/)

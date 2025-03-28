@@ -59,7 +59,8 @@ export default class PhotoManager {
       .preload('tags', (query) => {
         query.preload('tag')
       })
-      .orderBy('created_at', 'asc')
+      .orderBy('created_at', 'desc')
+    // .limit(10)
     return photos
   }
 

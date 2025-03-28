@@ -57,7 +57,7 @@ export default class TagManager {
 
     const existingTag = await this.getTagByNameAndGroup(tag.name, tag.group)
     if (existingTag) {
-      console.log(`Using existing exact tag for ${tag.name}: ${existingTag.name}`)
+      // console.log(`Using existing exact tag for ${tag.name}: ${existingTag.name}`)
       return existingTag
     }
 
@@ -71,7 +71,7 @@ export default class TagManager {
     // TODO: asegurarse de que el primero es el mejor, ¿por qué devolviamos varios?
     if (similarTagsResult.length > 0) {
       const similarTag = similarTagsResult[0] as Tag
-      console.log(`Using existing similar tags for ${tag.name}: ${similarTag.name}`)
+      // console.log(`Using existing similar tags for ${tag.name}: ${similarTag.name}`)
       return similarTag
     }
 

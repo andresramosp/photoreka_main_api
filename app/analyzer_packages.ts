@@ -51,8 +51,8 @@ export const packages = [
         model: null,
         descriptionSourceFields: ['context', 'story', 'visual_accents'],
         descriptionsChunksMethod: {
-          context: { type: 'split_by_size', maxLength: 300 },
-          story: { type: 'split_by_size', maxLength: 300 },
+          context: { type: 'split_by_size', maxLength: 150 },
+          story: { type: 'split_by_size', maxLength: 150 },
           visual_accents: { type: 'split_by_size', maxLength: 15 },
         },
       },
@@ -173,8 +173,8 @@ export const packages = [
     ],
   },
   {
-    // con request de 6, 0,002 por foto
-    // probar request de 4 para ver si va mejor, si no high
+    // con request de 6, 0,002 por foto en low, 1500px (va regu)
+    // con request de 4, 0,0038 for foto, high, 1000px
     id: 'topological_upgrade',
     tasks: [
       {
@@ -182,7 +182,7 @@ export const packages = [
         type: 'VisionTask',
         model: 'GPT',
         sequential: false,
-        resolution: 'low',
+        resolution: 'high',
         targetFieldType: 'tag_area',
         prompts: [MESSAGE_ANALYZER_GPT_TOPOLOGIC_TAGS],
         imagesPerBatch: 4,

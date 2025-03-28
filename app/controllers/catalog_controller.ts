@@ -110,6 +110,18 @@ export default class CatalogController {
     }
   }
 
+  public async getPhotosByIds({ response, request }: HttpContext) {
+    const photoManager = new PhotoManager()
+    try {
+      const query = request.body()
+      const result = await photoManager.getPhotosByIds(query.photosIds)
+      return response.ok(result)
+    } catch (error) {
+      console.error('Error fetching photos:', error)
+      return response.internalServerError({ message: 'Error fetching photos' })
+    }
+  }
+
   public async syncGooglePhotos({ response }: HttpContext) {
     try {
       const authUrl = await GoogleAuthService.getAuthUrl()

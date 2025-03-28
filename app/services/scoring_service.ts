@@ -660,9 +660,6 @@ export default class ScoringService {
   }
 
   public async getNearChunksFromDesc(photo: Photo, query: string, threshold: number = 0.1) {
-    if (!photo.descriptionChunks.length) {
-      await this.analyzerService.processDesc(photo.description, photo.id)
-    }
     const similarChunks = await this.embeddingsService.findSimilarChunksToText(
       query,
       threshold,
