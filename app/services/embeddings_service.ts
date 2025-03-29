@@ -339,6 +339,94 @@ export default class EmbeddingsService {
     return result.rows
   }
 
+  public async findSimilarPhotoToEmbedding(
+    embedding: number[],
+    threshold: Threshold = 0.3,
+    limit: number = 10,
+    metric: 'distance' | 'inner_product' | 'cosine_similarity' = 'cosine_similarity',
+    opposite: boolean = false
+  ) {
+    if (!embedding || embedding.length === 0) {
+      throw new Error('Embedding no proporcionado o vacío')
+    }
+
+    let metricQuery: string = ''
+    let thresholdCondition: string = ''
+    let orderBy: string = ''
+    let additionalParams: any = {}
+
+    if (typeof threshold === 'number') {
+      if (metric === 'distance') {
+        metricQuery = 'photos.embedding <-> :embedding AS proximity'
+        if (opposite) {
+          thresholdCondition = 'photos.embedding <-> :embedding >= :threshold'
+          orderBy = 'proximity DESC'
+        } else {
+          thresholdCondition = 'photos.embedding <-> :embedding <= :threshold'
+          orderBy = 'proximity ASC'
+        }
+      } else if (metric === 'inner_product') {
+        metricQuery = '(photos.embedding <#> :embedding) * -1 AS proximity'
+        if (opposite) {
+          thresholdCondition = '(photos.embedding <#> :embedding) * -1 <= :threshold'
+          orderBy = 'proximity ASC'
+        } else {
+          thresholdCondition = '(photos.embedding <#> :embedding) * -1 >= :threshold'
+          orderBy = 'proximity DESC'
+        }
+      } else if (metric === 'cosine_similarity') {
+        metricQuery = '1 - (photos.embedding <=> :embedding) AS proximity'
+        if (opposite) {
+          thresholdCondition = '1 - (photos.embedding <=> :embedding) <= :threshold'
+          orderBy = 'proximity ASC'
+        } else {
+          thresholdCondition = '1 - (photos.embedding <=> :embedding) >= :threshold'
+          orderBy = 'proximity DESC'
+        }
+      }
+      additionalParams.threshold = threshold
+    } else {
+      // Suponiendo threshold con propiedades min y max
+      if (metric === 'distance') {
+        metricQuery = 'photos.embedding <-> :embedding AS proximity'
+        thresholdCondition =
+          'photos.embedding <-> :embedding BETWEEN :minThreshold AND :maxThreshold'
+        orderBy = opposite ? 'proximity DESC' : 'proximity ASC'
+      } else if (metric === 'inner_product') {
+        metricQuery = '(photos.embedding <#> :embedding) * -1 AS proximity'
+        thresholdCondition =
+          '(photos.embedding <#> :embedding) * -1 BETWEEN :minThreshold AND :maxThreshold'
+        orderBy = opposite ? 'proximity ASC' : 'proximity DESC'
+      } else if (metric === 'cosine_similarity') {
+        metricQuery = '1 - (photos.embedding <=> :embedding) AS proximity'
+        thresholdCondition =
+          '1 - (photos.embedding <=> :embedding) BETWEEN :minThreshold AND :maxThreshold'
+        orderBy = opposite ? 'proximity ASC' : 'proximity DESC'
+      }
+      additionalParams.minThreshold = threshold.min
+      additionalParams.maxThreshold = threshold.max
+    }
+
+    const embeddingString = `[${embedding.join(',')}]`
+
+    const result = await db.rawQuery(
+      `
+        SELECT photos.id, photos.name, ${metricQuery}
+        FROM photos
+        WHERE ${thresholdCondition}
+        ORDER BY ${orderBy}
+        LIMIT :limit
+      `,
+      {
+        embedding: embeddingString,
+        limit,
+        ...additionalParams,
+      }
+    )
+
+    return result.rows
+  }
+
   public async findSimilarPhotoToPhoto(
     photo: Photo,
     threshold: Threshold = 0.3,

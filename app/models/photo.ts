@@ -64,4 +64,9 @@ export default class Photo extends BaseModel {
       photo.embedding = `[${(photo.embedding as any[]).join(',')}]`
     }
   }
+
+  @computed()
+  public get parsedEmbedding(): number[] {
+    return JSON.parse(this.embedding)
+  }
 }
