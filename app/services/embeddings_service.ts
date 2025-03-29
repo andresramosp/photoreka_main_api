@@ -268,33 +268,33 @@ export default class EmbeddingsService {
 
     if (typeof threshold === 'number') {
       if (metric === 'distance') {
-        metricQuery = 'embedding <-> :embedding AS proximity'
-        thresholdCondition = 'embedding <-> :embedding <= :threshold'
+        metricQuery = 'tags.embedding <-> :embedding AS proximity'
+        thresholdCondition = 'tags.embedding <-> :embedding <= :threshold'
         orderBy = 'proximity ASC'
       } else if (metric === 'inner_product') {
-        metricQuery = '(embedding <#> :embedding) * -1 AS proximity'
-        thresholdCondition = '(embedding <#> :embedding) * -1 >= :threshold'
+        metricQuery = '(tags.embedding <#> :embedding) * -1 AS proximity'
+        thresholdCondition = '(tags.embedding <#> :embedding) * -1 >= :threshold'
         orderBy = 'proximity DESC'
       } else if (metric === 'cosine_similarity') {
-        metricQuery = '1 - (embedding <=> :embedding) AS proximity'
-        thresholdCondition = '1 - (embedding <=> :embedding) >= :threshold'
+        metricQuery = '1 - (tags.embedding <=> :embedding) AS proximity'
+        thresholdCondition = '1 - (tags.embedding <=> :embedding) >= :threshold'
         orderBy = 'proximity DESC'
       }
       additionalParams.threshold = threshold
     } else {
       if (metric === 'distance') {
-        metricQuery = 'embedding <-> :embedding AS proximity'
-        thresholdCondition = 'embedding <-> :embedding BETWEEN :minThreshold AND :maxThreshold'
+        metricQuery = 'tags.embedding <-> :embedding AS proximity'
+        thresholdCondition = 'tags.embedding <-> :embedding BETWEEN :minThreshold AND :maxThreshold'
         orderBy = 'proximity ASC'
       } else if (metric === 'inner_product') {
-        metricQuery = '(embedding <#> :embedding) * -1 AS proximity'
+        metricQuery = '(tags.embedding <#> :embedding) * -1 AS proximity'
         thresholdCondition =
-          '(embedding <#> :embedding) * -1 BETWEEN :minThreshold AND :maxThreshold'
+          '(tags.embedding <#> :embedding) * -1 BETWEEN :minThreshold AND :maxThreshold'
         orderBy = 'proximity DESC'
       } else if (metric === 'cosine_similarity') {
-        metricQuery = '1 - (embedding <=> :embedding) AS proximity'
+        metricQuery = '1 - (tags.embedding <=> :embedding) AS proximity'
         thresholdCondition =
-          '1 - (embedding <=> :embedding) BETWEEN :minThreshold AND :maxThreshold'
+          '1 - (tags.embedding <=> :embedding) BETWEEN :minThreshold AND :maxThreshold'
         orderBy = 'proximity DESC'
       }
       additionalParams.minThreshold = threshold.min
@@ -332,6 +332,79 @@ export default class EmbeddingsService {
         areas: areas || [],
         photoIds: photoIds || [],
         userId: userId || null, // 🔥 Se pasa null si no hay userId para evitar errores
+        ...additionalParams,
+      }
+    )
+
+    return result.rows
+  }
+
+  public async findSimilarPhotoToPhoto(
+    photo: Photo,
+    threshold: Threshold = 0.3,
+    limit: number = 10,
+    metric: 'distance' | 'inner_product' | 'cosine_similarity' = 'cosine_similarity'
+  ) {
+    if (!photo || !photo.id) {
+      throw new Error('Photo no encontrada o no tiene ID asociado')
+    }
+
+    let metricQuery: string = ''
+    let whereCondition: string = ''
+    let orderBy: string = ''
+
+    let additionalParams: any = {}
+    let thresholdCondition = ''
+
+    if (typeof threshold === 'number') {
+      if (metric === 'distance') {
+        metricQuery = 'p2.embedding <-> p1.embedding AS proximity'
+        thresholdCondition = 'p2.embedding <-> p1.embedding <= :threshold'
+        orderBy = 'proximity ASC'
+      } else if (metric === 'inner_product') {
+        metricQuery = '(p2.embedding <#> p1.embedding) * -1 AS proximity'
+        thresholdCondition = '(p2.embedding <#> p1.embedding) * -1 >= :threshold'
+        orderBy = 'proximity DESC'
+      } else if (metric === 'cosine_similarity') {
+        metricQuery = '1 - (p2.embedding <=> p1.embedding) AS proximity'
+        thresholdCondition = '1 - (p2.embedding <=> p1.embedding) >= :threshold'
+        orderBy = 'proximity DESC'
+      }
+      additionalParams.threshold = threshold
+    } else {
+      if (metric === 'distance') {
+        metricQuery = 'p2.embedding <-> p1.embedding AS proximity'
+        thresholdCondition = 'p2.embedding <-> p1.embedding BETWEEN :minThreshold AND :maxThreshold'
+        orderBy = 'proximity ASC'
+      } else if (metric === 'inner_product') {
+        metricQuery = '(p2.embedding <#> p1.embedding) * -1 AS proximity'
+        thresholdCondition =
+          '(p2.embedding <#> p1.embedding) * -1 BETWEEN :minThreshold AND :maxThreshold'
+        orderBy = 'proximity DESC'
+      } else if (metric === 'cosine_similarity') {
+        metricQuery = '1 - (p2.embedding <=> p1.embedding) AS proximity'
+        thresholdCondition =
+          '1 - (p2.embedding <=> p1.embedding) BETWEEN :minThreshold AND :maxThreshold'
+        orderBy = 'proximity DESC'
+      }
+      additionalParams.minThreshold = threshold.min
+      additionalParams.maxThreshold = threshold.max
+    }
+
+    whereCondition = thresholdCondition
+
+    const result = await db.rawQuery(
+      `
+        SELECT p2.id, p2.name ${metricQuery}
+        FROM photos p1
+        JOIN photos p2 ON p1.id = :id AND p2.id != p1.id
+        WHERE ${whereCondition}
+        ORDER BY ${orderBy}
+        LIMIT :limit
+      `,
+      {
+        id: photo.id,
+        limit,
         ...additionalParams,
       }
     )

@@ -89,7 +89,7 @@ export default class SearchController {
 
       const query: any = request.body()
 
-      const result = await searchService.searchByPhotosV2(query)
+      const result = await searchService.searchByPhotos(query)
 
       return response.ok(result)
     } catch (error) {

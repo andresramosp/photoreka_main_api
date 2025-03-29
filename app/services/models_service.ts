@@ -112,6 +112,23 @@ export default class ModelsService {
     }
   }
 
+  async getEmbeddingsImages(images: { id: string; base64: string }) {
+    try {
+      const payload = { images }
+      const { url, requestPayload, headers } = this.buildRequestConfig(
+        'get_embeddings_image',
+        payload
+      )
+
+      const { data } = await axios.post(url, requestPayload, { headers })
+
+      return { embeddings: data }
+    } catch (error) {
+      console.error('Error en getEmbeddings:', error.message)
+      return { embeddings: [] }
+    }
+  }
+
   @MeasureExecutionTime
   async generateGroupsForTags(tags) {
     try {
@@ -275,10 +292,10 @@ export default class ModelsService {
 
       // Check cache
       const cachedResponse = cache.get(cacheKey)
-      // if (useCache && cachedResponse) {
-      //   console.log('Cache hit for getGPTResponse')
-      //   return cachedResponse
-      // }
+      if (useCache && cachedResponse) {
+        console.log('Cache hit for getGPTResponse')
+        return cachedResponse
+      }
 
       const { data } = await axios.post(`${env.get('OPENAI_BASEURL')}/chat/completions`, payload, {
         headers: {

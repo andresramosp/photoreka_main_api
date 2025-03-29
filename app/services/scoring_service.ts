@@ -73,11 +73,11 @@ export default class ScoringService {
 
   // @MeasureExecutionTime
   // TODO: userid!!
-  // @withCache({
-  //   key: (_, arg2, arg3, arg4) => `getScoredPhotosByTagsAndDesc_ ${arg2.original}_${arg3}`,
-  //   provider: 'redis',
-  //   ttl: 60 * 5,
-  // })
+  @withCache({
+    key: (_, arg2, arg3, arg4) => `getScoredPhotosByTagsAndDesc_ ${arg2.original}_${arg3}`,
+    provider: 'redis',
+    ttl: 60 * 5,
+  })
   public async getScoredPhotosByTagsAndDesc(
     photos: Photo[],
     structuredQuery: any,

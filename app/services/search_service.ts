@@ -121,8 +121,8 @@ export default class SearchService {
         return
       }
 
-      const batchSize = 3
-      const maxPageAttempts = 3
+      const batchSize = 4
+      const maxPageAttempts = 1
 
       let photoBatches = []
       for (let i = 0; i < paginatedPhotos.length; i += batchSize) {
@@ -130,8 +130,8 @@ export default class SearchService {
       }
 
       const batchPromises = photoBatches.map(async (batch, index) => {
-        await this.sleep(250 * index)
-        const { modelResult, modelCost } = await this.processBatchInsightsDesc(
+        await this.sleep(100 * index)
+        const { modelResult, modelCost } = await this.processBatchInsightsImage(
           batch,
           structuredResult,
           searchMode
@@ -245,7 +245,7 @@ export default class SearchService {
     }
   }
 
-  public async searchByPhotos(query: SearchByPhotoOptions) {
+  public async searchByPhotosByVectors(query: SearchByPhotoOptions) {
     const { pageSize, iteration } = query
     const photos = await this.photoManager.getPhotosByUser('1234')
     const selectedPhotos = await this.photoManager.getPhotosByIds(query.photoIds)
@@ -313,7 +313,7 @@ export default class SearchService {
     return scoredPhotos.slice(0, 3)
   }
 
-  public async searchByPhotosV2(query: SearchByPhotoOptions): Promise<Photo[]> {
+  public async searchByPhotos(query: SearchByPhotoOptions): Promise<Photo[]> {
     const { pageSize, iteration } = query
     const photos = await this.photoManager.getPhotosByUser('1234')
     const selectedPhotos = await this.photoManager.getPhotosByIds(query.photoIds)
@@ -386,8 +386,6 @@ export default class SearchService {
     return scoredPhotos.slice(0, 3)
   }
 
-  // AUXILIARES //
-
   public async processBatchInsightsDesc(
     batch: any[],
     structuredResult: any,
@@ -459,31 +457,25 @@ export default class SearchService {
   public async processBatchInsightsImage(
     batch: any[],
     structuredResult: any,
-    paginatedPhotos: any[]
+    searchMode: SearchMode
   ) {
-    // Se asume siempre creative y requireSource === 'image'
     const searchModelMessage = MESSAGE_SEARCH_MODEL_CREATIVE_ONLY_IMAGE
-    const chunkPromises = batch.map(async (batchedPhoto) => {
-      const descChunks = await this.scoringService.getNearChunksFromDesc(
-        batchedPhoto.photo,
-        structuredResult.no_prefix,
-        0.1
-      )
-      return {
-        tempID: batchedPhoto.photo.tempID,
-        chunkedDesc: descChunks.map((dc) => dc.text_chunk).join(' ... '),
-      }
-    })
-    let chunkResults = await Promise.all(chunkPromises)
-    chunkResults = chunkResults.filter((cp) => cp.chunkedDesc)
 
-    if (chunkResults.length) {
-      const imagesPayload = await this.generateImagesPayload(
-        paginatedPhotos.map((pp) => pp.photo),
-        batch.map((cp) => cp.photo.id)
-      )
-      const { result: modelResult, cost: modelCost } = await this.modelsService.getGPTResponse(
-        searchModelMessage(chunkResults.map((cp) => cp.tempID)),
+    const imagesPayload = await this.generateImagesPayload(batch.map((cp) => cp.photo))
+
+    // Prellenamos un mapa por posición
+    const defaultResults: any[] = batch.map((cp) => ({
+      id: cp.photo.tempID,
+      isInsight: false,
+      reasoning: null,
+    }))
+
+    let modelResult = []
+    let modelCost = 0
+
+    if (imagesPayload.length) {
+      const response = await this.modelsService.getGPTResponse(
+        searchModelMessage(),
         [
           {
             type: 'text',
@@ -496,11 +488,26 @@ export default class SearchService {
         1.1,
         false
       )
-      return { modelResult, modelCost }
-    } else {
-      return { modelResult: [], modelCost: 0 }
+
+      modelResult = response.result || []
+      modelCost = response.cost || 0
+    }
+
+    // Reemplazamos los resultados por los devueltos por el modelo, respetando el orden
+    for (let i = 0; i < modelResult.length; i++) {
+      defaultResults[i] = {
+        id: batch[i].photo.tempID,
+        ...modelResult[i],
+      }
+    }
+
+    return {
+      modelResult: defaultResults,
+      modelCost,
     }
   }
+
+  // AUXILIARES //
 
   private getPaginatedPhotosByPage(embeddingScoredPhotos, pageSize, currentIteration) {
     const offset = (currentIteration - 1) * pageSize
@@ -526,14 +533,11 @@ export default class SearchService {
     return { hasMore, paginatedPhotos }
   }
 
-  public async generateImagesPayload(photos: Photo[], photoIds: string[]) {
+  public async generateImagesPayload(photos: Photo[]) {
     const validImages: any[] = []
     const uploadPath = path.join(process.cwd(), 'public/uploads/photos')
 
-    for (const id of photoIds) {
-      const photo = photos.find((photo) => photo.id == id)
-      if (!photo) continue
-
+    for (const photo of photos) {
       const filePath = path.join(uploadPath, `${photo.name}`)
 
       try {
@@ -544,7 +548,6 @@ export default class SearchService {
           .toBuffer()
 
         validImages.push({
-          id: photo.id,
           base64: resizedBuffer.toString('base64'),
         })
       } catch (error) {

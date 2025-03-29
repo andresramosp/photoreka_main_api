@@ -2,6 +2,7 @@ import { AnalyzerTask } from '#models/analyzer/analyzerTask'
 import { ChunkTask } from '#models/analyzer/chunkTask'
 import { TagTask } from '#models/analyzer/tagTask'
 import { VisionTask } from '#models/analyzer/visionTask'
+import { VisualEmbeddingTask } from '#models/analyzer/visualEmbeddingTask'
 import {
   MESSAGE_ANALYZER_GPT_CONTEXT_AND_STORY,
   MESSAGE_ANALYZER_GPT_CONTEXT_STORY_ACCENTS,
@@ -18,43 +19,47 @@ export const packages = [
     // Context + Story + Accents en una sola llamada GPT
     id: 'basic_1',
     tasks: [
+      // {
+      //   // 0,0048 por foto (0,0024 con Batch API.)
+      //   name: 'vision_context_story_accents',
+      //   type: 'VisionTask',
+      //   model: 'GPT',
+      //   sequential: false,
+      //   targetFieldType: 'descriptions',
+      //   prompts: [MESSAGE_ANALYZER_GPT_CONTEXT_STORY_ACCENTS],
+      //   resolution: 'high',
+      //   imagesPerBatch: 4,
+      //   promptDependentField: null,
+      // },
+      // {
+      //   name: 'tags_context_story',
+      //   type: 'TagTask',
+      //   model: 'GPT',
+      //   prompt: MESSAGE_TAGS_TEXT_EXTRACTION,
+      //   descriptionSourceFields: ['context', 'story'],
+      // },
+      // {
+      //   name: 'tags_visual_accents',
+      //   type: 'TagTask',
+      //   model: 'GPT',
+      //   prompt: MESSAGE_TAGS_TEXT_EXTRACTION,
+      //   descriptionSourceFields: ['visual_accents'],
+      // },
+      // {
+      //   name: 'chunks_context_story_visual_accents',
+      //   type: 'ChunkTask',
+      //   prompt: null,
+      //   model: null,
+      //   descriptionSourceFields: ['context', 'story', 'visual_accents'],
+      //   descriptionsChunksMethod: {
+      //     context: { type: 'split_by_size', maxLength: 150 },
+      //     story: { type: 'split_by_size', maxLength: 150 },
+      //     visual_accents: { type: 'split_by_size', maxLength: 15 },
+      //   },
+      // },
       {
-        // 0,0048 por foto (0,0024 con Batch API.)
-        name: 'vision_context_story_accents',
-        type: 'VisionTask',
-        model: 'GPT',
-        sequential: false,
-        targetFieldType: 'descriptions',
-        prompts: [MESSAGE_ANALYZER_GPT_CONTEXT_STORY_ACCENTS],
-        resolution: 'high',
-        imagesPerBatch: 4,
-        promptDependentField: null,
-      },
-      {
-        name: 'tags_context_story',
-        type: 'TagTask',
-        model: 'GPT',
-        prompt: MESSAGE_TAGS_TEXT_EXTRACTION,
-        descriptionSourceFields: ['context', 'story'],
-      },
-      {
-        name: 'tags_visual_accents',
-        type: 'TagTask',
-        model: 'GPT',
-        prompt: MESSAGE_TAGS_TEXT_EXTRACTION,
-        descriptionSourceFields: ['visual_accents'],
-      },
-      {
-        name: 'chunks_context_story_visual_accents',
-        type: 'ChunkTask',
-        prompt: null,
-        model: null,
-        descriptionSourceFields: ['context', 'story', 'visual_accents'],
-        descriptionsChunksMethod: {
-          context: { type: 'split_by_size', maxLength: 150 },
-          story: { type: 'split_by_size', maxLength: 150 },
-          visual_accents: { type: 'split_by_size', maxLength: 15 },
-        },
+        name: 'visual_embedding_task',
+        type: 'VisualEmbeddingTask',
       },
     ],
   },
@@ -209,6 +214,9 @@ export const getTaskList = (packageId: string): AnalyzerTask[] => {
         break
       case 'ChunkTask':
         task = new ChunkTask()
+        break
+      case 'VisualEmbeddingTask':
+        task = new VisualEmbeddingTask()
         break
       default:
         throw new Error(`Unknown task type: ${taskData.type}`)

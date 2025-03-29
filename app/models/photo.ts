@@ -1,5 +1,5 @@
 import { DateTime } from 'luxon'
-import { BaseModel, belongsTo, column, computed, hasMany } from '@adonisjs/lucid/orm'
+import { BaseModel, beforeSave, belongsTo, column, computed, hasMany } from '@adonisjs/lucid/orm'
 import type { BelongsTo, HasMany } from '@adonisjs/lucid/types/relations'
 import TagPhoto from './tag_photo.js'
 import DescriptionChunk from './descriptionChunk.js'
@@ -27,6 +27,9 @@ export default class Photo extends BaseModel {
   @column()
   declare url: string
 
+  @column({ serializeAs: null })
+  declare embedding: string
+
   @column.dateTime({ autoCreate: true })
   declare createdAt: DateTime
 
@@ -52,5 +55,13 @@ export default class Photo extends BaseModel {
   @computed()
   public get needProcess(): boolean {
     return this.analyzerProcess?.currentStage !== 'finished'
+  }
+
+  @beforeSave()
+  public static formatEmbedding(photo: Photo) {
+    if (photo.embedding && Array.isArray(photo.embedding)) {
+      // Convierte el array en formato pgvector: '[value1,value2,...]'
+      photo.embedding = `[${(photo.embedding as any[]).join(',')}]`
+    }
   }
 }

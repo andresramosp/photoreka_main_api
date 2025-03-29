@@ -15,6 +15,8 @@ import { VisionTask } from '#models/analyzer/visionTask'
 import { TagTask } from '#models/analyzer/tagTask'
 import { ChunkTask } from '#models/analyzer/chunkTask'
 import { AnalyzerTask } from '#models/analyzer/analyzerTask'
+import { VisualEmbeddingTask } from '#models/analyzer/visualEmbeddingTask'
+import { base64 } from '@adonisjs/core/helpers'
 
 export default class AnalyzerProcessRunner {
   private process: AnalyzerProcess
@@ -103,6 +105,13 @@ export default class AnalyzerProcessRunner {
       await this.changeStage('Chunks Embeddings initiating', 'embeddings_chunks')
       await this.createChunksEmbeddings()
       await this.changeStage('Chunks Embeddings complete')
+    }
+
+    const visualEmbeddingTask = this.process.tasks.find(
+      (task) => task instanceof VisualEmbeddingTask
+    )
+    if (visualEmbeddingTask) {
+      await this.executeVisualEmbeddingTask(visualEmbeddingTask)
     }
 
     await this.changeStage('Process Completed', 'finished')
@@ -402,6 +411,28 @@ export default class AnalyzerProcessRunner {
         batch.map((chunk, index) => {
           chunk.embedding = embeddings[index]
           return chunk.save()
+        })
+      )
+    }
+  }
+
+  @MeasureExecutionTime
+  private async executeVisualEmbeddingTask(task: VisualEmbeddingTask) {
+    if (!task.data) {
+      task.data = {}
+    }
+
+    let photosToProcess: PhotoImage[] = this.process.photoImages
+    for (let i = 0; i < photosToProcess.length; i += 16) {
+      await this.sleep(250)
+      const batch = photosToProcess.slice(i, i + 16)
+      const payload = batch.map((pi: PhotoImage) => ({ id: pi.photo.id, base64: pi.base64 }))
+      const { embeddings } = await this.modelsService.getEmbeddingsImages(payload)
+      await Promise.all(
+        batch.map((pi: PhotoImage, index) => {
+          const photo: Photo = pi.photo
+          photo.embedding = embeddings.find((item) => item.id == pi.photo.id).embedding
+          return photo.save()
         })
       )
     }
