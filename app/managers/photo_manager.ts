@@ -26,7 +26,9 @@ export default class PhotoManager {
   public async getPhotosByIds(photoIds: string[]) {
     const photos = await Photo.query()
       .whereIn('id', photoIds)
-      .preload('tags')
+      .preload('tags', (query) => {
+        query.preload('tag')
+      })
       .preload('analyzerProcess')
     return photos
   }
