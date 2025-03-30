@@ -19,6 +19,7 @@ import {
 } from '../utils/prompts/insights.js'
 import DescriptionChunk from '#models/descriptionChunk'
 import EmbeddingsService from './embeddings_service.js'
+import Tag from '#models/tag'
 
 export type SearchMode = 'logical' | 'creative'
 export type SearchType = 'semantic' | 'tags' | 'topological'
@@ -44,13 +45,14 @@ export type SearchTopologicalOptions = SearchOptions & {
 export type SearchByPhotoOptions = {
   photoIds: number[]
   currentPhotosIds: number[]
-  criteria: 'semantic' | 'aesthetic' | 'chromatic' | 'topological' | 'geometrical' | 'tags'
+  criteria: 'semantic' | 'embedding' | 'chromatic' | 'topological' | 'geometrical' | 'tags'
   opposite: boolean
   tagsIds: number[] // para criteria 'tags'
   descriptionCategories: string[] // para criteria 'semantic'
   iteration: number
   pageSize: number
   withInsights?: boolean
+  opposite: boolean
 }
 
 export default class SearchService {
@@ -314,23 +316,25 @@ export default class SearchService {
   }
 
   public async searchByPhotos(query: SearchByPhotoOptions): Promise<Photo[]> {
-    const photos = await this.photoManager.getPhotosByUser('1234')
+    const photos = await this.photoManager._getPhotosByUser('1234')
     const selectedPhotos = await this.photoManager.getPhotosByIds(query.photoIds)
     let scoredPhotos: { photo: Photo; score: number }[] = []
 
     if (query.criteria === 'semantic') {
-      scoredPhotos = await this.calculateSemanticScores(query, photos, selectedPhotos)
-    } else if (query.criteria === 'aesthetic') {
-      scoredPhotos = await this.calculateAestheticScores(query, photos, selectedPhotos)
+      scoredPhotos = await this.getSemanticScoresByPhoto(query, photos, selectedPhotos)
+    } else if (query.criteria === 'embedding') {
+      scoredPhotos = await this.getEmbeddingScoresByPhoto(query, photos, selectedPhotos)
+    } else if (query.criteria === 'topological') {
+      scoredPhotos = await this.getTagBasedScoresByPhoto(query, photos, selectedPhotos, [558])
     }
 
     return scoredPhotos
-      .sort((a, b) => b.score - a.score)
+      .sort((a, b) => (query.opposite ? a.score - b.score : b.score - a.score))
       .slice(0, 6)
       .map((scored) => scored.photo)
   }
 
-  private async calculateSemanticScores(
+  private async getSemanticScoresByPhoto(
     query: SearchByPhotoOptions,
     photos: Photo[],
     selectedPhotos: Photo[]
@@ -359,11 +363,13 @@ export default class SearchService {
 
     const similarChunks = await this.embeddingsService.findSimilarChunkToEmbedding(
       combinedEmbedding,
-      0.4,
+      query.opposite ? 0.7 : 0.4,
       50,
       'cosine_similarity',
       photosToSearch.map((p) => p.id),
-      query.descriptionCategories
+      query.descriptionCategories,
+      null,
+      query.opposite
     )
 
     const chunkMap = new Map<string | number, number>()
@@ -385,7 +391,7 @@ export default class SearchService {
       .filter((scored) => scored.score > 0)
   }
 
-  private async calculateAestheticScores(
+  private async getEmbeddingScoresByPhoto(
     query: SearchByPhotoOptions,
     photos: Photo[],
     selectedPhotos: Photo[]
@@ -406,13 +412,12 @@ export default class SearchService {
       .map((val) => val / visualEmbeddings.length)
 
     // Buscar fotos similares usando el método findSimilarPhotoToEmbedding
-    let opposite = false
     const similarPhotos = await this.embeddingsService.findSimilarPhotoToEmbedding(
       combinedEmbedding,
-      opposite ? 0.7 : 0.4,
+      query.opposite ? 0.7 : 0.4,
       50,
       'cosine_similarity',
-      opposite
+      query.opposite
     )
 
     const photoScoreMap = new Map<string | number, number>()
@@ -425,6 +430,191 @@ export default class SearchService {
     return photosToSearch
       .filter((photo) => photoScoreMap.has(photo.id))
       .map((photo) => ({ photo, score: photoScoreMap.get(photo.id)! }))
+  }
+
+  private async getTopologicalScoresByPhoto(
+    query: SearchByPhotoOptions,
+    photos: Photo[],
+    selectedPhotos: Photo[]
+  ): Promise<{ photo: Photo; score: number }[]> {
+    // Filtrar las fotos candidatas
+    const photosToSearch = photos.filter(
+      (photo: Photo) => !query.currentPhotosIds.includes(photo.id)
+    )
+
+    // Estructura para acumular resultados de findSimilarTagToEmbedding por área, sin combinar embeddings.
+    const validAreas = ['left', 'middle', 'right']
+    const similarTagMap: { [area: string]: Map<string | number, number> } = {}
+    validAreas.forEach((area) => (similarTagMap[area] = new Map()))
+
+    // Para cada TagPhoto de las fotos base, buscar tags similares individualmente.
+    for (const basePhoto of selectedPhotos) {
+      await basePhoto.load('tags')
+      for (const tagPhoto of basePhoto.tags) {
+        await tagPhoto.load('tag')
+        if (validAreas.includes(tagPhoto.area) && tagPhoto.tag && tagPhoto.tag.parsedEmbedding) {
+          const embedding = tagPhoto.tag.parsedEmbedding
+          const similarTags = await this.embeddingsService.findSimilarTagToEmbedding(
+            embedding,
+            query.opposite ? 0.7 : 0.3,
+            50,
+            'cosine_similarity',
+            photosToSearch.map((p) => p.id),
+            null,
+            [tagPhoto.area],
+            query.opposite
+          )
+          similarTags.forEach((result: any) => {
+            // Acumular la mayor proximidad para cada tag (identificado por result.id) en la misma área.
+            const current = similarTagMap[tagPhoto.area].get(result.id) || 0
+            if (result.proximity > current) {
+              similarTagMap[tagPhoto.area].set(result.id, result.proximity)
+            }
+          })
+        }
+      }
+    }
+
+    // Para cada foto candidata, cargar sus TagPhotos y sus tags, acumulando las proximidades
+    // solo si el tag (por área) coincide con los resultados en similarTagMap.
+    const scoredPhotos: { photo: Photo; score: number }[] = []
+    // Estructura para loguear qué tags matchearon por foto.
+    const photoMatches: {
+      [photoId: string]: { [area: string]: Array<{ tagId: string | number; proximity: number }> }
+    } = {}
+
+    for (const photo of photosToSearch) {
+      await photo.load('tags')
+      const proximities: number[] = []
+      const matchesForPhoto: {
+        [area: string]: Array<{ tagId: string | number; proximity: number }>
+      } = {}
+      for (const tagPhoto of photo.tags) {
+        await tagPhoto.load('tag')
+        if (
+          tagPhoto.tag &&
+          validAreas.includes(tagPhoto.area) &&
+          similarTagMap[tagPhoto.area].has(tagPhoto.tag.id)
+        ) {
+          const proximity = similarTagMap[tagPhoto.area].get(tagPhoto.tag.id)!
+          proximities.push(proximity)
+          if (!matchesForPhoto[tagPhoto.area]) {
+            matchesForPhoto[tagPhoto.area] = []
+          }
+          matchesForPhoto[tagPhoto.area].push({ tagId: tagPhoto.tag.id, proximity })
+        }
+      }
+      if (proximities.length > 0) {
+        const score = this.scoringService.calculateProximitiesScores(proximities)
+        if (score > 0) {
+          scoredPhotos.push({ photo, score })
+          photoMatches[photo.id] = matchesForPhoto
+        }
+      }
+    }
+
+    // Obtener la lista global de tags para extraer el .name de cada tag.
+    const globalTags = await Tag.all()
+    const tagNameById = new Map<string | number, string>()
+    globalTags.forEach((tag: any) => {
+      tagNameById.set(tag.id, tag.name)
+    })
+
+    // Console log: Mostrar los tags que han matcheado globalmente por área, incluyendo el nombre.
+    console.log('Global tag matches by area:')
+    validAreas.forEach((area) => {
+      console.log(
+        `Area: ${area}`,
+        Array.from(similarTagMap[area].entries()).map(([tagId, proximity]) => ({
+          tagId,
+          name: tagNameById.get(tagId) || 'N/A',
+          proximity,
+        }))
+      )
+    })
+
+    // Console log: Para cada foto que matchea, mostrar con qué tags ha matcheado por área, incluyendo el nombre del tag.
+    console.log('Photo matches:')
+    Object.entries(photoMatches).forEach(([photoId, matches]) => {
+      console.log(`Photo ID: ${photoId}`)
+      Object.entries(matches).forEach(([area, tagMatches]) => {
+        const enrichedMatches = tagMatches.map((match) => ({
+          ...match,
+          name: tagNameById.get(match.tagId) || 'N/A',
+        }))
+        console.log(`  Area: ${area}`, enrichedMatches)
+      })
+    })
+
+    return scoredPhotos
+  }
+
+  private async getTagBasedScoresByPhoto(
+    query: SearchByPhotoOptions,
+    photos: Photo[],
+    selectedPhotos: Photo[],
+    baseTagIds?: Array<string | number>
+  ): Promise<{ photo: Photo; score: number }[]> {
+    // Filtrar las fotos candidatas
+    const photosToSearch = photos.filter(
+      (photo: Photo) => !query.currentPhotosIds.includes(photo.id)
+    )
+
+    // Mapa global para acumular los resultados de findSimilarTagToEmbedding sin considerar área.
+    const similarTagMap = new Map<string | number, number>()
+
+    // Para cada TagPhoto de las fotos base, buscar tags similares individualmente.
+    for (const basePhoto of selectedPhotos) {
+      await basePhoto.load('tags')
+      for (const tagPhoto of basePhoto.tags) {
+        await tagPhoto.load('tag')
+        // Si se pasa una lista de tagIds, solo se consideran aquellos que estén en la lista.
+        if (
+          tagPhoto.tag &&
+          tagPhoto.tag.parsedEmbedding &&
+          (!baseTagIds || baseTagIds.includes(tagPhoto.tag.id))
+        ) {
+          const similarTags = await this.embeddingsService.findSimilarTagToEmbedding(
+            tagPhoto.tag.parsedEmbedding,
+            query.opposite ? 0.7 : 0.2,
+            200,
+            'cosine_similarity',
+            null,
+            null,
+            [],
+            photosToSearch.map((p) => p.id)
+          )
+          similarTags.forEach((result: any) => {
+            const current = similarTagMap.get(result.id) || 0
+            if (result.proximity > current) {
+              similarTagMap.set(result.id, result.proximity)
+            }
+          })
+        }
+      }
+    }
+
+    // Para cada foto candidata, cargar sus TagPhotos y sus tags, y acumular las proximidades
+    // si el tag global coincide con los resultados en similarTagMap.
+    const scoredPhotos: { photo: Photo; score: number }[] = []
+    for (const photo of photosToSearch) {
+      // await photo.load('tags')
+      const proximities: number[] = []
+      for (const tagPhoto of photo.tags) {
+        // await tagPhoto.load('tag')
+        if (tagPhoto.tag && similarTagMap.has(tagPhoto.tag.id)) {
+          proximities.push(similarTagMap.get(tagPhoto.tag.id)!)
+        }
+      }
+      if (proximities.length > 0) {
+        const score = this.scoringService.calculateProximitiesScores(proximities)
+        if (score > 0) {
+          scoredPhotos.push({ photo, score })
+        }
+      }
+    }
+
+    return scoredPhotos
   }
 
   public async processBatchInsightsDesc(

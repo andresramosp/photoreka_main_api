@@ -45,6 +45,11 @@ export default class Tag extends BaseModel {
   @column.dateTime({ autoCreate: true, autoUpdate: true })
   declare updatedAt: DateTime
 
+  @computed()
+  public get parsedEmbedding(): number[] {
+    return JSON.parse(this.embedding)
+  }
+
   // Hook para formatear embedding antes de guardar
   @beforeSave()
   public static formatEmbedding(tag: Tag) {

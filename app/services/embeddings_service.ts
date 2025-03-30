@@ -155,7 +155,8 @@ export default class EmbeddingsService {
     metric: 'distance' | 'inner_product' | 'cosine_similarity' = 'cosine_similarity',
     photoIds?: number[],
     categories?: string[],
-    areas?: string[] // parámetro opcional agregado
+    areas?: string[],
+    opposite: boolean = false
   ) {
     if (!embedding || embedding.length === 0) {
       throw new Error('Embedding no proporcionado o vacío')
@@ -167,36 +168,52 @@ export default class EmbeddingsService {
 
     let additionalParams: any = {}
     let thresholdCondition = ''
+
     if (typeof threshold === 'number') {
       if (metric === 'distance') {
         metricQuery = 'embedding <-> :embedding AS proximity'
-        thresholdCondition = 'embedding <-> :embedding <= :threshold'
-        orderBy = 'proximity ASC'
+        if (opposite) {
+          thresholdCondition = 'embedding <-> :embedding >= :threshold'
+          orderBy = 'proximity DESC'
+        } else {
+          thresholdCondition = 'embedding <-> :embedding <= :threshold'
+          orderBy = 'proximity ASC'
+        }
       } else if (metric === 'inner_product') {
         metricQuery = '(embedding <#> :embedding) * -1 AS proximity'
-        thresholdCondition = '(embedding <#> :embedding) * -1 >= :threshold'
-        orderBy = 'proximity DESC'
+        if (opposite) {
+          thresholdCondition = '(embedding <#> :embedding) * -1 <= :threshold'
+          orderBy = 'proximity ASC'
+        } else {
+          thresholdCondition = '(embedding <#> :embedding) * -1 >= :threshold'
+          orderBy = 'proximity DESC'
+        }
       } else if (metric === 'cosine_similarity') {
         metricQuery = '1 - (embedding <=> :embedding) AS proximity'
-        thresholdCondition = '1 - (embedding <=> :embedding) >= :threshold'
-        orderBy = 'proximity DESC'
+        if (opposite) {
+          thresholdCondition = '1 - (embedding <=> :embedding) <= :threshold'
+          orderBy = 'proximity ASC'
+        } else {
+          thresholdCondition = '1 - (embedding <=> :embedding) >= :threshold'
+          orderBy = 'proximity DESC'
+        }
       }
       additionalParams.threshold = threshold
     } else {
       if (metric === 'distance') {
         metricQuery = 'embedding <-> :embedding AS proximity'
         thresholdCondition = 'embedding <-> :embedding BETWEEN :minThreshold AND :maxThreshold'
-        orderBy = 'proximity ASC'
+        orderBy = opposite ? 'proximity DESC' : 'proximity ASC'
       } else if (metric === 'inner_product') {
         metricQuery = '(embedding <#> :embedding) * -1 AS proximity'
         thresholdCondition =
           '(embedding <#> :embedding) * -1 BETWEEN :minThreshold AND :maxThreshold'
-        orderBy = 'proximity DESC'
+        orderBy = opposite ? 'proximity ASC' : 'proximity DESC'
       } else if (metric === 'cosine_similarity') {
         metricQuery = '1 - (embedding <=> :embedding) AS proximity'
         thresholdCondition =
           '1 - (embedding <=> :embedding) BETWEEN :minThreshold AND :maxThreshold'
-        orderBy = 'proximity DESC'
+        orderBy = opposite ? 'proximity ASC' : 'proximity DESC'
       }
       additionalParams.minThreshold = threshold.min
       additionalParams.maxThreshold = threshold.max
