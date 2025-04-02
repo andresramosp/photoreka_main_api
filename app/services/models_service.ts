@@ -129,6 +129,40 @@ export default class ModelsService {
     }
   }
 
+  async getPresenceMaps(images: { id: string; base64: string }) {
+    try {
+      const payload = { images }
+      const { url, requestPayload, headers } = this.buildRequestConfig(
+        'generate_presence_maps',
+        payload
+      )
+
+      const { data } = await axios.post(url, requestPayload, { headers })
+
+      return { maps: data }
+    } catch (error) {
+      console.error('Error en getPresenceMaps:', error.message)
+      return { maps: [] }
+    }
+  }
+
+  async findSimilarPresenceMaps(image: { id: string; base64: string }) {
+    try {
+      const payload = image
+      const { url, requestPayload, headers } = this.buildRequestConfig(
+        'find_similar_presence_maps',
+        payload
+      )
+
+      const { data } = await axios.post(url, requestPayload, { headers })
+
+      return data.results
+    } catch (error) {
+      console.error('Error en findSimilarPresenceMaps:', error.message)
+      return { photos: [] }
+    }
+  }
+
   @MeasureExecutionTime
   async generateGroupsForTags(tags) {
     try {

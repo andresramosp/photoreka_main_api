@@ -45,18 +45,18 @@ export const packages = [
       //   prompt: MESSAGE_TAGS_TEXT_EXTRACTION,
       //   descriptionSourceFields: ['visual_accents'],
       // },
-      {
-        name: 'chunks_context_story_visual_accents',
-        type: 'ChunkTask',
-        prompt: null,
-        model: null,
-        descriptionSourceFields: ['context', 'story', 'visual_accents'],
-        descriptionsChunksMethod: {
-          context: { type: 'split_by_size', maxLength: 250 },
-          story: { type: 'split_by_size', maxLength: 250 },
-          visual_accents: { type: 'split_by_size', maxLength: 15 },
-        },
-      },
+      // {
+      //   name: 'chunks_context_story_visual_accents',
+      //   type: 'ChunkTask',
+      //   prompt: null,
+      //   model: null,
+      //   descriptionSourceFields: ['context', 'story', 'visual_accents'],
+      //   descriptionsChunksMethod: {
+      //     context: { type: 'split_by_size', maxLength: 250 },
+      //     story: { type: 'split_by_size', maxLength: 250 },
+      //     visual_accents: { type: 'split_by_size', maxLength: 15 },
+      //   },
+      // },
       // {
       //   name: 'visual_embedding_task',
       //   type: 'VisualEmbeddingTask',

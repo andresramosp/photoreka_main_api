@@ -325,6 +325,8 @@ export default class SearchService {
       scoredPhotos = await this.getEmbeddingScoresByPhoto(query, photos, selectedPhotos)
     } else if (query.criteria === 'tags') {
       scoredPhotos = await this.getTagBasedScoresByPhoto(query, photos, selectedPhotos)
+    } else if (query.criteria === 'geometrical') {
+      scoredPhotos = await this.geGeometricalScoresByPhoto(query, photos, selectedPhotos)
     }
 
     return scoredPhotos
@@ -362,7 +364,7 @@ export default class SearchService {
 
     const similarChunks = await this.embeddingsService.findSimilarChunkToEmbedding(
       combinedEmbedding,
-      query.opposite ? 0.7 : 0.4,
+      query.opposite ? 0.7 : 0.5,
       50,
       'cosine_similarity',
       photosToSearch.map((p) => p.id),
@@ -431,6 +433,41 @@ export default class SearchService {
       .map((photo) => ({ photo, score: photoScoreMap.get(photo.id)! }))
   }
 
+  private async geGeometricalScoresByPhoto(
+    query: SearchByPhotoOptions,
+    photos: Photo[],
+    selectedPhotos: Photo[]
+  ): Promise<{ photo: Photo; score: number }[]> {
+    const photosToSearch = photos.filter(
+      (photo: Photo) => !query.currentPhotosIds.includes(photo.id)
+    )
+
+    const referencePhoto = photos[0]
+    const uploadPath = path.join(process.cwd(), 'public/uploads/photos')
+
+    const filePath = path.join(uploadPath, referencePhoto.name)
+    const presenceMapBuffer = await fs.readFile(filePath)
+    const base64 = (await sharp(presenceMapBuffer).toBuffer()).toString('base64')
+
+    // Buscar fotos similares
+    const similarPhotos = await this.modelsService.findSimilarPresenceMaps({
+      id: referencePhoto.id,
+      base64: base64,
+    })
+
+    const photoScoreMap = new Map<number | number, number>()
+    similarPhotos.forEach((item) => {
+      const proximity = 1 / (1 + item.distance) // opcional: transformar distancia en score
+      if (!photoScoreMap.has(item.id) || proximity > photoScoreMap.get(item.id)!) {
+        photoScoreMap.set(Number(item.id), proximity)
+      }
+    })
+
+    return photosToSearch
+      .filter((photo) => photoScoreMap.has(photo.id))
+      .map((photo) => ({ photo, score: photoScoreMap.get(photo.id)! }))
+  }
+
   private async getTagBasedScoresByPhoto(
     query: SearchByPhotoOptions,
     photos: Photo[],
@@ -454,7 +491,7 @@ export default class SearchService {
         ) {
           const similarTags = await this.embeddingsService.findSimilarTagToEmbedding(
             tagPhoto.tag.parsedEmbedding,
-            query.opposite ? 0.7 : 0.4,
+            query.opposite ? 0.7 : 0.5,
             200,
             'cosine_similarity',
             null,
