@@ -277,7 +277,6 @@ export default class SearchPhotoService {
 
     const similarPhotos = await this.visualFeaturesService.findSimilarPhotosByDetections(
       referencePhoto,
-      false,
       ['animal', 'person']
     )
 
