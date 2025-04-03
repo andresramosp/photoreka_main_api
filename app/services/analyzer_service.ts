@@ -17,6 +17,7 @@ import { ChunkTask } from '#models/analyzer/chunkTask'
 import { AnalyzerTask } from '#models/analyzer/analyzerTask'
 import { VisualEmbeddingTask } from '#models/analyzer/visualEmbeddingTask'
 import { base64 } from '@adonisjs/core/helpers'
+import { VisualDetectionTask } from '#models/analyzer/VisualDetectionTask'
 
 export default class AnalyzerProcessRunner {
   private process: AnalyzerProcess
@@ -114,7 +115,12 @@ export default class AnalyzerProcessRunner {
       await this.executeVisualEmbeddingTask(visualEmbeddingTask)
     }
 
-    await this.executePresencMaps()
+    const visualDetectionTask = this.process.tasks.find(
+      (task) => task instanceof VisualDetectionTask
+    )
+    if (visualDetectionTask) {
+      await this.executeVisualDetectionTask(visualDetectionTask)
+    }
 
     await this.changeStage('Process Completed', 'finished')
 
@@ -440,21 +446,28 @@ export default class AnalyzerProcessRunner {
     }
   }
 
-  private async executePresencMaps() {
+  private async executeVisualDetectionTask(task: VisualDetectionTask) {
+    if (!task.data) {
+      task.data = {}
+    }
+    const batchSize = 10
     let photosToProcess: PhotoImage[] = this.process.photoImages
-    for (let i = 0; i < photosToProcess.length; i += 16) {
+    for (let i = 0; i < photosToProcess.length; i += batchSize) {
       await this.sleep(250)
-      const batch = photosToProcess.slice(i, i + 16)
+      const batch = photosToProcess.slice(i, i + batchSize)
       const payload = batch.map((pi: PhotoImage) => ({ id: pi.photo.id, base64: pi.base64 }))
-      const maps = await this.modelsService.getPresenceMaps(payload)
-      console.log(maps)
-      // await Promise.all(
-      //   batch.map((pi: PhotoImage, index) => {
-      //     const photo: Photo = pi.photo
-      //     photo.embedding = embeddings.find((item) => item.id == pi.photo.id).embedding
-      //     return photo.save()
-      //   })
-      // )
+      const { detections: result } = await this.modelsService.getObjectsDetections(
+        payload,
+        task.categories,
+        task.minBoxSize
+      )
+      result.forEach((res, photoIndex) => {
+        const { id: photoId, detections } = res
+        task.data[photoId] = { ...detections }
+      })
+
+      await task.commit()
+      console.log(`[AnalyzerProcess]: Committed ${task.name} for ${batch.length} images...`)
     }
   }
 

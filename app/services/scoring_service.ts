@@ -8,7 +8,7 @@ import MeasureExecutionTime from '../decorators/measureExecutionTime.js'
 import { createRequire } from 'module'
 import EmbeddingsService from './embeddings_service.js'
 import { withCache } from '../decorators/withCache.js'
-import type { SearchMode, SearchType } from './search_service.js'
+import type { SearchMode, SearchType } from './search_text_service.js'
 import TagPhotoManager from '../managers/tag_photo_manager.js'
 import TagManager from '../managers/tag_manager.js'
 import TagPhoto from '#models/tag_photo'
@@ -181,7 +181,7 @@ export default class ScoringService {
       this.findMatchingTagsForSegment({ name: tag, index: 1 }, allTags, 0.2, true, photos)
     )
     const matchingResults = await Promise.all(matchingPromises)
-    const allExcludedTags = matchingResults.map((mr) => mr.matchingTags).flat()
+    const allExcludedTags = matchingResults.map((mr) => mr.matchingPhotoTags).flat()
     const excludedTagNames = allExcludedTags
       .filter((t) => t.proximity > proximityThreshold)
       .map((t) => t.name)
@@ -195,12 +195,12 @@ export default class ScoringService {
   }
 
   // TODO: userid!!
-  // @withCache({
-  //   key: (_, arg2, arg3, arg4) =>
-  //     `getScoredPhotosByTags_${JSON.stringify(arg2)}_${JSON.stringify(arg3)}_${arg4}`,
-  //   provider: 'redis',
-  //   ttl: 120,
-  // })
+  @withCache({
+    key: (_, arg2, arg3, arg4) =>
+      `getScoredPhotosByTags_${JSON.stringify(arg2)}_${JSON.stringify(arg3)}_${arg4}`,
+    provider: 'redis',
+    ttl: 120,
+  })
   public async getScoredPhotosByTags(
     photos: Photo[],
     included: string[],
@@ -445,7 +445,7 @@ export default class ScoringService {
       matchingChunks.map((mc) => ({
         name: mc.chunk.replace(/\.$/, ''), // quitamos el punto y final si lo tiene
         proximity: mc.proximity,
-        id: mc.id,
+        chunk_id: mc.id,
       })),
       'desc',
       strictInference
@@ -453,7 +453,7 @@ export default class ScoringService {
 
     // Crear un mapa de chunk id a proximidad ajustada
     const chunkMap = new Map<string | number, number>(
-      adjustedChunks.map((chunk) => [chunk.id, chunk.proximity])
+      adjustedChunks.map((chunk) => [chunk.chunk_id, chunk.proximity])
     )
 
     // Filtrar las fotos que tienen al menos un chunk relevante
@@ -507,7 +507,7 @@ export default class ScoringService {
     userTags = userTags.filter((tag: Tag) => !areas || areas.includes(tag.area))
 
     // Obtenemos los matching tags directamente del segmento
-    const { matchingTags } = await this.findMatchingTagsForSegment(
+    const { matchingPhotoTags } = await this.findMatchingTagsForSegment(
       segment,
       userTags,
       embeddingsProximityThreshold,
@@ -517,8 +517,8 @@ export default class ScoringService {
       areas
     )
     const tagMap = new Map<number, {}>()
-    matchingTags.forEach((tag: any) => {
-      tagMap.set(tag.id, { proximity: tag.proximity, name: tag.name })
+    matchingPhotoTags.forEach((pt: any) => {
+      tagMap.set(pt.tag_photo_id, { proximity: pt.proximity, name: pt.name })
     })
 
     // Calcular el score para cada foto basándonos en los tags coincidentes,
@@ -527,21 +527,19 @@ export default class ScoringService {
       photo.matchingTags = photo.matchingTags || []
       const matchingPhotoTags =
         photo.tags?.filter((tagPhoto: TagPhoto) => {
-          return (
-            tagMap.has(tagPhoto.tag.id) && (!categories || categories.includes(tagPhoto.category))
-          )
+          return tagMap.has(tagPhoto.id) && (!categories || categories.includes(tagPhoto.category))
         }) || []
       photo.matchingTags = [
         ...photo.matchingTags,
         ...matchingPhotoTags.map((tagPhoto: TagPhoto) => ({
           name: tagPhoto.tag.name,
-          ...tagMap.get(tagPhoto.tag.id),
+          ...tagMap.get(tagPhoto.id),
         })),
       ]
       let tagScore = 0
       if (matchingPhotoTags.length > 0) {
         const proximities = matchingPhotoTags.map(
-          (tagPhoto: TagPhoto) => tagMap.get(tagPhoto.tag.id).proximity!
+          (tagPhoto: TagPhoto) => tagMap.get(tagPhoto.id).proximity!
         )
         tagScore = this.calculateProximitiesScores(proximities)
       }
@@ -565,13 +563,15 @@ export default class ScoringService {
   ) {
     // 1) Comparación por cadenas
 
-    const { lematizedTerm, stringMatches, remainingTags } = this.getStringMatches(segment, userTags)
+    // TODO: rehacer para que funcione con tag_photo y solo si no hay areas!!
+    let { lematizedTerm, stringMatches, remainingTags } = this.getStringMatches(segment, userTags)
+    stringMatches = []
 
     // 2) Comparación y ajuste semántico/lógico
     const semanticMatches = await this.getSemanticMatches(
       lematizedTerm,
       segment.name,
-      remainingTags,
+      userTags, //remainingTags,
       embeddingsProximityThreshold,
       photos,
       categories,
@@ -585,7 +585,7 @@ export default class ScoringService {
       (match, index, self) => index === self.findIndex((t) => t.name === match.name)
     )
 
-    return { matchingTags: uniqueMatches, lematizedTerm }
+    return { matchingPhotoTags: uniqueMatches, lematizedTerm }
   }
 
   private getStringMatches(segment: { name: string; index: number }, userTags) {
@@ -651,12 +651,7 @@ export default class ScoringService {
       strictInference
     )
 
-    return adjustedSimilarTags.map((tag) => ({
-      id: tag.id,
-      name: tag.name,
-      proximity: tag.proximity,
-      embeddingsProximity: tag.embeddingsProximity,
-    }))
+    return adjustedSimilarTags
   }
 
   public async getNearChunksFromDesc(photo: Photo, query: string, threshold: number = 0.1) {

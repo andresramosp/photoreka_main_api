@@ -87,7 +87,9 @@ export default class ModelsService {
 
       return texts.map((text) => ({
         name: text.name,
-        id: text.id,
+        tag_photo_id: text.tag_photo_id,
+        tag_id: text.tag_id,
+        chunk_id: text.chunk_id,
         embeddingsProximity: text.proximity,
         logicProximity: data[text.name]?.adjusted_proximity,
       }))
@@ -146,7 +148,28 @@ export default class ModelsService {
     }
   }
 
-  async findSimilarPresenceMaps(image: { id: string; base64: string }) {
+  async getObjectsDetections(
+    images: { id: string; base64: string },
+    categories: string[],
+    min_box_size: number = 120
+  ) {
+    try {
+      const payload = { images, categories, min_box_size }
+      const { url, requestPayload, headers } = this.buildRequestConfig(
+        'detect_objects_base64',
+        payload
+      )
+
+      const { data } = await axios.post(url, requestPayload, { headers })
+
+      return { detections: data }
+    } catch (error) {
+      console.error('Error en getObjectsDetections:', error.message)
+      return { detections: [] }
+    }
+  }
+
+  async findSimilarPresenceMaps(image: { id: string }) {
     try {
       const payload = image
       const { url, requestPayload, headers } = this.buildRequestConfig(
@@ -156,6 +179,9 @@ export default class ModelsService {
 
       const { data } = await axios.post(url, requestPayload, { headers })
 
+      if (!data.results) {
+        console.log()
+      }
       return data.results
     } catch (error) {
       console.error('Error en findSimilarPresenceMaps:', error.message)

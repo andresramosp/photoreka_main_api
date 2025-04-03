@@ -4,6 +4,7 @@ import type { BelongsTo, HasMany } from '@adonisjs/lucid/types/relations'
 import TagPhoto from './tag_photo.js'
 import DescriptionChunk from './descriptionChunk.js'
 import AnalyzerProcess from './analyzer/analyzerProcess.js'
+import DetectionPhoto from './detection_photo.js'
 
 export type DescriptionType = 'context' | 'story' | 'visual_accents' | 'artistic'
 export type PhotoDescriptions = Record<DescriptionType, string>
@@ -45,6 +46,11 @@ export default class Photo extends BaseModel {
     foreignKey: 'photoId',
   })
   declare descriptionChunks: HasMany<typeof DescriptionChunk>
+
+  @hasMany(() => DetectionPhoto, {
+    foreignKey: 'photoId',
+  })
+  declare detections: HasMany<typeof DetectionPhoto>
 
   @column()
   declare analyzerProcessId: string // Clave foránea que conecta con AnalyzerProcess

@@ -1,5 +1,4 @@
-import Photo, { DescriptionType, PhotoDescriptions } from '#models/photo'
-import TagPhoto from '#models/tag_photo'
+import { DescriptionType, PhotoDescriptions } from '#models/photo'
 import PhotoManager from '../../managers/photo_manager.js'
 import TagPhotoManager from '../../managers/tag_photo_manager.js'
 import { AnalyzerTask } from './analyzerTask.js'
@@ -24,6 +23,9 @@ export class VisionTask extends AnalyzerTask {
         await Promise.all(
           Object.entries(this.data)
             .map(([photoId, tagPhotos]) => {
+              if ([11, 80, 107].includes(Number(photoId))) {
+                console.log()
+              }
               if (!isNaN(photoId)) {
                 const targetField = this.targetFieldType.split('_')[1]
                 const tagPhotosToUpdate: { id: number; [targetField]: string }[] = Object.entries(

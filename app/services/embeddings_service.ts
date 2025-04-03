@@ -333,22 +333,31 @@ export default class EmbeddingsService {
 
     const result = await db.rawQuery(
       `
-      SELECT DISTINCT tags.id, tags.name, tags."group", tags_photos.category, tags_photos.area, tags.created_at, tags.updated_at, ${metricQuery}
-      FROM tags
-      JOIN tags_photos ON tags_photos.tag_id = tags.id
+      SELECT DISTINCT 
+        tags_photos.id AS tag_photo_id, 
+        tags.id AS tag_id, 
+        tags.name, 
+        tags."group", 
+        tags_photos.category, 
+        tags_photos.area, 
+        tags.created_at, 
+        tags.updated_at, 
+        ${metricQuery}
+      FROM tags_photos
+      JOIN tags ON tags.id = tags_photos.tag_id
       JOIN photos ON photos.id = tags_photos.photo_id
       WHERE ${whereCondition}
       ORDER BY ${orderBy}
       LIMIT :limit
       `,
       {
-        embedding: embeddingString,
+        embedding: `[${embedding.join(',')}]`,
         limit,
         tagIds: tagIds || [],
         categories: categories || [],
         areas: areas || [],
         photoIds: photoIds || [],
-        userId: userId || null, // 🔥 Se pasa null si no hay userId para evitar errores
+        userId: userId || null,
         ...additionalParams,
       }
     )

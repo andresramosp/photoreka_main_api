@@ -2,6 +2,7 @@ import { AnalyzerTask } from '#models/analyzer/analyzerTask'
 import { ChunkTask } from '#models/analyzer/chunkTask'
 import { TagTask } from '#models/analyzer/tagTask'
 import { VisionTask } from '#models/analyzer/visionTask'
+import { VisualDetectionTask } from '#models/analyzer/VisualDetectionTask'
 import { VisualEmbeddingTask } from '#models/analyzer/visualEmbeddingTask'
 import {
   MESSAGE_ANALYZER_GPT_CONTEXT_AND_STORY,
@@ -57,10 +58,16 @@ export const packages = [
       //     visual_accents: { type: 'split_by_size', maxLength: 15 },
       //   },
       // },
-      // {
+      // // {
       //   name: 'visual_embedding_task',
       //   type: 'VisualEmbeddingTask',
       // },
+      {
+        name: 'visual_detections_task',
+        type: 'VisualDetectionsTask',
+        categories: ['person', 'animal', 'prominent object'],
+        minBoxSize: 90,
+      },
     ],
   },
   // Basic context-story + visual_accents GPT separados
@@ -217,6 +224,9 @@ export const getTaskList = (packageId: string): AnalyzerTask[] => {
         break
       case 'VisualEmbeddingTask':
         task = new VisualEmbeddingTask()
+        break
+      case 'VisualDetectionsTask':
+        task = new VisualDetectionTask()
         break
       default:
         throw new Error(`Unknown task type: ${taskData.type}`)

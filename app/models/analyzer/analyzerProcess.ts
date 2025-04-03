@@ -94,7 +94,7 @@ export default class AnalyzerProcess extends BaseModel {
           await fs.access(filePath)
           // Redimensionar y obtener el buffer redimensionado
           const resizedBuffer = await sharp(filePath)
-            .resize({ width: 1000, fit: 'inside' })
+            .resize({ width: 1200, fit: 'inside' })
             .toBuffer()
           // Crear instancia a partir del buffer redimensionado para obtener dimensiones reales
           const resizedImage = sharp(resizedBuffer)

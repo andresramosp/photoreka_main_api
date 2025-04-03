@@ -1,6 +1,7 @@
 // @ts-nocheck
 
-import Photo, { PhotoDescriptions } from '#models/photo'
+import DetectionPhoto from '#models/detection_photo'
+import Photo, { PhotoDescriptions, PhotoDetections } from '#models/photo'
 import TagPhoto from '#models/tag_photo'
 
 import { withCache } from '../decorators/withCache.js'
@@ -101,6 +102,26 @@ export default class PhotoManager {
     } catch (err) {
       console.error(`[AnalyzerProcess] Error updating descriptions for photo ${id}`, err)
     }
+    return photo
+  }
+
+  public async updatePhotoDetections(
+    photoId: string,
+    newDetections: Partial<DetectionPhoto>[],
+    replaceAll: boolean = true
+  ) {
+    const photo = await Photo.find(photoId)
+    if (!photo) {
+      throw new Error('Photo not found')
+    }
+
+    if (replaceAll) {
+      await photo.related('detections').query().delete()
+    }
+
+    await photo.related('detections').createMany(newDetections)
+    await photo.load('detections')
+
     return photo
   }
 
