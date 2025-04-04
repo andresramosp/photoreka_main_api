@@ -456,11 +456,38 @@ export default class AnalyzerProcessRunner {
       await this.sleep(250)
       const batch = photosToProcess.slice(i, i + batchSize)
       const payload = batch.map((pi: PhotoImage) => ({ id: pi.photo.id, base64: pi.base64 }))
-      const { detections: result } = await this.modelsService.getObjectsDetections(
-        payload,
-        task.categories,
-        task.minBoxSize
-      )
+      const { detections: result } = await this.modelsService.getObjectsDetections(payload, [
+        {
+          name: 'person',
+          min_box_size: 90,
+          max_box_area_ratio: 0.8,
+          color: 'red',
+        },
+        {
+          name: 'animal',
+          min_box_size: 90,
+          max_box_area_ratio: 0.8,
+          color: 'yellow',
+        },
+        {
+          name: 'prominent object',
+          min_box_size: 200,
+          max_box_area_ratio: 0.85,
+          color: 'green',
+        },
+        {
+          name: 'environmental structure',
+          min_box_size: 250,
+          max_box_area_ratio: 0.85,
+          color: 'blue',
+        },
+        // {
+        //   name: 'vehicle',
+        //   min_box_size: 200,
+        //   max_box_area_ratio: 0.85,
+        //   color: 'blue',
+        // },
+      ])
       result.forEach((res, photoIndex) => {
         const { id: photoId, detections } = res
         task.data[photoId] = { ...detections }

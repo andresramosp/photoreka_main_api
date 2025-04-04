@@ -27,6 +27,7 @@ export default class PhotoManager {
   public async getPhotosByIds(photoIds: string[]) {
     const photos = await Photo.query()
       .whereIn('id', photoIds)
+      .preload('detections')
       .preload('tags', (query) => {
         query.preload('tag')
       })
@@ -45,6 +46,7 @@ export default class PhotoManager {
         query.preload('tag')
       })
       .preload('descriptionChunks')
+      .preload('detections')
       .preload('analyzerProcess')
     return photos.map((photo) => ({
       ...photo.$attributes,
@@ -59,6 +61,7 @@ export default class PhotoManager {
     let photos = await Photo.query()
       .preload('descriptionChunks')
       .preload('analyzerProcess')
+      .preload('detections')
       .preload('tags', (query) => {
         query.preload('tag')
       })

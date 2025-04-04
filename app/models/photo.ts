@@ -72,6 +72,27 @@ export default class Photo extends BaseModel {
   }
 
   @computed()
+  public get detectionAreas(): DetectionPhoto[] {
+    return this.detections
+    return this.detections.filter((det) => {
+      const detArea = (det.x2 - det.x1) * (det.y2 - det.y1)
+      if (detArea <= 0) return true // Área inválida, se mantiene o se ignora según necesidad
+      // Se buscan áreas mayores que puedan cubrir esta detección
+      for (const other of this.detections) {
+        if (other.id === det.id) continue
+        const otherArea = (other.x2 - other.x1) * (other.y2 - other.y1)
+        if (otherArea <= detArea) continue
+        const interWidth = Math.max(0, Math.min(det.x2, other.x2) - Math.max(det.x1, other.x1))
+        const interHeight = Math.max(0, Math.min(det.y2, other.y2) - Math.max(det.y1, other.y1))
+        const interArea = interWidth * interHeight
+        // Si el área de intersección es mayor al 90% del área de la detección, se descarta
+        if (interArea / detArea > 0.8) return false
+      }
+      return true
+    })
+  }
+
+  @computed()
   public get parsedEmbedding(): number[] {
     return JSON.parse(this.embedding)
   }

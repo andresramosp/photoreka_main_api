@@ -148,13 +148,9 @@ export default class ModelsService {
     }
   }
 
-  async getObjectsDetections(
-    images: { id: string; base64: string },
-    categories: string[],
-    min_box_size: number = 120
-  ) {
+  async getObjectsDetections(images: { id: string; base64: string }, categories: any[]) {
     try {
-      const payload = { images, categories, min_box_size }
+      const payload = { images, categories }
       const { url, requestPayload, headers } = this.buildRequestConfig(
         'detect_objects_base64',
         payload

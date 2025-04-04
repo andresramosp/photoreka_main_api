@@ -65,8 +65,8 @@ export const packages = [
       {
         name: 'visual_detections_task',
         type: 'VisualDetectionsTask',
-        categories: ['person', 'animal', 'prominent object'],
-        minBoxSize: 90,
+        // categories: ['person', 'animal', 'prominent object'],
+        // minBoxSize: 90,
       },
     ],
   },

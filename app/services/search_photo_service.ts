@@ -21,11 +21,12 @@ export type SearchByPhotoOptions = {
   photoIds: number[]
   currentPhotosIds: number[]
   criteria: 'semantic' | 'embedding' | 'chromatic' | 'composition' | 'geometrical' | 'tags'
-  opposite: boolean
   tagIds: number[] // para criteria 'tags'
+  boxesIds: number[] // para criteria 'composition'
   descriptionCategories: string[] // para criteria 'semantic
   withInsights?: boolean
   opposite: boolean
+  inverted: boolean
   resultLength: number
 }
 
@@ -277,8 +278,9 @@ export default class SearchPhotoService {
 
     const similarPhotos = await this.visualFeaturesService.findSimilarPhotosByDetections(
       referencePhoto,
-      ['animal', 'person'],
-      query.opposite
+      query.boxesIds,
+      null,
+      query.inverted
     )
 
     return photosToSearch
