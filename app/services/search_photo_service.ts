@@ -280,6 +280,7 @@ export default class SearchPhotoService {
       referencePhoto,
       query.boxesIds,
       null,
+      null, //['animal', 'person', 'prominent object'],
       query.inverted
     )
 

@@ -4,30 +4,38 @@ import DetectionPhoto from '#models/detection_photo'
 const IMAGE_WIDTH = 1500
 
 const WEIGHTS = {
-  distribution: 0.1,
-  numberOfBoxes: 0.9,
+  distribution: 0.5,
+  numberOfBoxes: 0.5,
 }
+
+const CATEGORY_GROUPS = [
+  ['animal', 'person', 'prominent object'],
+  ['architectural feature', 'vegetation element', 'prominent object'],
+]
 
 export default class VisualFeaturesService {
   public async findSimilarPhotosByDetections(
     photo: Photo,
     boxesIds: number[] = [],
-    categories: string[] = [],
+    categoriesRef: string[] = [],
+    categoriesCand: string[] = [],
     inverted = false
   ) {
     await photo.load('detections')
+    // Para la foto de referencia cogemos todas las areas seleccionadas
     const referenceBoxes: DetectionPhoto[] = this.filterDetectionsByCategory(
-      photo.detectionAreas.filter((da) => !boxesIds.length || boxesIds.includes(da.id)),
-      categories
+      photo.detections.filter((da) => !boxesIds.length || boxesIds.includes(da.id)),
+      categoriesRef
     )
     const allPhotos = await Photo.query().preload('detections')
 
     const candidateScores = allPhotos
       .filter((p) => p.id !== photo.id)
       .map((candidate) => {
+        // Para la foto candidata cogemos las areas mergeadas
         let candidateBoxes: DetectionPhoto[] = this.filterDetectionsByCategory(
           candidate.detectionAreas,
-          ['animal', 'person']
+          categoriesCand
         )
         if (inverted) {
           candidateBoxes = candidateBoxes.map(flipBoxHorizontally)

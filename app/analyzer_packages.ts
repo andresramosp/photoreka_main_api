@@ -65,8 +65,38 @@ export const packages = [
       {
         name: 'visual_detections_task',
         type: 'VisualDetectionsTask',
-        // categories: ['person', 'animal', 'prominent object'],
-        // minBoxSize: 90,
+        categories: [
+          {
+            name: 'person',
+            min_box_size: 90,
+            max_box_area_ratio: 1,
+            color: 'red',
+          },
+          {
+            name: 'animal',
+            min_box_size: 90,
+            max_box_area_ratio: 0.8,
+            color: 'yellow',
+          },
+          {
+            name: 'prominent object',
+            min_box_size: 110,
+            max_box_area_ratio: 0.8,
+            color: 'green',
+          },
+          {
+            name: 'vegetation element',
+            min_box_size: 230,
+            max_box_area_ratio: 0.7,
+            color: 'blue',
+          },
+          {
+            name: 'architectural feature',
+            min_box_size: 200,
+            max_box_area_ratio: 0.7,
+            color: 'orange',
+          },
+        ],
       },
     ],
   },
