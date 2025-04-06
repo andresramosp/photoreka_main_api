@@ -279,8 +279,8 @@ export default class SearchPhotoService {
     const similarPhotos = await this.visualFeaturesService.findSimilarPhotosByDetections(
       referencePhoto,
       query.boxesIds,
-      ['animal', 'person', 'prominent object'],
-      ['animal', 'person', 'prominent object'],
+      ['animal', 'person', 'prominent object', 'architectural feature'],
+      ['animal', 'person', 'prominent object', 'architectural feature'],
       query.inverted
     )
 

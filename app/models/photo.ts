@@ -76,7 +76,9 @@ export default class Photo extends BaseModel {
     const threshold = 0.5
     // Filtrar detecciones con área válida
     let detections = [...this.detections]
-      .filter((det) => ['animal', 'person', 'prominent object'].includes(det.category))
+      .filter((det) =>
+        ['animal', 'person', 'prominent object', 'architectural feature'].includes(det.category)
+      )
       .filter((det) => {
         const area = (det.x2 - det.x1) * (det.y2 - det.y1)
         return area > 0
@@ -105,16 +107,7 @@ export default class Photo extends BaseModel {
       })
     }
 
-    return finalDetections //.map((det) => this.flipBoxHorizontally(det))
-  }
-
-  private flipBoxHorizontally(box: DetectionPhoto) {
-    return {
-      x1: 1500 - box.x2,
-      x2: 1500 - box.x1,
-      y1: box.y1,
-      y2: box.y2,
-    }
+    return finalDetections
   }
 
   @computed()

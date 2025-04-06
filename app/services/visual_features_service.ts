@@ -11,13 +11,14 @@ const WEIGHTS = (coverageRatio: number = 0) => {
 }
 
 const MAX_DIFF_BOXES = 1
+const CATEGORY_GROUPS = [
+  ['animal', 'person', 'prominent object'],
+  ['prominent object', 'architectural feature'],
+]
+const CROSS_GROUP_PENALTY = 0 // unificarlo
+const IMAGE_WIDTH = 1500
 
 export default class VisualFeaturesService {
-  // Ajusta según tu caso
-  private static readonly IMAGE_WIDTH = 1500
-
-  private static readonly CATEGORY_GROUPS = [['animal', 'person', 'prominent object']]
-
   public async findSimilarPhotosByDetections(
     photo: Photo,
     boxesIds: number[] = [],
@@ -115,11 +116,15 @@ export default class VisualFeaturesService {
         if (usedCand.has(i)) continue
 
         const detCand = detectionsCand[i]
-        if (!this.isSameGroup(detRef.category, detCand.category)) continue
-
         const sim = detRef.similarity(detCand)
-        if (sim > bestScore) {
-          bestScore = sim
+
+        let adjustedSim = sim
+        if (!this.isSameGroup(detRef.category, detCand.category)) {
+          adjustedSim *= CROSS_GROUP_PENALTY
+        }
+
+        if (adjustedSim > bestScore) {
+          bestScore = adjustedSim
           bestIndex = i
         }
       }
@@ -200,23 +205,21 @@ export default class VisualFeaturesService {
     const unionHeight = Math.max(0, maxY - minY)
     const unionArea = unionWidth * unionHeight
 
-    const imageArea = (VisualFeaturesService.IMAGE_WIDTH * VisualFeaturesService.IMAGE_WIDTH) / 1.5
+    const imageArea = (IMAGE_WIDTH * IMAGE_WIDTH) / 1.5
 
     const coverage = unionArea / imageArea
     return Math.max(0, Math.min(1, coverage)) // normalizado entre 0 y 1
   }
 
   private isSameGroup(cat1: string, cat2: string) {
-    return VisualFeaturesService.CATEGORY_GROUPS.some(
-      (group) => group.includes(cat1) && group.includes(cat2)
-    )
+    return CATEGORY_GROUPS.some((group) => group.includes(cat1) && group.includes(cat2))
   }
 
   private flipBoxHorizontally(box: DetectionPhoto): DetectionPhoto {
     const flipped = new DetectionPhoto()
 
-    flipped.x1 = VisualFeaturesService.IMAGE_WIDTH - box.x2
-    flipped.x2 = VisualFeaturesService.IMAGE_WIDTH - box.x1
+    flipped.x1 = IMAGE_WIDTH - box.x2
+    flipped.x2 = IMAGE_WIDTH - box.x1
     flipped.y1 = box.y1
     flipped.y2 = box.y2
     flipped.category = box.category

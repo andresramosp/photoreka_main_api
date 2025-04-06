@@ -80,13 +80,13 @@ export const packages = [
           },
           {
             name: 'prominent object',
-            min_box_size: 110,
+            min_box_size: 100,
             max_box_area_ratio: 0.8,
             color: 'green',
           },
           {
             name: 'architectural feature',
-            min_box_size: 110,
+            min_box_size: 100,
             max_box_area_ratio: 0.8,
             color: 'orange',
           },
