@@ -73,23 +73,39 @@ export default class Photo extends BaseModel {
 
   @computed()
   public get detectionAreas(): DetectionPhoto[] {
-    return this.detections
-    return this.detections.filter((det) => {
-      const detArea = (det.x2 - det.x1) * (det.y2 - det.y1)
-      if (detArea <= 0) return true // Área inválida, se mantiene o se ignora según necesidad
-      // Se buscan áreas mayores que puedan cubrir esta detección
-      for (const other of this.detections) {
-        if (other.id === det.id) continue
-        const otherArea = (other.x2 - other.x1) * (other.y2 - other.y1)
-        if (otherArea <= detArea) continue
-        const interWidth = Math.max(0, Math.min(det.x2, other.x2) - Math.max(det.x1, other.x1))
-        const interHeight = Math.max(0, Math.min(det.y2, other.y2) - Math.max(det.y1, other.y1))
-        const interArea = interWidth * interHeight
-        // Si el área de intersección es mayor al 90% del área de la detección, se descarta
-        if (interArea / detArea > 0.8) return false
-      }
-      return true
+    const threshold = 0.5
+    // Filtrar detecciones con área válida
+    let detections = [...this.detections]
+      .filter((det) => ['animal', 'person', 'prominent object'].includes(det.category))
+      .filter((det) => {
+        const area = (det.x2 - det.x1) * (det.y2 - det.y1)
+        return area > 0
+      })
+
+    // Ordenar detecciones por área de mayor a menor
+    detections.sort((a, b) => {
+      const areaA = (a.x2 - a.x1) * (a.y2 - a.y1)
+      const areaB = (b.x2 - b.x1) * (b.y2 - b.y1)
+      return areaB - areaA
     })
+
+    const finalDetections: DetectionPhoto[] = []
+    while (detections.length) {
+      const current = detections.shift()!
+      finalDetections.push(current)
+      detections = detections.filter((det) => {
+        const areaCurrent = (current.x2 - current.x1) * (current.y2 - current.y1)
+        const areaDet = (det.x2 - det.x1) * (det.y2 - det.y1)
+        const interWidth = Math.max(0, Math.min(current.x2, det.x2) - Math.max(current.x1, det.x1))
+        const interHeight = Math.max(0, Math.min(current.y2, det.y2) - Math.max(current.y1, det.y1))
+        const interArea = interWidth * interHeight
+        const union = areaCurrent + areaDet - interArea
+        const iou = interArea / union
+        return iou < threshold
+      })
+    }
+
+    return finalDetections
   }
 
   @computed()

@@ -1,16 +1,19 @@
 import Photo from '#models/photo'
 import DetectionPhoto from '#models/detection_photo'
 
-const IMAGE_WIDTH = 1500
-
 const WEIGHTS = {
-  distribution: 1,
-  numberOfBoxes: 2,
+  global: 1,
+  individual: 2,
 }
 
-const CATEGORY_GROUPS = [['animal', 'person'], ['prominent object']]
+const MAX_DIFF_BOXES = 0
 
 export default class VisualFeaturesService {
+  // Ajusta según tu caso
+  private static readonly IMAGE_WIDTH = 1500
+
+  private static readonly CATEGORY_GROUPS = [['animal', 'person', 'prominent object']]
+
   public async findSimilarPhotosByDetections(
     photo: Photo,
     boxesIds: number[] = [],
@@ -21,7 +24,7 @@ export default class VisualFeaturesService {
     await photo.load('detections')
 
     const referenceBoxes: DetectionPhoto[] = this.filterDetectionsByCategory(
-      photo.detections.filter((da) => !boxesIds.length || boxesIds.includes(da.id)),
+      photo.detectionAreas.filter((da) => !boxesIds.length || boxesIds.includes(da.id)),
       categoriesRef
     )
 
@@ -31,17 +34,24 @@ export default class VisualFeaturesService {
       .filter((p) => p.id !== photo.id)
       .map((candidate) => {
         let candidateBoxes: DetectionPhoto[] = this.filterDetectionsByCategory(
-          candidate.detections,
+          candidate.detectionAreas,
           categoriesCand
         )
+
         if (inverted) {
-          candidateBoxes = candidateBoxes.map(flipBoxHorizontally)
+          candidateBoxes = candidateBoxes.map((box) => this.flipBoxHorizontally(box))
         }
-        const finalScore = computeScore(referenceBoxes, candidateBoxes)
+
+        if (Math.abs(referenceBoxes.length - candidateBoxes.length) > MAX_DIFF_BOXES) {
+          return {
+            photo: candidate,
+            score: 0,
+          }
+        }
 
         return {
           photo: candidate,
-          score: finalScore,
+          score: this.computeScore(referenceBoxes, candidateBoxes),
         }
       })
 
@@ -53,78 +63,106 @@ export default class VisualFeaturesService {
     }))
   }
 
+  // ------------------------------------------------------------------------------
+  // Métodos privados
+  // ------------------------------------------------------------------------------
+
   private filterDetectionsByCategory(detections: DetectionPhoto[], categories: string[]) {
-    return categories?.length > 0
+    return categories?.length
       ? detections.filter((d) => categories.includes(d.category))
       : detections
   }
-}
 
-// Helpers
+  private computeScore(refBoxes: DetectionPhoto[], candBoxes: DetectionPhoto[]) {
+    const individual = this.matchScoreIndividual(refBoxes, candBoxes)
+    const global = this.matchScoreGlobal(refBoxes, candBoxes)
 
-function isSameGroup(cat1: string, cat2: string) {
-  return CATEGORY_GROUPS.some((group) => group.includes(cat1) && group.includes(cat2))
-}
+    const weightedSum = WEIGHTS.individual * individual + WEIGHTS.global * global
 
-function computeOverlapArea(boxA: DetectionPhoto, boxB: DetectionPhoto) {
-  const overlapWidth = Math.max(0, Math.min(boxA.x2, boxB.x2) - Math.max(boxA.x1, boxB.x1))
-  const overlapHeight = Math.max(0, Math.min(boxA.y2, boxB.y2) - Math.max(boxA.y1, boxB.y1))
-  return overlapWidth * overlapHeight
-}
+    const totalWeights = WEIGHTS.individual + WEIGHTS.global
 
-function boxArea(box: DetectionPhoto) {
-  return Math.max(0, box.x2 - box.x1) * Math.max(0, box.y2 - box.y1)
-}
+    return totalWeights > 0 ? weightedSum / totalWeights : 0
+  }
 
-function computeMutualOverlap(refBoxes: DetectionPhoto[], candBoxes: DetectionPhoto[]) {
-  let overlapArea = 0
+  private matchScoreIndividual(
+    detectionsRef: DetectionPhoto[],
+    detectionsCand: DetectionPhoto[]
+  ): number {
+    let totalScore = 0
+    let matches = 0
+    const usedCand = new Set<number>()
 
-  for (const ref of refBoxes) {
-    for (const cand of candBoxes) {
-      if (isSameGroup(ref.category, cand.category)) {
-        overlapArea += computeOverlapArea(ref, cand)
+    for (const detRef of detectionsRef) {
+      let bestScore = 0
+      let bestIndex = -1
+
+      for (let i = 0; i < detectionsCand.length; i++) {
+        if (usedCand.has(i)) continue
+
+        const detCand = detectionsCand[i]
+        if (!this.isSameGroup(detRef.category, detCand.category)) continue
+
+        const sim = detRef.similarity(detCand)
+        if (sim > bestScore) {
+          bestScore = sim
+          bestIndex = i
+        }
+      }
+
+      if (bestIndex !== -1) {
+        usedCand.add(bestIndex)
+        totalScore += bestScore
+        matches++
       }
     }
+
+    return detectionsRef.length > 0 ? totalScore / detectionsRef.length : 0
   }
 
-  const refArea = refBoxes
-    .filter((ref) => candBoxes.some((c) => isSameGroup(ref.category, c.category)))
-    .reduce((acc, box) => acc + boxArea(box), 0)
+  private matchScoreGlobal(refBoxes: DetectionPhoto[], candBoxes: DetectionPhoto[]): number {
+    const { overlapArea, refArea, candArea } = this.computeMutualOverlap(refBoxes, candBoxes)
+    const union = refArea + candArea - overlapArea
+    if (union <= 0) {
+      return 0
+    }
+    return overlapArea / union // IoU global
+  }
 
-  const candArea = candBoxes
-    .filter((c) => refBoxes.some((ref) => isSameGroup(ref.category, c.category)))
-    .reduce((acc, box) => acc + boxArea(box), 0)
+  private computeMutualOverlap(refBoxes: DetectionPhoto[], candBoxes: DetectionPhoto[]) {
+    let overlapArea = 0
 
-  return { overlapArea, refArea, candArea }
-}
+    for (const ref of refBoxes) {
+      for (const cand of candBoxes) {
+        if (this.isSameGroup(ref.category, cand.category)) {
+          overlapArea += ref.overlapArea(cand)
+        }
+      }
+    }
 
-function computeBoxCountBonus(refBoxes: DetectionPhoto[], candBoxes: DetectionPhoto[]) {
-  if (refBoxes.length > 0 && candBoxes.length > 0) {
-    return (
-      1 - Math.abs(refBoxes.length - candBoxes.length) / Math.max(refBoxes.length, candBoxes.length)
+    const refArea = refBoxes
+      .filter((ref) => candBoxes.some((c) => this.isSameGroup(ref.category, c.category)))
+      .reduce((acc, box) => acc + box.area(), 0)
+
+    const candArea = candBoxes
+      .filter((cand) => refBoxes.some((r) => this.isSameGroup(r.category, cand.category)))
+      .reduce((acc, box) => acc + box.area(), 0)
+
+    return { overlapArea, refArea, candArea }
+  }
+
+  private isSameGroup(cat1: string, cat2: string) {
+    return VisualFeaturesService.CATEGORY_GROUPS.some(
+      (group) => group.includes(cat1) && group.includes(cat2)
     )
   }
-  return 0
-}
 
-function computeScore(refBoxes: DetectionPhoto[], candBoxes: DetectionPhoto[]) {
-  const { overlapArea, refArea, candArea } = computeMutualOverlap(refBoxes, candBoxes)
-
-  const safeRefArea = refArea > 0 ? refArea : 1
-  const safeCandArea = candArea > 0 ? candArea : 1
-
-  const baseScore = (overlapArea / safeRefArea + overlapArea / safeCandArea) / 2
-  const boxCountBonus = computeBoxCountBonus(refBoxes, candBoxes)
-
-  return baseScore * WEIGHTS.distribution + boxCountBonus * WEIGHTS.numberOfBoxes
-}
-
-function flipBoxHorizontally(box: DetectionPhoto) {
-  return {
-    ...box,
-    x1: IMAGE_WIDTH - box.x2,
-    x2: IMAGE_WIDTH - box.x1,
-    y1: box.y1,
-    y2: box.y2,
+  private flipBoxHorizontally(box: DetectionPhoto) {
+    return {
+      ...box,
+      x1: VisualFeaturesService.IMAGE_WIDTH - box.x2,
+      x2: VisualFeaturesService.IMAGE_WIDTH - box.x1,
+      y1: box.y1,
+      y2: box.y2,
+    }
   }
 }
