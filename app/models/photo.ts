@@ -105,7 +105,16 @@ export default class Photo extends BaseModel {
       })
     }
 
-    return finalDetections
+    return finalDetections //.map((det) => this.flipBoxHorizontally(det))
+  }
+
+  private flipBoxHorizontally(box: DetectionPhoto) {
+    return {
+      x1: 1500 - box.x2,
+      x2: 1500 - box.x1,
+      y1: box.y1,
+      y2: box.y2,
+    }
   }
 
   @computed()
