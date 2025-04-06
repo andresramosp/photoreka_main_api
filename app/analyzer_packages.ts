@@ -85,15 +85,9 @@ export const packages = [
             color: 'green',
           },
           {
-            name: 'vegetation element',
-            min_box_size: 230,
-            max_box_area_ratio: 0.7,
-            color: 'blue',
-          },
-          {
             name: 'architectural feature',
-            min_box_size: 200,
-            max_box_area_ratio: 0.7,
+            min_box_size: 110,
+            max_box_area_ratio: 0.8,
             color: 'orange',
           },
         ],
