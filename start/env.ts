@@ -16,6 +16,7 @@ const schema = {
   REDIS_HOST: Env.schema.string({ format: 'host' }),
   REDIS_PORT: Env.schema.number(),
   REDIS_PASSWORD: Env.schema.string.optional(),
+  APP_NAME: Env.schema.string(),
 }
 
 // Fallback env.get() compatible wrapper
