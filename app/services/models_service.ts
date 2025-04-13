@@ -148,6 +148,23 @@ export default class ModelsService {
     }
   }
 
+  async getLineMaps(images: { id: string; base64: string }) {
+    try {
+      const payload = { images }
+      const { url, requestPayload, headers } = this.buildRequestConfig(
+        'generate_line_maps',
+        payload
+      )
+
+      const { data } = await axios.post(url, requestPayload, { headers })
+
+      return { maps: data }
+    } catch (error) {
+      console.error('Error en getPresenceMaps:', error.message)
+      return { maps: [] }
+    }
+  }
+
   async getObjectsDetections(images: { id: string; base64: string }, categories: any[]) {
     try {
       const payload = { images, categories }

@@ -62,36 +62,36 @@ export const packages = [
       //   name: 'visual_embedding_task',
       //   type: 'VisualEmbeddingTask',
       // },
-      {
-        name: 'visual_detections_task',
-        type: 'VisualDetectionsTask',
-        categories: [
-          {
-            name: 'person',
-            min_box_size: 90,
-            max_box_area_ratio: 1,
-            color: 'red',
-          },
-          {
-            name: 'animal',
-            min_box_size: 90,
-            max_box_area_ratio: 0.8,
-            color: 'yellow',
-          },
-          {
-            name: 'prominent object',
-            min_box_size: 100,
-            max_box_area_ratio: 0.8,
-            color: 'green',
-          },
-          {
-            name: 'architectural feature',
-            min_box_size: 100,
-            max_box_area_ratio: 0.8,
-            color: 'orange',
-          },
-        ],
-      },
+      // {
+      //   name: 'visual_detections_task',
+      //   type: 'VisualDetectionsTask',
+      //   categories: [
+      //     {
+      //       name: 'person',
+      //       min_box_size: 80,
+      //       max_box_area_ratio: 1,
+      //       color: 'red',
+      //     },
+      //     {
+      //       name: 'animal',
+      //       min_box_size: 90,
+      //       max_box_area_ratio: 0.8,
+      //       color: 'yellow',
+      //     },
+      //     {
+      //       name: 'prominent object',
+      //       min_box_size: 100,
+      //       max_box_area_ratio: 0.8,
+      //       color: 'green',
+      //     },
+      //     {
+      //       name: 'architectural feature',
+      //       min_box_size: 100,
+      //       max_box_area_ratio: 0.8,
+      //       color: 'orange',
+      //     },
+      //   ],
+      // },
     ],
   },
   // Basic context-story + visual_accents GPT separados
