@@ -30,7 +30,7 @@ export default class extends BaseSchema {
         .inTable('tags_photos')
         .onDelete('SET NULL')
 
-      table.unique(['photo_id', 'tag_id', 'category', 'area'])
+      table.unique(['photo_id', 'tag_id', 'category'])
     })
   }
 

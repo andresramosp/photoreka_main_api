@@ -7,7 +7,7 @@ import path from 'path'
 import crypto from 'crypto'
 import Photo from '#models/photo'
 import { GoogleAuthService } from '#services/google_photos_service'
-import PhotosService from '#services/photos_service'
+import PhotoManager from '../managers/photo_manager.js'
 
 export default class CatalogController {
   private async savePhotos(
@@ -100,10 +100,22 @@ export default class CatalogController {
   }
 
   public async getPhotos({ response }: HttpContext) {
-    const photosService = new PhotosService()
+    const photoManager = new PhotoManager()
     try {
-      const photos = await photosService._getPhotosByUser('1234')
+      const photos = await photoManager._getPhotosByUser('1234')
       return response.ok({ photos })
+    } catch (error) {
+      console.error('Error fetching photos:', error)
+      return response.internalServerError({ message: 'Error fetching photos' })
+    }
+  }
+
+  public async getPhotosByIds({ response, request }: HttpContext) {
+    const photoManager = new PhotoManager()
+    try {
+      const query = request.body()
+      const result = await photoManager.getPhotosByIds(query.photosIds)
+      return response.ok(result)
     } catch (error) {
       console.error('Error fetching photos:', error)
       return response.internalServerError({ message: 'Error fetching photos' })

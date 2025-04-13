@@ -87,7 +87,9 @@ export default class ModelsService {
 
       return texts.map((text) => ({
         name: text.name,
-        id: text.id,
+        tag_photo_id: text.tag_photo_id,
+        tag_id: text.tag_id,
+        chunk_id: text.chunk_id,
         embeddingsProximity: text.proximity,
         logicProximity: data[text.name]?.adjusted_proximity,
       }))
@@ -109,6 +111,94 @@ export default class ModelsService {
     } catch (error) {
       console.error('Error en getEmbeddings:', error.message)
       return { embeddings: [] }
+    }
+  }
+
+  async getEmbeddingsImages(images: { id: string; base64: string }) {
+    try {
+      const payload = { images }
+      const { url, requestPayload, headers } = this.buildRequestConfig(
+        'get_embeddings_image',
+        payload
+      )
+
+      const { data } = await axios.post(url, requestPayload, { headers })
+
+      return { embeddings: data }
+    } catch (error) {
+      console.error('Error en getEmbeddings:', error.message)
+      return { embeddings: [] }
+    }
+  }
+
+  async getPresenceMaps(images: { id: string; base64: string }) {
+    try {
+      const payload = { images }
+      const { url, requestPayload, headers } = this.buildRequestConfig(
+        'generate_presence_maps',
+        payload
+      )
+
+      const { data } = await axios.post(url, requestPayload, { headers })
+
+      return { maps: data }
+    } catch (error) {
+      console.error('Error en getPresenceMaps:', error.message)
+      return { maps: [] }
+    }
+  }
+
+  async getLineMaps(images: { id: string; base64: string }) {
+    try {
+      const payload = { images }
+      const { url, requestPayload, headers } = this.buildRequestConfig(
+        'generate_line_maps',
+        payload
+      )
+
+      const { data } = await axios.post(url, requestPayload, { headers })
+
+      return { maps: data }
+    } catch (error) {
+      console.error('Error en getPresenceMaps:', error.message)
+      return { maps: [] }
+    }
+  }
+
+  async getObjectsDetections(images: { id: string; base64: string }, categories: any[]) {
+    try {
+      const payload = { images, categories }
+      const { url, requestPayload, headers } = this.buildRequestConfig(
+        'detect_objects_base64',
+        payload
+      )
+
+      const { data } = await axios.post(url, requestPayload, { headers })
+
+      return { detections: data }
+    } catch (error) {
+      console.error('Error en getObjectsDetections:', error.message)
+      return { detections: [] }
+    }
+  }
+
+  async findSimilarPresenceMaps(image: { id: string }) {
+    try {
+      const payload = image
+      const { url, requestPayload, headers } = this.buildRequestConfig(
+        'find_similar_presence_maps',
+        payload
+      )
+
+      const { data } = await axios.post(url, requestPayload, { headers })
+
+      if (!data.results) {
+        console.log()
+      }
+      return data.results
+    } catch (error) {
+      console.error('Error en findSimilarPresenceMaps:', error.message)
+      return { photos: [] }
     }
   }
 
@@ -205,7 +295,7 @@ export default class ModelsService {
             generation_config: {
               temperature: 0.1,
               max_new_tokens: 200,
-              max_crops: 12,
+              max_crops: 9,
               overlap_margins: [4, 4],
               float16: true,
             },
@@ -275,10 +365,10 @@ export default class ModelsService {
 
       // Check cache
       const cachedResponse = cache.get(cacheKey)
-      // if (useCache && cachedResponse) {
-      //   console.log('Cache hit for getGPTResponse')
-      //   return cachedResponse
-      // }
+      if (useCache && cachedResponse) {
+        console.log('Cache hit for getGPTResponse')
+        return cachedResponse
+      }
 
       const { data } = await axios.post(`${env.get('OPENAI_BASEURL')}/chat/completions`, payload, {
         headers: {

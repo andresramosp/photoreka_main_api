@@ -1,5 +1,6 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import Tag from '#models/tag'
+import db from '@adonisjs/lucid/services/db'
 
 export default class TagsController {
   public async list({ request, response }: HttpContext) {
@@ -10,10 +11,18 @@ export default class TagsController {
   // TODO: por usuario!
   public async search({ request, response }: HttpContext) {
     const term = request.input('term', '').toLowerCase()
-    const result = await Tag.query()
-      .whereRaw('LOWER(name) LIKE ?', [`%${term}%`])
-      .orderByRaw('LENGTH(name) ASC')
+    const rawResult = await db.rawQuery(
+      `
+      SELECT DISTINCT ON (name) id, name, "group"
+      FROM tags
+      WHERE LOWER(name) LIKE ?
+      ORDER BY name, created_at DESC
+      `,
+      [`%${term.toLowerCase()}%`]
+    )
 
-    return response.ok({ result })
+    const result = rawResult.rows.sort((a: any, b: any) => a.name.length - b.name.length)
+
+    return response.ok({ result: result })
   }
 }

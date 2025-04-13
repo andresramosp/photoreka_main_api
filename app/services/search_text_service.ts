@@ -11,11 +11,15 @@ import withCostWS from '../decorators/withCostWs.js'
 import ScoringService from './scoring_service.js'
 import { withCache } from '../decorators/withCache.js'
 
-import PhotosService from './photos_service.js'
+import PhotoManager from '../managers/photo_manager.js'
 import {
   MESSAGE_SEARCH_MODEL_CREATIVE,
   MESSAGE_SEARCH_MODEL_CREATIVE_ONLY_IMAGE,
+  MESSAGE_SEARCH_MODEL_STRICT,
 } from '../utils/prompts/insights.js'
+import DescriptionChunk from '#models/descriptionChunk'
+import EmbeddingsService from './embeddings_service.js'
+import Tag from '#models/tag'
 
 export type SearchMode = 'logical' | 'creative'
 export type SearchType = 'semantic' | 'tags' | 'topological'
@@ -38,17 +42,19 @@ export type SearchTopologicalOptions = SearchOptions & {
   middle: string
 }
 
-export default class SearchService {
+export default class SearchTextService {
   public modelsService: ModelsService = null
-  public photosService: PhotosService = null
+  public photoManager: PhotoManager = null
   public queryService: QueryService = null
   public scoringService: ScoringService = null
+  public embeddingsService: EmbeddingsService = null
 
   constructor() {
     this.modelsService = new ModelsService()
-    this.photosService = new PhotosService()
+    this.photoManager = new PhotoManager()
     this.queryService = new QueryService()
     this.scoringService = new ScoringService()
+    this.embeddingsService = new EmbeddingsService()
   }
 
   sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -64,7 +70,7 @@ export default class SearchService {
     }
   ) {
     let { searchMode, withInsights, pageSize, iteration } = options
-    const photos = await this.photosService.getPhotosByUser('1234')
+    const photos = await this.photoManager.getPhotosByUser('1234')
 
     const { structuredResult, sourceResult, useImage, expansionCost } =
       await this.queryService.structureQuery(query)
@@ -104,35 +110,35 @@ export default class SearchService {
         return
       }
 
-      const batchSize = 3
-      const maxPageAttempts = 3
+      const batchSize = 4
+      const maxPageAttempts = 1
 
       let photoBatches = []
       for (let i = 0; i < paginatedPhotos.length; i += batchSize) {
         photoBatches.push(paginatedPhotos.slice(i, i + batchSize))
       }
 
-      const batchPromises = photoBatches.map(async (batch) => {
-        const { modelResult, modelCost } = await this.processBatch(
+      const batchPromises = photoBatches.map(async (batch, index) => {
+        await this.sleep(100 * index)
+        const { modelResult, modelCost } = await this.processBatchInsightsImage(
           batch,
           structuredResult,
-          sourceResult,
-          searchMode,
-          paginatedPhotos
+          searchMode
         )
 
         modelCosts.push(modelCost)
 
         return batch
           .map((item) => {
+            console.log(modelResult)
             const result = modelResult.find((res) => res.id === item.photo.tempID)
             const reasoning = result?.reasoning || ''
-            const isIncluded =
-              result?.isIncluded == true || result?.isIncluded == 'true' ? true : false
+            const isInsight =
+              result?.isInsight == true || result?.isInsight == 'true' ? true : false
 
             return reasoning
-              ? { photo: item.photo, score: item.tagScore, isIncluded, reasoning }
-              : { photo: item.photo, score: item.tagScore, isIncluded }
+              ? { photo: item.photo, score: item.tagScore, isInsight, reasoning }
+              : { photo: item.photo, score: item.tagScore, isInsight }
           })
           .filter((item) => modelResult.find((res) => res.id === item.photo.tempID))
       })
@@ -163,13 +169,13 @@ export default class SearchService {
       }
 
       await this.sleep(750)
-    } while (!photosResult.some((p) => p.isIncluded))
+    } while (!photosResult.some((p) => p.isInsight))
   }
 
   //   @withCostWS
   public async *searchByTags(options: SearchTagsOptions) {
     const { included, excluded, iteration, pageSize, searchMode } = options
-    const photos = await this.photosService.getPhotosByUser('1234')
+    const photos = await this.photoManager.getPhotosByUser('1234')
 
     let embeddingScoredPhotos = await this.scoringService.getScoredPhotosByTags(
       photos,
@@ -196,10 +202,9 @@ export default class SearchService {
     }
   }
 
-  //   @withCostWS
   public async *searchTopological(query: any, options: SearchTopologicalOptions) {
     const { pageSize, iteration, searchMode } = options
-    const photos = await this.photosService.getPhotosByUser('1234')
+    const photos = await this.photoManager.getPhotosByUser('1234')
 
     let embeddingScoredPhotos = await this.scoringService.getScoredPhotosByTopoAreas(
       photos,
@@ -229,6 +234,127 @@ export default class SearchService {
     }
   }
 
+  public async processBatchInsightsDesc(
+    batch: any[],
+    structuredResult: any,
+    searchMode: SearchMode
+  ) {
+    const searchModelMessage =
+      searchMode == 'creative' ? MESSAGE_SEARCH_MODEL_CREATIVE(true) : MESSAGE_SEARCH_MODEL_STRICT()
+    const photosWithChunks = []
+    const defaultResultsMap: { [key: string]: any } = {}
+
+    // Prellenamos defaultResultsMap para todas las fotos
+    for (const batchedPhoto of batch) {
+      defaultResultsMap[batchedPhoto.photo.tempID] = {
+        id: batchedPhoto.photo.tempID,
+        isInsight: false,
+        reasoning: null,
+      }
+    }
+
+    // Procesamos cada foto: si se obtienen chunks se añaden a la colección para el modelo
+    for (const batchedPhoto of batch) {
+      const descChunks = await this.scoringService.getNearChunksFromDesc(
+        batchedPhoto.photo,
+        structuredResult.no_prefix,
+        0.1
+      )
+      const chunkedDesc = descChunks.map((dc) => dc.text_chunk).join(' ... ')
+      if (chunkedDesc) {
+        photosWithChunks.push({
+          id: batchedPhoto.photo.tempID,
+          description: chunkedDesc,
+          visual_accents: batchedPhoto.photo.descriptions.visual_accents,
+        })
+      }
+    }
+
+    // Llamamos al modelo con las fotos que tienen chunks
+    let modelResponse
+    if (photosWithChunks.length) {
+      modelResponse = await this.modelsService.getGPTResponse(
+        searchModelMessage,
+        JSON.stringify({
+          query: structuredResult.original,
+          collection: photosWithChunks,
+        }),
+        'gpt-4o', //deepseek-chat
+        null,
+        1.1,
+        false
+      )
+    }
+
+    // Sobreescribimos defaultResultsMap con los resultados que devuelve el modelo
+    const modelResults = modelResponse ? modelResponse.result : []
+    for (const result of modelResults) {
+      defaultResultsMap[result.id] = result
+    }
+
+    const combinedResults = batch.map(
+      (batchedPhoto) => defaultResultsMap[batchedPhoto.photo.tempID]
+    )
+
+    return {
+      modelResult: combinedResults,
+      modelCost: modelResponse ? modelResponse.cost : 0,
+    }
+  }
+
+  public async processBatchInsightsImage(
+    batch: any[],
+    structuredResult: any,
+    searchMode: SearchMode
+  ) {
+    const searchModelMessage = MESSAGE_SEARCH_MODEL_CREATIVE_ONLY_IMAGE
+
+    const imagesPayload = await this.generateImagesPayload(batch.map((cp) => cp.photo))
+
+    // Prellenamos un mapa por posición
+    const defaultResults: any[] = batch.map((cp) => ({
+      id: cp.photo.tempID,
+      isInsight: false,
+      reasoning: null,
+    }))
+
+    let modelResult = []
+    let modelCost = 0
+
+    if (imagesPayload.length) {
+      const response = await this.modelsService.getGPTResponse(
+        searchModelMessage(),
+        [
+          {
+            type: 'text',
+            text: JSON.stringify({ query: structuredResult.original }),
+          },
+          ...imagesPayload,
+        ],
+        'gpt-4o',
+        null,
+        1.1,
+        false
+      )
+
+      modelResult = response.result || []
+      modelCost = response.cost || 0
+    }
+
+    // Reemplazamos los resultados por los devueltos por el modelo, respetando el orden
+    for (let i = 0; i < modelResult.length; i++) {
+      defaultResults[i] = {
+        id: batch[i].photo.tempID,
+        ...modelResult[i],
+      }
+    }
+
+    return {
+      modelResult: defaultResults,
+      modelCost,
+    }
+  }
+
   // AUXILIARES //
 
   private getPaginatedPhotosByPage(embeddingScoredPhotos, pageSize, currentIteration) {
@@ -255,82 +381,11 @@ export default class SearchService {
     return { hasMore, paginatedPhotos }
   }
 
-  public async processBatch(
-    batch: any[],
-    structuredResult: any,
-    sourceResult: any,
-    searchMode: SearchMode,
-    paginatedPhotos: any[]
-  ) {
-    let searchModelMessage
-
-    if (searchMode === 'creative' || searchMode === 'semantic') {
-      searchModelMessage =
-        sourceResult.requireSource === 'image'
-          ? MESSAGE_SEARCH_MODEL_CREATIVE_ONLY_IMAGE
-          : MESSAGE_SEARCH_MODEL_CREATIVE(true)
-    }
-
-    let needImage = sourceResult.requireSource == 'image'
-    const method = 'getGPTResponse' // !needImage ? 'getDSResponse' : 'getGPTResponse'
-    let chunkPromises = batch.map(async (batchedPhoto) => {
-      const descChunks = await this.scoringService.getNearChunksFromDesc(
-        batchedPhoto.photo,
-        structuredResult.no_prefix,
-        0.1
-      )
-      return {
-        tempID: batchedPhoto.photo.tempID,
-        chunkedDesc: descChunks.map((dc) => dc.text_chunk).join(' ... '),
-      }
-    })
-    let chunkResults = await Promise.all(chunkPromises)
-    chunkResults = chunkResults.filter((cp) => cp.chunkedDesc)
-    if (chunkResults.length) {
-      const { result: modelResult, cost: modelCost } = await this.modelsService[method](
-        !needImage ? searchModelMessage : searchModelMessage(chunkResults.map((cp) => cp.tempID)),
-        !needImage
-          ? JSON.stringify({
-              query: structuredResult.original,
-              collection: chunkResults.map((chunkedPhoto) => ({
-                id: chunkedPhoto.tempID,
-                description: chunkedPhoto.chunkedDesc,
-                tags: undefined,
-              })),
-            })
-          : [
-              {
-                type: 'text',
-                text: JSON.stringify({ query: structuredResult.original }),
-              },
-              ...(await this.generateImagesPayload(
-                paginatedPhotos.map((pp) => pp.photo),
-                batch.map((cp) => cp.photo.id)
-              )),
-            ],
-        method == 'getGPTResponse' ? 'gpt-4o' : 'deepseek-chat',
-        null,
-        searchMode === 'creative' ? 1.1 : 0.5,
-        false
-      )
-
-      return {
-        modelResult,
-        modelCost,
-      }
-    } else {
-      return { modelResult: [], modelCost: 0 }
-    }
-  }
-
-  public async generateImagesPayload(photos: Photo[], photoIds: string[]) {
+  public async generateImagesPayload(photos: Photo[]) {
     const validImages: any[] = []
     const uploadPath = path.join(process.cwd(), 'public/uploads/photos')
 
-    for (const id of photoIds) {
-      const photo = photos.find((photo) => photo.id == id)
-      if (!photo) continue
-
+    for (const photo of photos) {
       const filePath = path.join(uploadPath, `${photo.name}`)
 
       try {
@@ -341,7 +396,6 @@ export default class SearchService {
           .toBuffer()
 
         validImages.push({
-          id: photo.id,
           base64: resizedBuffer.toString('base64'),
         })
       } catch (error) {

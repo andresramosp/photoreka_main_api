@@ -1,85 +1,229 @@
-import { AnalyzerTask, VisionTask, TagTask, ChunkTask } from '#models/analyzer/analyzerTask'
+import { AnalyzerTask } from '#models/analyzer/analyzerTask'
+import { ChunkTask } from '#models/analyzer/chunkTask'
+import { TagTask } from '#models/analyzer/tagTask'
+import { VisionTask } from '#models/analyzer/visionTask'
+import { VisualDetectionTask } from '#models/analyzer/VisualDetectionTask'
+import { VisualEmbeddingTask } from '#models/analyzer/visualEmbeddingTask'
 import {
   MESSAGE_ANALYZER_GPT_CONTEXT_AND_STORY,
+  MESSAGE_ANALYZER_GPT_CONTEXT_STORY_ACCENTS,
   MESSAGE_ANALYZER_GPT_VISUAL_ACCENTS,
+  MESSAGE_ANALYZER_MOLMO_VISUAL_ACCENTS,
 } from './utils/prompts/descriptions.js'
 import {
   MESSAGE_ANALYZER_GPT_TOPOLOGIC_TAGS,
   MESSAGE_TAGS_TEXT_EXTRACTION,
 } from './utils/prompts/tags.js'
 
-export type SplitMethods = 'split_by_props' | 'split_by_pipes' | 'split_by_size'
-
 export const packages = [
   {
-    id: 'basic',
+    // Context + Story + Accents en una sola llamada GPT
+    id: 'basic_1',
+    tasks: [
+      // {
+      //   // 0,0048 por foto (0,0024 con Batch API.)
+      //   name: 'vision_context_story_accents',
+      //   type: 'VisionTask',
+      //   model: 'GPT',
+      //   sequential: false,
+      //   targetFieldType: 'descriptions',
+      //   prompts: [MESSAGE_ANALYZER_GPT_CONTEXT_STORY_ACCENTS],
+      //   resolution: 'high',
+      //   imagesPerBatch: 4,
+      //   promptDependentField: null,
+      // },
+      // {
+      //   name: 'tags_context_story',
+      //   type: 'TagTask',
+      //   model: 'GPT',
+      //   prompt: MESSAGE_TAGS_TEXT_EXTRACTION,
+      //   descriptionSourceFields: ['context', 'story'],
+      // },
+      // {
+      //   name: 'tags_visual_accents',
+      //   type: 'TagTask',
+      //   model: 'GPT',
+      //   prompt: MESSAGE_TAGS_TEXT_EXTRACTION,
+      //   descriptionSourceFields: ['visual_accents'],
+      // },
+      // {
+      //   name: 'chunks_context_story_visual_accents',
+      //   type: 'ChunkTask',
+      //   prompt: null,
+      //   model: null,
+      //   descriptionSourceFields: ['context', 'story', 'visual_accents'],
+      //   descriptionsChunksMethod: {
+      //     context: { type: 'split_by_size', maxLength: 250 },
+      //     story: { type: 'split_by_size', maxLength: 250 },
+      //     visual_accents: { type: 'split_by_size', maxLength: 15 },
+      //   },
+      // },
+      // // {
+      //   name: 'visual_embedding_task',
+      //   type: 'VisualEmbeddingTask',
+      // },
+      // {
+      //   name: 'visual_detections_task',
+      //   type: 'VisualDetectionsTask',
+      //   categories: [
+      //     {
+      //       name: 'person',
+      //       min_box_size: 80,
+      //       max_box_area_ratio: 1,
+      //       color: 'red',
+      //     },
+      //     {
+      //       name: 'animal',
+      //       min_box_size: 90,
+      //       max_box_area_ratio: 0.8,
+      //       color: 'yellow',
+      //     },
+      //     {
+      //       name: 'prominent object',
+      //       min_box_size: 100,
+      //       max_box_area_ratio: 0.8,
+      //       color: 'green',
+      //     },
+      //     {
+      //       name: 'architectural feature',
+      //       min_box_size: 100,
+      //       max_box_area_ratio: 0.8,
+      //       color: 'orange',
+      //     },
+      //   ],
+      // },
+    ],
+  },
+  // Basic context-story + visual_accents GPT separados
+  {
+    // 0,0082 por foto (0,0061 con Batch API aprox.)
+    id: 'basic_2',
     tasks: [
       {
-        name: 'Análisis Context + Story',
+        name: 'vision_context_story',
         type: 'VisionTask',
         model: 'GPT',
         sequential: false,
+        targetFieldType: 'descriptions',
         prompts: [MESSAGE_ANALYZER_GPT_CONTEXT_AND_STORY],
         resolution: 'high',
-        imagesPerBatch: 5,
+        imagesPerBatch: 4,
         promptDependentField: null,
-        promptsTarget: ['context', 'story'],
+      },
+      // TODO: intentar mandar visual_accents con 1000px
+      {
+        // xxxx por foto (xxxx con Batch API aprox.)
+        name: 'vision_visual_accents',
+        type: 'VisionTask',
+        model: 'GPT',
+        sequential: false,
+        targetFieldType: 'descriptions',
+        prompts: [MESSAGE_ANALYZER_GPT_VISUAL_ACCENTS],
+        resolution: 'high',
+        imagesPerBatch: 8,
+        promptDependentField: null,
       },
       {
-        name: 'Etiquetado y Embeddings de Context + Story',
+        name: 'tags_context_story',
         type: 'TagTask',
         model: 'GPT',
         prompt: MESSAGE_TAGS_TEXT_EXTRACTION,
         descriptionSourceFields: ['context', 'story'],
       },
       {
-        name: 'Análisis Visual Accents',
-        type: 'VisionTask',
-        model: 'GPT',
-        sequential: false,
-        prompts: [MESSAGE_ANALYZER_GPT_VISUAL_ACCENTS],
-        resolution: 'high',
-        imagesPerBatch: 8,
-        promptDependentField: null,
-        promptsTarget: ['visual_accents'],
-      },
-      {
-        name: 'Etiquetado y Embeddings de Visual Accents',
+        name: 'tags_visual_accents',
         type: 'TagTask',
         model: 'GPT',
         prompt: MESSAGE_TAGS_TEXT_EXTRACTION,
         descriptionSourceFields: ['visual_accents'],
       },
       {
-        name: 'Segmentación y Embeddings',
+        name: 'chunks_context_story_visual_accents',
         type: 'ChunkTask',
         prompt: null,
         model: null,
         descriptionSourceFields: ['context', 'story', 'visual_accents'],
         descriptionsChunksMethod: {
-          context: 'split_by_size',
-          story: 'split_by_size',
-          visual_accents: 'split_by_pipes',
+          context: { type: 'split_by_size', maxLength: 300 },
+          story: { type: 'split_by_size', maxLength: 300 },
+          visual_accents: { type: 'split_by_size', maxLength: 15 },
         },
       },
     ],
   },
-
   {
-    id: 'topological_upgrade_gpt',
+    // Context Story GPT + Accents Molmo
+    // Habria que arreglar tema crops + revisar pequeñas alucinaciones (que no saque elementos borrosos o distantes). Plantear inyección contexto.
+    id: 'basic_3',
     tasks: [
       {
-        name: 'Análisis Topológico',
+        name: 'vision_context_story',
         type: 'VisionTask',
         model: 'GPT',
         sequential: false,
-        resolution: 'low',
+        targetFieldType: 'descriptions',
+        prompts: [MESSAGE_ANALYZER_GPT_CONTEXT_AND_STORY],
+        resolution: 'high',
+        imagesPerBatch: 4,
+        promptDependentField: null,
+      },
+      // TODO: intentar mandar visual_accents con 1000px
+      {
+        // xxxx por foto (xxxx con Batch API aprox.)
+        name: 'vision_visual_accents',
+        type: 'VisionTask',
+        model: 'Molmo',
+        sequential: true,
+        targetFieldType: 'descriptions',
+        prompts: [MESSAGE_ANALYZER_MOLMO_VISUAL_ACCENTS], // no va del todo mal, decirle que no coja elementos distantes o poco visibles
+        imagesPerBatch: 4,
+        promptsNames: ['visual_accents'],
+        promptDependentField: null,
+      },
+      {
+        name: 'tags_context_story',
+        type: 'TagTask',
+        model: 'GPT',
+        prompt: MESSAGE_TAGS_TEXT_EXTRACTION,
+        descriptionSourceFields: ['context', 'story'],
+      },
+      {
+        name: 'tags_visual_accents',
+        type: 'TagTask',
+        model: 'GPT',
+        prompt: MESSAGE_TAGS_TEXT_EXTRACTION,
+        descriptionSourceFields: ['visual_accents'],
+      },
+      {
+        name: 'chunks_context_story_visual_accents',
+        type: 'ChunkTask',
+        prompt: null,
+        model: null,
+        descriptionSourceFields: ['context', 'story', 'visual_accents'],
+        descriptionsChunksMethod: {
+          context: { type: 'split_by_size', maxLength: 300 },
+          story: { type: 'split_by_size', maxLength: 300 },
+          visual_accents: { type: 'split_by_size', maxLength: 15 },
+        },
+      },
+    ],
+  },
+  {
+    // con request de 6, 0,002 por foto en low, 1500px (va regu)
+    // con request de 4, 0,0038 for foto, high, 1000px
+    id: 'topological_upgrade',
+    tasks: [
+      {
+        name: 'topological_tags',
+        type: 'VisionTask',
+        model: 'GPT',
+        sequential: false,
+        resolution: 'high',
+        targetFieldType: 'tag_area',
         prompts: [MESSAGE_ANALYZER_GPT_TOPOLOGIC_TAGS],
-        imagesPerBatch: 6,
+        imagesPerBatch: 4,
         useGuideLines: true,
         promptDependentField: null,
-        promptsTarget: null,
-        tagsTarget: 'area',
       },
     ],
   },
@@ -101,6 +245,12 @@ export const getTaskList = (packageId: string): AnalyzerTask[] => {
         break
       case 'ChunkTask':
         task = new ChunkTask()
+        break
+      case 'VisualEmbeddingTask':
+        task = new VisualEmbeddingTask()
+        break
+      case 'VisualDetectionsTask':
+        task = new VisualDetectionTask()
         break
       default:
         throw new Error(`Unknown task type: ${taskData.type}`)

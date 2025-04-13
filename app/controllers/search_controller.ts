@@ -1,7 +1,8 @@
 import type { HttpContext } from '@adonisjs/core/http'
 
 import ws from '#services/ws'
-import SearchService from '#services/search_service'
+import SearchTextService from '#services/search_text_service'
+import SearchPhotoService from '#services/search_photo_service'
 
 export default class SearchController {
   /**
@@ -10,7 +11,7 @@ export default class SearchController {
 
   public async searchSemantic({ request, response }: HttpContext) {
     try {
-      const searchService = new SearchService()
+      const searchService = new SearchTextService()
       const query = request.body()
 
       const stream = searchService.searchSemantic(query.description, {
@@ -34,7 +35,7 @@ export default class SearchController {
 
   public async searchByTags({ response, request }: HttpContext) {
     try {
-      const searchService = new SearchService()
+      const searchService = new SearchTextService()
 
       const query = request.body()
 
@@ -59,7 +60,7 @@ export default class SearchController {
 
   public async searchTopological({ response, request }: HttpContext) {
     try {
-      const searchService = new SearchService()
+      const searchService = new SearchTextService()
 
       const query = request.body()
 
@@ -77,6 +78,21 @@ export default class SearchController {
       }
 
       return response.ok({ message: 'Search process initiated' })
+    } catch (error) {
+      console.error('Error fetching photos:', error)
+      return response.internalServerError({ message: 'Error fetching photos' })
+    }
+  }
+
+  public async searchByPhotos({ response, request }: HttpContext) {
+    try {
+      const searchService = new SearchPhotoService()
+
+      const query: any = request.body()
+
+      const result = await searchService.searchByPhotos(query)
+
+      return response.ok(result)
     } catch (error) {
       console.error('Error fetching photos:', error)
       return response.internalServerError({ message: 'Error fetching photos' })

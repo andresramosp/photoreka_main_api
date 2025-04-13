@@ -18,7 +18,7 @@ export type StageType =
   | 'chunks_tasks'
   | 'embeddings_chunks'
   | 'finished'
-export type FailedPhotos = Record<string, string[]>
+export type FailedPhotos = Record<string, string | null>
 
 export default class AnalyzerProcess extends BaseModel {
   @column({ isPrimary: true })
@@ -69,7 +69,6 @@ export default class AnalyzerProcess extends BaseModel {
     // Procesamiento de imágenes originales
     const processes = await Promise.all(
       this.photos.map(async (photo) => {
-        await photo.load('tags')
         const filePath = path.join(uploadPath, photo.name)
         try {
           await fs.access(filePath)
@@ -93,8 +92,13 @@ export default class AnalyzerProcess extends BaseModel {
         const filePath = path.join(uploadPath, photo.name)
         try {
           await fs.access(filePath)
-          const image = sharp(filePath)
-          const metadata = await image.metadata()
+          // Redimensionar y obtener el buffer redimensionado
+          const resizedBuffer = await sharp(filePath)
+            .resize({ width: 1200, fit: 'inside' })
+            .toBuffer()
+          // Crear instancia a partir del buffer redimensionado para obtener dimensiones reales
+          const resizedImage = sharp(resizedBuffer)
+          const metadata = await resizedImage.metadata()
           const width = metadata.width || 0
           const height = metadata.height || 0
           const lineThickness = 5 // Grosor de la línea en píxeles
@@ -105,7 +109,7 @@ export default class AnalyzerProcess extends BaseModel {
             <rect x="${leftLineX}" y="0" width="${lineThickness}" height="${height}" fill="white"/>
             <rect x="${rightLineX}" y="0" width="${lineThickness}" height="${height}" fill="white"/>
           </svg>`
-          const imageWithGuideBuffer = await image
+          const imageWithGuideBuffer = await resizedImage
             .composite([{ input: Buffer.from(svgOverlay) }])
             .toBuffer()
           // Guardar la imagen modificada para debuguear
@@ -134,17 +138,13 @@ export default class AnalyzerProcess extends BaseModel {
       this.failed = {}
     }
     photoIds.forEach((id) => {
-      if (this.failed[id]) {
-        this.failed[id].push(taskName)
-      } else {
-        this.failed[id] = [taskName]
-      }
+      this.failed[id] = taskName
     })
     // Persistir los fallos en BD
     await this.save()
 
     // "Desasociamos" las fotos fallidas: actualizamos su campo foráneo para que no se usen en el proceso
-    await Photo.query().whereIn('id', photoIds).update({ analyzerProcessId: null })
+    // await Photo.query().whereIn('id', photoIds).update({ analyzerProcessId: null })
   }
 
   public async removeFailed(photoIds: string[], taskName: string): Promise<void> {
@@ -154,10 +154,7 @@ export default class AnalyzerProcess extends BaseModel {
     }
     photoIds.forEach((id) => {
       if (this.failed[id]) {
-        this.failed[id] = this.failed[id].filter((t) => t !== taskName)
-        if (this.failed[id].length === 0) {
-          delete this.failed[id]
-        }
+        delete this.failed[id]
       }
     })
     // Persistir la eliminación de los fallos en BD

@@ -11,6 +11,7 @@ export const tagGroups = [
   'weather',
   'symbols',
   'abstract concept',
+  'misc',
 ] as const
 
 export type TagGroups = (typeof tagGroups)[number]
@@ -35,9 +36,6 @@ export default class Tag extends BaseModel {
     return this.$extras.pivot_area
   }
 
-  @column()
-  declare children: Record<string, []>
-
   @column({ serializeAs: null })
   declare embedding: string
 
@@ -46,6 +44,11 @@ export default class Tag extends BaseModel {
 
   @column.dateTime({ autoCreate: true, autoUpdate: true })
   declare updatedAt: DateTime
+
+  @computed()
+  public get parsedEmbedding(): number[] {
+    return JSON.parse(this.embedding)
+  }
 
   // Hook para formatear embedding antes de guardar
   @beforeSave()
