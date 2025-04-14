@@ -75,6 +75,9 @@ export default class Photo extends BaseModel {
   public get detectionAreas(): DetectionPhoto[] {
     const threshold = 0.5
     // Filtrar detecciones con área válida
+    if (!this.detections) {
+      return []
+    }
     let detections = [...this.detections]
       .filter((det) =>
         ['animal', 'person', 'prominent object', 'architectural feature'].includes(det.category)
@@ -111,7 +114,7 @@ export default class Photo extends BaseModel {
   }
 
   @computed()
-  public get parsedEmbedding(): number[] {
-    return JSON.parse(this.embedding)
+  public get parsedEmbedding(): number[] | null {
+    return this.embedding ? JSON.parse(this.embedding) : null
   }
 }

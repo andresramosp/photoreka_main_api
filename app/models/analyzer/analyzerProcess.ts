@@ -7,6 +7,7 @@ import path from 'path'
 import fs from 'fs/promises'
 import sharp from 'sharp'
 import { AnalyzerTask } from './analyzerTask.js'
+import { getUploadPath } from '../../utils/dataPath.js'
 
 export type AnalyzerMode = 'first' | 'adding' | 'remake' | 'retry'
 export type ModelType = 'GPT' | 'Molmo'
@@ -62,7 +63,7 @@ export default class AnalyzerProcess extends BaseModel {
   public photoImagesWithGuides: PhotoImage[] = []
 
   public async populatePhotoImages() {
-    const uploadPath = path.join(process.cwd(), 'public/uploads/photos')
+    const uploadPath = getUploadPath()
     const withGuidesPath = path.join(uploadPath, 'withGuides')
     await fs.mkdir(withGuidesPath, { recursive: true })
 

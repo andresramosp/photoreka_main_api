@@ -178,7 +178,7 @@ export default class SearchPhotoService {
     )
 
     const referencePhoto = selectedPhotos[0]
-    const uploadPath = path.join(process.cwd(), 'public/uploads/photos')
+    const uploadPath = getUploadPath()
 
     const filePath = path.join(uploadPath, referencePhoto.name)
     const presenceMapBuffer = await fs.readFile(filePath)

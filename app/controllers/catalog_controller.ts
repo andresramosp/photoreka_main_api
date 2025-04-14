@@ -8,12 +8,13 @@ import crypto from 'crypto'
 import Photo from '#models/photo'
 import { GoogleAuthService } from '#services/google_photos_service'
 import PhotoManager from '../managers/photo_manager.js'
+import { getUploadPath } from '../utils/dataPath.js'
 
 export default class CatalogController {
   private async savePhotos(
     photosData: Array<{ buffer: Buffer; filename: string; url: string | undefined }>
   ) {
-    const uploadPath = path.join(process.cwd(), 'public/uploads/photos')
+    const uploadPath = getUploadPath()
     await fs.mkdir(uploadPath, { recursive: true })
 
     const savedPhotos = []

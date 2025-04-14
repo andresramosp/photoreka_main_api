@@ -383,7 +383,7 @@ export default class SearchTextService {
 
   public async generateImagesPayload(photos: Photo[]) {
     const validImages: any[] = []
-    const uploadPath = path.join(process.cwd(), 'public/uploads/photos')
+    const uploadPath = getUploadPath()
 
     for (const photo of photos) {
       const filePath = path.join(uploadPath, `${photo.name}`)

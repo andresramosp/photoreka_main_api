@@ -7,7 +7,33 @@
 |
 */
 
+import path from 'path'
+import { existsSync } from 'node:fs'
 import router from '@adonisjs/core/services/router'
+import { normalize } from 'node:path'
+import { getUploadPath } from '../app/utils/dataPath.js'
+
+const PATH_TRAVERSAL_REGEX = /(?:^|[\\/])\.\.(?:[\\/]|$)/
+
+router.get('/uploads/photos/:filename', async ({ params, response }) => {
+  const filename = params.filename
+  const normalized = normalize(filename)
+
+  if (PATH_TRAVERSAL_REGEX.test(normalized)) {
+    return response.badRequest('Ruta malformada')
+  }
+
+  const basePath = getUploadPath()
+
+  const absolutePath = path.join(basePath, normalized)
+
+  if (!existsSync(absolutePath)) {
+    return response.notFound('Archivo no encontrado')
+  }
+
+  return response.download(absolutePath)
+})
+
 const AnalyzerController = () => import('#controllers/analyzer_controller')
 const CatalogController = () => import('#controllers/catalog_controller')
 const SearchController = () => import('#controllers/search_controller')
