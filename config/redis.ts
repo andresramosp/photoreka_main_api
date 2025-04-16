@@ -1,25 +1,18 @@
-import env from '#start/env'
 import { defineConfig } from '@adonisjs/redis'
 import { InferConnections } from '@adonisjs/redis/types'
+import { URL } from 'url'
+import env from '#start/env'
+
+const redisUrl = new URL(env.get('REDIS_URL'))
 
 const redisConfig = defineConfig({
   connection: 'main',
 
   connections: {
-    /*
-    |--------------------------------------------------------------------------
-    | The default connection
-    |--------------------------------------------------------------------------
-    |
-    | The main connection you want to use to execute redis commands. The same
-    | connection will be used by the session provider, if you rely on the
-    | redis driver.
-    |
-    */
     main: {
-      host: env.get('REDIS_HOST'),
-      port: env.get('REDIS_PORT'),
-      password: env.get('REDIS_PASSWORD', ''),
+      host: redisUrl.hostname,
+      port: Number(redisUrl.port),
+      password: redisUrl.password,
       db: 0,
       keyPrefix: '',
       retryStrategy(times) {
