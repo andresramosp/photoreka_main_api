@@ -13,6 +13,11 @@ const PRICES = {
     input_cache_hit: 1.25 / 1_000_000,
     output: 10.0 / 1_000_000, // USD per output token
   },
+  'gpt-4.1': {
+    input_cache_miss: 2 / 1_000_000, // USD per input token
+    input_cache_hit: 0.5 / 1_000_000,
+    output: 8 / 1_000_000, // USD per output token
+  },
   'gpt-4o-mini': {
     input_cache_miss: 0.15 / 1_000_000, // USD per input token
     input_cache_hit: 0.075 / 1_000_000,
@@ -124,7 +129,7 @@ export default class ModelsService {
 
       const { data } = await axios.post(url, requestPayload, { headers })
 
-      return { embeddings: data }
+      return { embeddings: data.output ? data.output : data || [] }
     } catch (error) {
       console.error('Error en getEmbeddings:', error.message)
       return { embeddings: [] }
@@ -175,7 +180,7 @@ export default class ModelsService {
 
       const { data } = await axios.post(url, requestPayload, { headers })
 
-      return { detections: data }
+      return { detections: data.output ? data.output : data || [] }
     } catch (error) {
       console.error('Error en getObjectsDetections:', error.message)
       return { detections: [] }
@@ -324,6 +329,7 @@ export default class ModelsService {
     userContent: any,
     model:
       | 'gpt-4o'
+      | 'gpt-4.1'
       | 'gpt-4o-mini'
       | 'ft:gpt-4o-mini-2024-07-18:personal:refine:AlpaXAxW' = 'gpt-4o-mini',
     responseFormat: any = { type: 'json_object' },

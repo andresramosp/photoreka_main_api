@@ -70,8 +70,9 @@ export default class TagManager {
     }
     // TODO: asegurarse de que el primero es el mejor, ¿por qué devolviamos varios?
     if (similarTagsResult.length > 0) {
-      const similarTag = similarTagsResult[0] as Tag
+      const similarTag = similarTagsResult[0]
       // console.log(`Using existing similar tags for ${tag.name}: ${similarTag.name}`)
+      similarTag.id = similarTag.tag_id
       return similarTag
     }
 

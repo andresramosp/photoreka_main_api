@@ -336,7 +336,7 @@ export default class AnalyzerProcessRunner {
     // const response = await this.retryCall(() =>
     //   this.modelsService.getGPTResponse(prompt, images, 'gpt-4o', null, 0)
     // )
-    const response = await this.modelsService.getGPTResponse(prompt, images, 'gpt-4o', null, 0)
+    const response = await this.modelsService.getGPTResponse(prompt, images, 'gpt-4.1', null, 0)
     return response || { result: [] }
   }
 

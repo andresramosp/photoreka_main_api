@@ -20,6 +20,7 @@ import {
 import DescriptionChunk from '#models/descriptionChunk'
 import EmbeddingsService from './embeddings_service.js'
 import Tag from '#models/tag'
+import { getUploadPath } from '../utils/dataPath.js'
 
 export type SearchMode = 'logical' | 'creative'
 export type SearchType = 'semantic' | 'tags' | 'topological'
@@ -331,7 +332,7 @@ export default class SearchTextService {
           },
           ...imagesPayload,
         ],
-        'gpt-4o',
+        'gpt-4.1',
         null,
         1.1,
         false
