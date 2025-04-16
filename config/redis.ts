@@ -19,6 +19,7 @@ const redisConfig = defineConfig({
       password: redisUrl.password,
       db: 0,
       keyPrefix: '',
+      tls: {},
       retryStrategy(times) {
         return times > 10 ? null : times * 50
       },
