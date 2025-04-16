@@ -4,6 +4,10 @@ import { URL } from 'url'
 import env from '#start/env'
 
 const redisUrl = new URL(env.get('REDIS_URL'))
+console.log('[REDIS]: ' + redisUrl)
+console.log('[REDIS host]: ' + redisUrl.hostname)
+console.log('[REDIS port]: ' + redisUrl.port)
+console.log('[REDIS password]: ' + redisUrl.password)
 
 const redisConfig = defineConfig({
   connection: 'main',
