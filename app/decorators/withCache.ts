@@ -19,21 +19,21 @@ export function withCache(options: CacheOptions) {
     descriptor.value = async function (...args: any[]) {
       const cacheKey = typeof options.key === 'function' ? options.key(...args) : options.key
 
-      if (provider === 'nodecache') {
-        const cached = nodeCache.get(cacheKey)
-        if (cached !== undefined) return cached
-      } else {
-        const cached = await redis.get(cacheKey)
-        if (cached) return JSON.parse(cached)
-      }
+      // if (provider === 'nodecache') {
+      //   const cached = nodeCache.get(cacheKey)
+      //   if (cached !== undefined) return cached
+      // } else {
+      //   const cached = await redis.get(cacheKey)
+      //   if (cached) return JSON.parse(cached)
+      // }
 
       const result = await originalMethod.apply(this, args)
 
-      if (provider === 'nodecache') {
-        nodeCache.set(cacheKey, result, ttl)
-      } else {
-        await redis.set(cacheKey, JSON.stringify(result), 'EX', ttl)
-      }
+      // if (provider === 'nodecache') {
+      //   nodeCache.set(cacheKey, result, ttl)
+      // } else {
+      //   await redis.set(cacheKey, JSON.stringify(result), 'EX', ttl)
+      // }
       return result
     }
   }
