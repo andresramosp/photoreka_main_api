@@ -5,8 +5,10 @@ import AnalyzerService from '#services/analyzer_service'
 import ws from '#services/ws'
 import Photo from '#models/photo'
 import PhotoManager from '../managers/photo_manager.js'
+import Logger from '../utils/logger.js'
 
 const analysisProcesses = new Map<string, AsyncGenerator>()
+const logger = Logger.getInstance('AnalyzerProcess')
 
 export default class AnalyzerController {
   public async analyze({ request, response }: HttpContext) {
@@ -15,34 +17,46 @@ export default class AnalyzerController {
 
     try {
       const { userId, packageId, processId, mode } = request.body()
+      logger.info(
+        `Iniciando análisis para usuario ${userId} - Paquete: ${packageId} - Modo: ${mode}`
+      )
+
       const photos = await photoManager._getPhotosByUser(userId)
+      logger.debug(`Fotos encontradas para análisis: ${photos.length}`)
 
       if (photos.length) {
         await analyzerService.initProcess(photos, packageId, mode)
-        // await analyzerService.resumeProcess(photos, 38)
 
         if (!analysisProcesses.has(userId)) {
           const process = analyzerService.run()
           analysisProcesses.set(userId, process)
 
           this.handleAnalysisStream(userId, process)
+          logger.info(`Análisis iniciado para usuario ${userId}`)
           return response.ok({ message: 'Analysis started', userId })
         }
       }
 
+      logger.info(`No hay fotos para analizar para el usuario ${userId}`)
       return response.ok({ message: 'Nothing to analyze', userId })
     } catch (error) {
-      console.error(error)
+      logger.error('Error en el proceso de análisis:', error)
       return response.internalServerError({ message: 'Something went wrong', error: error.message })
     }
   }
 
   private async handleAnalysisStream(userId: string, stream: AsyncGenerator) {
-    for await (const result of stream) {
-      ws.io?.emit(result.type, result.data) // .to(userId) para Emitir solo a este usuario
+    try {
+      for await (const result of stream) {
+        logger.debug(`Emitting ${result.type} para usuario ${userId}`)
+        ws.io?.emit(result.type, result.data)
+      }
+      logger.info(`Análisis completado para usuario ${userId}`)
+    } catch (error) {
+      logger.error(`Error en el stream de análisis para usuario ${userId}:`, error)
+    } finally {
+      analysisProcesses.delete(userId)
+      logger.debug(`Proceso de análisis limpiado para usuario ${userId}`)
     }
-
-    // Cuando termina el análisis, limpiar el proceso de la memoria
-    analysisProcesses.delete(userId)
   }
 }

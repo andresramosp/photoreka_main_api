@@ -21,16 +21,25 @@ export default class CatalogController {
 
     for (const photoData of photosData) {
       const fileName = `${Date.now()}-${photoData.filename}`
+      const thumbnailName = `thumb-${fileName}`
       const outputPath = path.join(uploadPath, fileName)
+      const thumbnailPath = path.join(uploadPath, thumbnailName)
 
+      // Guardar versión original para análisis
       await sharp(photoData.buffer)
         .resize({ width: 1500, fit: 'inside' })
         .toFormat('jpeg')
         .toFile(outputPath)
 
+      // Generar versión optimizada para visualización
+      await sharp(photoData.buffer)
+        .resize({ width: 800, fit: 'inside' })
+        .jpeg({ quality: 80 })
+        .toFile(thumbnailPath)
+
       const photo = new Photo()
-      // photo.id = crypto.randomUUID()
       photo.name = fileName
+      photo.thumbnailName = thumbnailName
       photo.url = photoData.url
 
       savedPhotos.push(photo)

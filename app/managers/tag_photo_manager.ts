@@ -76,9 +76,6 @@ export default class TagPhotoManager {
         tagPhoto.parentId = parentTagPhoto.id
         try {
           await tagPhoto.save()
-          console.log(
-            `[TagPhotoManager] Sustantivo añadido: ${sustantive} para tag ${parentTagPhoto.tag.name}`
-          )
         } catch (err) {
           if (err.code === '23505') {
             console.log(

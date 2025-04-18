@@ -26,6 +26,9 @@ export default class Photo extends BaseModel {
   declare name: string
 
   @column()
+  declare thumbnailName: string
+
+  @column()
   declare url: string
 
   @column({ serializeAs: null })
@@ -116,5 +119,20 @@ export default class Photo extends BaseModel {
   @computed()
   public get parsedEmbedding(): number[] | null {
     return this.embedding ? JSON.parse(this.embedding) : null
+  }
+
+  @computed()
+  public get thumbnailUrl(): string {
+    return `/uploads/${this.thumbnailName}`
+  }
+
+  @computed()
+  public get originalUrl(): string {
+    return `/uploads/${this.name}`
+  }
+
+  @computed()
+  public get tempID(): string {
+    return Math.random().toString(36).substr(2, 4)
   }
 }

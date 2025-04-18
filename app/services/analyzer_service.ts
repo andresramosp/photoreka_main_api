@@ -18,6 +18,10 @@ import { AnalyzerTask } from '#models/analyzer/analyzerTask'
 import { VisualEmbeddingTask } from '#models/analyzer/visualEmbeddingTask'
 import { base64 } from '@adonisjs/core/helpers'
 import { VisualDetectionTask } from '#models/analyzer/VisualDetectionTask'
+import Logger from '../utils/logger.js'
+
+const logger = Logger.getInstance('AnalyzerProcess')
+logger.setLevel(LogLevel.DEBUG)
 
 export default class AnalyzerProcessRunner {
   private process: AnalyzerProcess
@@ -46,7 +50,7 @@ export default class AnalyzerProcessRunner {
     const photosToProcess = this.getInitialPhotos(userPhotos)
 
     tasks = getTaskList(packageId)
-    this.process.currentStage = 'init' // TODO: esto puede variar en 'retry'
+    this.process.currentStage = 'init'
     this.process.packageId = packageId
     this.process.tasks = tasks
     await this.process.save()
@@ -129,32 +133,26 @@ export default class AnalyzerProcessRunner {
     yield { type: 'analysisComplete', data: { costs: [] } }
   }
 
-  // @MeasureExecutionTime
   private async executeVisionTask(task: VisionTask, sequential: boolean) {
     if (!task.data) {
       task.data = {}
     }
 
-    // 1. Obtenemos el listado completo de imágenes a procesar
     const pendingPhotoImages: PhotoImage[] = await this.getPendingPhotosForTask(task)
+    logger.debug(`Procesando ${pendingPhotoImages.length} imágenes para la tarea ${task.name}`)
 
-    // 2. Agrupamos las imágenes en lotes ("batches")
     const batches: PhotoImage[][] = []
     for (let i = 0; i < pendingPhotoImages.length; i += task.imagesPerBatch) {
       const batch = pendingPhotoImages.slice(i, i + task.imagesPerBatch)
       batches.push(batch)
     }
 
-    // Función que procesa cada batch
     const processBatch = async (batch: PhotoImage[], idx: number) => {
-      // Retraso incremental según el índice de batch
       await this.sleep(idx * 1500)
 
       let response: any
       const injectedPrompts: any = await this.injectPromptsDpendencies(task, batch)
-      console.log(
-        `[AnalyzerProcess]: Vision Task calling ${task.model} for ${batch.length} images...`
-      )
+      logger.debug(`Llamando a ${task.model} para ${batch.length} imágenes...`)
 
       try {
         response = await this[`execute${task.model}Task`](injectedPrompts, batch, task)
@@ -165,7 +163,7 @@ export default class AnalyzerProcessRunner {
           )
         }
       } catch (err) {
-        console.log(`[AnalyzerProcess]: Error en ${task.model} for ${batch.length} images...`)
+        logger.error(`Error en ${task.model} para ${batch.length} imágenes:`, err)
         this.process.addFailed(
           batch.map((b) => b.photo.id),
           task.name
@@ -173,22 +171,16 @@ export default class AnalyzerProcessRunner {
         return
       }
 
-      // Guardamos resultados en task.data
       response.result.forEach((res, photoIndex) => {
         const { ...results } = res
         const photoId = batch[photoIndex].photo.id
-        // if (photoId == 129) {
-        //   console.log()
-        // }
         task.data[photoId] = { ...task.data[photoId], ...results }
       })
 
-      // Confirmamos estado del task
       await task.commit()
-      console.log(`[AnalyzerProcess]: Committed ${task.model} for ${batch.length} images...`)
+      logger.debug(`Completada tarea ${task.model} para ${batch.length} imágenes`)
     }
 
-    // Ejecutamos de forma secuencial o concurrente según el parámetro
     if (sequential) {
       for (let i = 0; i < batches.length; i++) {
         await processBatch(batches[i], i)
@@ -198,29 +190,24 @@ export default class AnalyzerProcessRunner {
     }
   }
 
-  // @MeasureExecutionTime
   private async executeTagsTask(task: TagTask) {
-    console.log(
-      '[AnalyzerProcess]: TagTask: Iniciando fase 1 - Carga y limpieza de descripciones...'
-    )
+    logger.debug('Iniciando fase 1 - Carga y limpieza de descripciones...')
 
     if (!task.data) {
       task.data = {}
     }
 
     const pendingPhotos = await this.getPendingPhotosForTask(task)
+    logger.debug(`Procesando ${pendingPhotos.length} fotos para extracción de tags`)
 
     const cleanedResults = await this.cleanPhotosDescs(pendingPhotos, task)
-
-    console.log('[AnalyzerProcess]: TagTask: Procesando extracción de tags...')
+    logger.debug('Procesando extracción de tags...')
 
     await this.requestTagsFromGPT(pendingPhotos, task, cleanedResults)
-
-    console.log('[AnalyzerProcess]: TagTask: Filtrando y guardando en DB...')
+    logger.debug('Filtrando y guardando en DB...')
 
     await task.commit()
-
-    console.log('[AnalyzerProcess]: TagTask: Finalizado.')
+    logger.debug('Tarea de tags finalizada')
   }
 
   private async requestTagsFromGPT(photos: Photo[], task: TagTask, cleanedResults: string[]) {
@@ -502,7 +489,7 @@ export default class AnalyzerProcessRunner {
       this.process.currentStage = nextStage
       await this.process.save()
     }
-    console.log(`[AnalyzerProcess]: ${message}`)
+    logger.info(message)
   }
 
   private async injectPromptsDpendencies(task: VisionTask, batch: PhotoImage[]): Promise<any> {
@@ -645,7 +632,7 @@ export default class AnalyzerProcessRunner {
         return await fn()
       } catch (error) {
         attempts++
-        console.error(`[AnalyzerTask]: Re-intento ${attempts} fallido: ${error}`)
+        logger.error(`Re-intento ${attempts} fallido:`, error)
         if (attempts < 3) await this.sleep(5000)
       }
     }
@@ -664,6 +651,7 @@ export default class AnalyzerProcessRunner {
     await this.process.load('photos', (query) =>
       query.preload('tags', (query) => query.preload('tag'))
     )
+    logger.debug(`Asociadas ${newPhotosIds.length} fotos al proceso de análisis`)
   }
 
   private sleep(ms: number) {
