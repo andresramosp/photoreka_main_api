@@ -76,8 +76,17 @@ export default class TagPhotoManager {
         tagPhoto.parentId = parentTagPhoto.id
         try {
           await tagPhoto.save()
+          console.log(
+            `[TagPhotoManager] Sustantivo añadido: ${sustantive} para tag ${parentTagPhoto.tag.name}`
+          )
         } catch (err) {
-          // console.log(`[addSustantive] Error duplicidad: ${err}`)
+          if (err.code === '23505') {
+            console.log(
+              `[TagPhotoManager] Sustantivo duplicado ignorado: ${sustantive} para tag ${parentTagPhoto.tag.name}`
+            )
+          } else {
+            console.error(`[TagPhotoManager] Error inesperado al añadir sustantivo:`, err)
+          }
         }
       }
     }

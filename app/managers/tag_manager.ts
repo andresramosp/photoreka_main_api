@@ -53,44 +53,64 @@ export default class TagManager {
   public async getOrCreateSimilarTag(
     tag: Partial<Tag> & { name: string; group: TagGroups }
   ): Promise<Tag> {
+    console.log(`[TagManager] Buscando tag: ${tag.name} (${tag.group})`)
     const embeddingsService = new EmbeddingsService()
 
+    // 1. Buscar tag exacto
     const existingTag = await this.getTagByNameAndGroup(tag.name, tag.group)
     if (existingTag) {
-      // console.log(`Using existing exact tag for ${tag.name}: ${existingTag.name}`)
+      console.log(`[TagManager] Tag exacto encontrado: ${existingTag.name} (ID: ${existingTag.id})`)
       return existingTag
     }
 
-    // Busca etiquetas similares.
+    // 2. Buscar tags similares
     let similarTagsResult: any[] = []
     try {
+      console.log(`[TagManager] Buscando tags similares para: ${tag.name}`)
       similarTagsResult = (await embeddingsService.findSimilarTagsToText(tag.name, 0.89, 5)) || []
+      console.log(
+        `[TagManager] Resultados de búsqueda similar:`,
+        JSON.stringify(similarTagsResult, null, 2)
+      )
     } catch (error) {
-      console.log('Error in findSimilarTagsToText')
-    }
-    // TODO: asegurarse de que el primero es el mejor, ¿por qué devolviamos varios?
-    if (similarTagsResult.length > 0) {
-      const similarTag = similarTagsResult[0]
-      // console.log(`Using existing similar tags for ${tag.name}: ${similarTag.name}`)
-      similarTag.id = similarTag.tag_id
-      return similarTag
+      console.error(`[TagManager] Error al buscar tags similares:`, error)
+      // No lanzamos el error, continuamos con la creación de nuevo tag
     }
 
-    // Si no se encontró etiqueta existente ni similar, se intenta guardar la nueva.
-    try {
-      await tag.save()
-      return tag
-    } catch (err: any) {
-      if (err.code === '23505') {
-        console.log(
-          `Tried to save tag (${tag.name}) already existing in BD, fetching existing one.`
-        )
-        const concurrentTag = await this.getTagByNameAndGroup(tag.name, tag.group)
-        if (concurrentTag) return concurrentTag
+    if (similarTagsResult.length > 0) {
+      const similarTag = similarTagsResult[0]
+      if (!similarTag.tag_id) {
+        console.error(`[TagManager] Tag similar encontrado pero sin tag_id:`, similarTag)
+        // Si no tiene tag_id, continuamos con la creación de nuevo tag
       } else {
-        throw err
+        similarTag.id = similarTag.tag_id
+        console.log(`[TagManager] Usando tag similar: ${similarTag.name} (ID: ${similarTag.id})`)
+        return similarTag
       }
     }
-    throw new Error(`Could not create or retrieve tag: ${tag.name}`)
+
+    // 3. Crear nuevo tag
+    try {
+      console.log(`[TagManager] Creando nuevo tag: ${tag.name} (${tag.group})`)
+      const newTag = new Tag()
+      newTag.name = tag.name
+      newTag.group = tag.group
+      await newTag.save()
+      console.log(`[TagManager] Nuevo tag creado exitosamente: ${newTag.name} (ID: ${newTag.id})`)
+      return newTag
+    } catch (err: any) {
+      if (err.code === '23505') {
+        console.log(`[TagManager] Tag ${tag.name} ya existe, buscando nuevamente...`)
+        const concurrentTag = await this.getTagByNameAndGroup(tag.name, tag.group)
+        if (concurrentTag) {
+          console.log(
+            `[TagManager] Tag concurrente encontrado: ${concurrentTag.name} (ID: ${concurrentTag.id})`
+          )
+          return concurrentTag
+        }
+      }
+      console.error(`[TagManager] Error al crear tag ${tag.name}:`, err)
+      throw new Error(`No se pudo crear o recuperar el tag: ${tag.name}. Error: ${err.message}`)
+    }
   }
 }
