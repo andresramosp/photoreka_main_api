@@ -92,8 +92,8 @@ export default class SearchPhotoService {
 
     const combinedEmbedding = baseChunks
       .reduce((acc: number[], dc: DescriptionChunk, idx: number) => {
-        if (idx === 0) return dc.parsedEmbedding.slice()
-        return acc.map((val, i) => val + dc.parsedEmbedding[i])
+        if (idx === 0) return dc.getParsedEmbedding().slice()
+        return acc.map((val, i) => val + dc.getParsedEmbedding()[i])
       }, [])
       .map((val) => val / baseChunks.length)
 
@@ -137,7 +137,7 @@ export default class SearchPhotoService {
     )
 
     // Calcular el embedding visual combinado a partir de las fotos seleccionadas
-    const visualEmbeddings = selectedPhotos.map((photo) => photo.parsedEmbedding)
+    const visualEmbeddings = selectedPhotos.map((photo) => photo.getParsedEmbedding())
     if (visualEmbeddings.length === 0) return []
 
     const combinedEmbedding = visualEmbeddings
@@ -221,11 +221,11 @@ export default class SearchPhotoService {
       for (const tagPhoto of basePhoto.tags) {
         // Si se pasa una lista de tagIds, solo se consideran aquellos que estén en la lista.
         if (
-          tagPhoto.tag.parsedEmbedding &&
+          tagPhoto.tag.getParsedEmbedding() &&
           (!query.tagIds || query.tagIds.includes(tagPhoto.tag.id))
         ) {
           const similarTags = await this.embeddingsService.findSimilarTagToEmbedding(
-            tagPhoto.tag.parsedEmbedding,
+            tagPhoto.tag.getParsedEmbedding(),
             query.opposite ? 0.7 : 0.5,
             200,
             'cosine_similarity',
@@ -322,7 +322,7 @@ export default class SearchPhotoService {
       const similarChunksArrays = await Promise.all(
         baseChunks.map((dc) =>
           this.embeddingsService.findSimilarChunkToEmbedding(
-            dc.parsedEmbedding,
+            dc.getParsedEmbedding(),
             0.4,
             50,
             'cosine_similarity',

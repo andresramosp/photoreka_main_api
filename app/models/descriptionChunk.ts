@@ -21,9 +21,8 @@ export default class DescriptionChunk extends BaseModel {
   @column({ serializeAs: null })
   declare embedding: string
 
-  @computed()
-  public get parsedEmbedding(): number[] {
-    return JSON.parse(this.embedding)
+  public getParsedEmbedding(): number[] | null {
+    return this.embedding ? JSON.parse(this.embedding) : null
   }
 
   // Hook para formatear embedding antes de guardar

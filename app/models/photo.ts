@@ -116,8 +116,7 @@ export default class Photo extends BaseModel {
     return finalDetections
   }
 
-  @computed()
-  public get parsedEmbedding(): number[] | null {
+  public getParsedEmbedding(): number[] | null {
     return this.embedding ? JSON.parse(this.embedding) : null
   }
 

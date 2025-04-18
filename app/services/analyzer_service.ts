@@ -18,7 +18,7 @@ import { AnalyzerTask } from '#models/analyzer/analyzerTask'
 import { VisualEmbeddingTask } from '#models/analyzer/visualEmbeddingTask'
 import { base64 } from '@adonisjs/core/helpers'
 import { VisualDetectionTask } from '#models/analyzer/VisualDetectionTask'
-import Logger from '../utils/logger.js'
+import Logger, { LogLevel } from '../utils/logger.js'
 
 const logger = Logger.getInstance('AnalyzerProcess')
 logger.setLevel(LogLevel.DEBUG)
