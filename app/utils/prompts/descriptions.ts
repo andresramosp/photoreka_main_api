@@ -24,15 +24,19 @@ export const MESSAGE_ANALYZER_GPT_CONTEXT_STORY_ACCENTS = (photosBatch: Photo[])
 
  For each image, include following properties:
  
-1. 'context': mention the place where the scene takes place, the time of day, as well as the cultural context. when it becomes clear, add the country and/or city.
+1. 'context': mention the place where the scene takes place, the time of day, as well as the cultural context. When it becomes clear, add the country and/or city.
 
-2. 'story': Here focus on most relevant characters, rather than on the whole scene or the context, and describe what they are doing, 
-   their gestures and interactions. Discard elements too distant or barely visible.  
+2. 'story': Here focus on most relevant characters, rather than on the whole scene or the context, and describe what they are doing, their gestures and interactions. 
    
-3. 'visual_accents': Here you must re-analyze the photo more carefully to detect others elements that may have gone unnoticed but add value to the scene/composition.
-   Typically, you'll look for things like: Drawings, signs, symbols whose content adds visual value. Not obvious secondary characters but with some interest. 
-   An object / dress weared by someone that adds a nuance. Any subtle but relevant detail on the edges of the image or in the background.
+3. 'visual_accents': Here you must re-analyze the photo to detect others elements that were not mentioned in the previous sections but add value to the image.
+   Typically, you'll look for things like: Drawings, signs, symbols whose content adds visual value. Secondary characters with some interest. 
+   An object / dress weared by someone that adds a nuance. Any relevant/strange detail on the edges of the image or in the background.
    Be specific. Don't describe "a table with many items" but rather find a specific, interesting item and mention it. 
+
+*Guide lines for the 3 sections*
+1. DISMISS elements too far or barely visible, especially those that require zoom to be detected.
+2. Include only items that you have a high degree of certainty about (+90%).
+3. As a consequence of the previous rule, AVOID assumptions such as "He is holding something unclear that could be a cup"
    
 Minimum lenghts for properties:
 1. 'context': 25 - 30 words
