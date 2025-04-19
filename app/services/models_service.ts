@@ -62,11 +62,12 @@ export default class ModelsService {
     const { url, requestPayload, headers } = this.buildRequestConfig('ping', {})
 
     try {
+      console.log('[RunPod] Checking Endpoint Status')
       await axios.post(url, requestPayload, { headers })
       this.lastPingTimestamp = Date.now()
-      console.log('RunPod endpoint warmed.')
+      console.log('[RunPod] Endpoint warmed.')
     } catch (error) {
-      console.warn('RunPod ping failed (non-critical):', error.message)
+      console.warn('[RunPod] Ping failed (non-critical):', error.message)
     }
   }
 

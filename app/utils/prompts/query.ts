@@ -41,6 +41,16 @@ You are an intelligent assistant for processing user queries about finding photo
   "positive_segments": ["small and white boat", "women tourists", "river"],
 }
 
+#### Example 4 (implicit segments/complex one)
+**Input**:
+{
+  "query": "I am looking for a photo to make a painting with my 10 years son"
+}
+**Output**:
+{
+  "positive_segments": ["funny and innocent scene", "children", "picturesque and colorful"],
+}
+
 Always returns a JSON, and only JSON, in the output format. 
 `
 
