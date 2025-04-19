@@ -126,8 +126,6 @@ export default class AnalyzerProcessRunner {
       await this.executeVisualDetectionTask(visualDetectionTask)
     }
 
-    await this.executeVisualLineTask()
-
     await this.changeStage('Process Completed', 'finished')
 
     yield { type: 'analysisComplete', data: { costs: [] } }
@@ -575,23 +573,37 @@ export default class AnalyzerProcessRunner {
 
   private async cleanPhotosDescs(photos: Photo[], task: TagTask, batchSize = 5, delayMs = 500) {
     const results = []
+    logger.debug(`Iniciando limpieza de descripciones para ${photos.length} fotos`)
 
     for (let i = 0; i < photos.length; i += batchSize) {
       const batch = photos.slice(i, i + batchSize)
+      logger.debug(
+        `Procesando lote ${i / batchSize + 1} de ${Math.ceil(photos.length / batchSize)}`
+      )
 
-      const [cleanResult] = await Promise.all([
-        this.modelsService.cleanDescriptions(
-          batch.map((photo) => {
-            return this.getSourceTextFromPhoto(task, photo)
-          }),
-          0.9
-        ),
-      ])
+      try {
+        const sourceTexts = batch.map((photo) => {
+          const text = this.getSourceTextFromPhoto(task, photo)
+          logger.debug(`Texto fuente para foto ${photo.id}: ${text.substring(0, 100)}...`)
+          return text
+        })
 
-      results.push(...cleanResult)
+        const cleanResult = await this.modelsService.cleanDescriptions(sourceTexts, 0.9)
 
-      if (i + batchSize < photos.length) {
-        await this.sleep(delayMs)
+        if (!cleanResult || !Array.isArray(cleanResult)) {
+          logger.error(`Resultado inesperado de cleanDescriptions: ${JSON.stringify(cleanResult)}`)
+          throw new Error('Resultado inválido de cleanDescriptions')
+        }
+
+        results.push(...cleanResult)
+        logger.debug(`Lote ${i / batchSize + 1} procesado exitosamente`)
+
+        if (i + batchSize < photos.length) {
+          await this.sleep(delayMs)
+        }
+      } catch (error) {
+        logger.error(`Error procesando lote ${i / batchSize + 1}:`, error)
+        throw error
       }
     }
 
@@ -601,27 +613,37 @@ export default class AnalyzerProcessRunner {
   public getSourceTextFromPhoto(task: TagTask, photo: Photo) {
     let text = ''
 
-    for (const category of task.descriptionSourceFields) {
-      const description = photo.descriptions?.[category]
-
-      let flattenedDescription: string
-
-      if (typeof description === 'object' && description !== null) {
-        // Si es un objeto (ya es JSON), concatenamos sus valores
-        // flattenedDescription = Object.values(description)
-        //   .filter((value) => value) // Filtramos valores vacíos o nulos
-        //   .join(' ') // Espacio en lugar de '|'
-
-        flattenedDescription = JSON.stringify(description)
-      } else {
-        // Si no es un objeto, lo tratamos como string normal
-        flattenedDescription = description ?? ''
-      }
-
-      text += `${category}: ${flattenedDescription} | ` // Pipe solo entre categorías
+    if (!photo || !photo.descriptions) {
+      return ''
     }
 
-    return text.trim().replace(/\|$/, '') // Eliminamos el pipe final si sobra
+    for (const category of task.descriptionSourceFields) {
+      try {
+        const description = photo.descriptions[category]
+
+        let flattenedDescription: string
+
+        if (description === null || description === undefined) {
+          flattenedDescription = ''
+        } else if (typeof description === 'object') {
+          try {
+            flattenedDescription = JSON.stringify(description)
+          } catch (e) {
+            console.error(`Error al serializar descripción para la foto ${photo.id}:`, e)
+            flattenedDescription = ''
+          }
+        } else {
+          flattenedDescription = String(description)
+        }
+
+        text += `${category}: ${flattenedDescription} | `
+      } catch (error) {
+        console.error(`Error procesando categoría ${category} para la foto ${photo.id}:`, error)
+        continue
+      }
+    }
+
+    return text.trim().replace(/\|$/, '')
   }
 
   // Función auxiliar para reintentos (hasta 3 intentos con 5 segundos de espera)

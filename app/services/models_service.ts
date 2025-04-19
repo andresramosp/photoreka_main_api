@@ -4,6 +4,7 @@ import env from '#start/env'
 import axios from 'axios'
 import NodeCache from 'node-cache'
 import MeasureExecutionTime from '../decorators/measureExecutionTime.js'
+import withWarmUp from '../decorators/withWarmUp.js'
 
 const cache = new NodeCache() // Simple in-memory cache
 
@@ -46,6 +47,27 @@ export default class ModelsService {
     this.remoteBaseUrl = process.env.REMOTE_API_BASE_URL
     this.localBaseUrl = process.env.LOCAL_API_BASE_URL
     this.runpodApiKey = process.env.RUNPOD_API_KEY
+    this.lastPingTimestamp = 0
+    this.pingCooldownSeconds = 60
+  }
+
+  async ensureRunPodWarm() {
+    const now = Date.now()
+    const secondsSinceLastPing = (now - this.lastPingTimestamp) / 1000
+
+    if (secondsSinceLastPing < this.pingCooldownSeconds) {
+      return
+    }
+
+    const { url, requestPayload, headers } = this.buildRequestConfig('ping', {})
+
+    try {
+      await axios.post(url, requestPayload, { headers })
+      this.lastPingTimestamp = Date.now()
+      console.log('RunPod endpoint warmed.')
+    } catch (error) {
+      console.warn('RunPod ping failed (non-critical):', error.message)
+    }
   }
 
   buildRequestConfig(operation, payload) {
@@ -71,6 +93,7 @@ export default class ModelsService {
     return { url, requestPayload, headers }
   }
 
+  @withWarmUp()
   @MeasureExecutionTime
   async adjustProximitiesByContextInference(term, texts, termsType = 'tag') {
     try {
@@ -104,7 +127,7 @@ export default class ModelsService {
     }
   }
 
-  // @MeasureExecutionTime
+  @withWarmUp()
   async getEmbeddings(tags) {
     try {
       const payload = { tags }
@@ -119,6 +142,7 @@ export default class ModelsService {
     }
   }
 
+  @withWarmUp()
   async getEmbeddingsImages(images: { id: string; base64: string }) {
     try {
       const payload = { images }
@@ -136,6 +160,7 @@ export default class ModelsService {
     }
   }
 
+  @withWarmUp()
   async getPresenceMaps(images: { id: string; base64: string }) {
     try {
       const payload = { images }
@@ -153,6 +178,7 @@ export default class ModelsService {
     }
   }
 
+  @withWarmUp()
   async getLineMaps(images: { id: string; base64: string }) {
     try {
       const payload = { images }
@@ -170,6 +196,7 @@ export default class ModelsService {
     }
   }
 
+  @withWarmUp()
   async getObjectsDetections(images: { id: string; base64: string }, categories: any[]) {
     try {
       const payload = { images, categories }
@@ -207,6 +234,7 @@ export default class ModelsService {
     }
   }
 
+  @withWarmUp()
   @MeasureExecutionTime
   async generateGroupsForTags(tags) {
     try {
@@ -226,6 +254,7 @@ export default class ModelsService {
   }
 
   // @MeasureExecutionTime
+  @withWarmUp()
   async cleanDescriptions(texts, extract_ratio = 0.9) {
     try {
       const payload = {
@@ -244,6 +273,7 @@ export default class ModelsService {
     }
   }
 
+  @withWarmUp()
   @MeasureExecutionTime
   async getStructuredQuery(query) {
     try {
@@ -259,6 +289,7 @@ export default class ModelsService {
     }
   }
 
+  @withWarmUp()
   @MeasureExecutionTime
   async getNoPrefixQuery(query) {
     try {
