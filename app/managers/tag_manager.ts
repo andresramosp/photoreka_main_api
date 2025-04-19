@@ -54,7 +54,8 @@ export default class TagManager {
   }
 
   public async getOrCreateSimilarTag(
-    tag: Partial<Tag> & { name: string; group: TagGroups }
+    tag: Partial<Tag> & { name: string; group: TagGroups },
+    embedding: number[]
   ): Promise<Tag> {
     logger.debug(`Buscando tag: ${tag.name} (${tag.group})`)
     const embeddingsService = new EmbeddingsService()
@@ -70,7 +71,8 @@ export default class TagManager {
     let similarTagsResult: any[] = []
     try {
       logger.debug(`Buscando tags similares para: ${tag.name}`)
-      similarTagsResult = (await embeddingsService.findSimilarTagsToText(tag.name, 0.89, 5)) || []
+      similarTagsResult =
+        (await embeddingsService.findSimilarTagToEmbedding(embedding, 0.89, 5)) || []
       logger.debug(`Resultados de búsqueda similar:`, similarTagsResult)
     } catch (error) {
       logger.error(`Error al buscar tags similares:`, error)

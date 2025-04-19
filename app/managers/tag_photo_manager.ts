@@ -58,32 +58,36 @@ export default class TagPhotoManager {
     return { message: 'TagPhoto deleted successfully' }
   }
 
-  public async addSustantives(parentTagPhoto: TagPhoto) {
-    const nlpService = new NLPService()
+  public async addSustantives(
+    parentTagPhoto: TagPhoto,
+    sustantives: string[],
+    embeddingMap: Map<string, number[]>
+  ) {
     const tagManager = new TagManager()
-    if (['person', 'animals', 'objects'].includes(parentTagPhoto.tag.group)) {
-      const sustantives = nlpService.getSustantives(parentTagPhoto.tag.name)
-      if (!sustantives) return
-      for (const sustantive of sustantives) {
-        const sustTag = new Tag()
-        sustTag.name = sustantive
-        sustTag.group = 'misc'
-        const existingOrCreatedTag: Tag = await tagManager.getOrCreateSimilarTag(sustTag)
-        const tagPhoto = new TagPhoto()
-        tagPhoto.tagId = existingOrCreatedTag.id
-        tagPhoto.photoId = Number(parentTagPhoto.photoId)
-        tagPhoto.category = parentTagPhoto.category
-        tagPhoto.parentId = parentTagPhoto.id
-        try {
-          await tagPhoto.save()
-        } catch (err) {
-          if (err.code === '23505') {
-            console.log(
-              `[TagPhotoManager] Sustantivo duplicado ignorado: ${sustantive} para tag ${parentTagPhoto.tag.name}`
-            )
-          } else {
-            console.error(`[TagPhotoManager] Error inesperado al añadir sustantivo:`, err)
-          }
+
+    for (const sust of sustantives) {
+      const sustTag = new Tag()
+      sustTag.name = sust
+      sustTag.group = 'misc'
+
+      // se pasa el embedding precalculado como 2.º argumento
+      const existingTag = await tagManager.getOrCreateSimilarTag(sustTag, embeddingMap.get(sust))
+
+      const tagPhoto = new TagPhoto()
+      tagPhoto.tagId = existingTag.id
+      tagPhoto.photoId = Number(parentTagPhoto.photoId)
+      tagPhoto.category = parentTagPhoto.category
+      tagPhoto.parentId = parentTagPhoto.id
+
+      try {
+        await tagPhoto.save()
+      } catch (err) {
+        if (err.code === '23505') {
+          console.log(
+            `[TagPhotoManager] Sustantivo duplicado ignorado: ${sust} (tag ${parentTagPhoto.tag.name})`
+          )
+        } else {
+          console.error('[TagPhotoManager] Error inesperado:', err)
         }
       }
     }
