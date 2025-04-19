@@ -13,7 +13,7 @@ export class TagTask extends AnalyzerTask {
   declare data: Record<string, Tag[]> // foto -> { name, group...}
 
   private readonly photoBatchSize = 10
-  private readonly tagBatchSize = 25
+  private readonly tagBatchSize = 100
 
   public async commit(): Promise<void> {
     const tagPhotoManager = new TagPhotoManager()
