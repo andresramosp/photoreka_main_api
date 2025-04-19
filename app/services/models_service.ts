@@ -5,6 +5,7 @@ import axios from 'axios'
 import NodeCache from 'node-cache'
 import MeasureExecutionTime from '../decorators/measureExecutionTime.js'
 import withWarmUp from '../decorators/withWarmUp.js'
+import { withCache } from '../decorators/withCache.js'
 
 const cache = new NodeCache() // Simple in-memory cache
 
@@ -39,54 +40,68 @@ const PRICES = {
   },
 }
 
+export type EndpointType = 'embeddings' | 'logic' | 'image'
+
 const USD_TO_EUR = 0.92
 
 export default class ModelsService {
   constructor() {
     this.apiMode = process.env.API_MODELS
-    this.remoteBaseUrl = process.env.REMOTE_API_BASE_URL
+    this.remoteBaseUrlLogic = process.env.REMOTE_API_BASE_URL_LOGIC
+    this.remoteBaseUrlImage = process.env.REMOTE_API_BASE_URL_IMAGE
     this.remoteBaseUrlEmbeddings = process.env.REMOTE_API_BASE_URL_EMBEDDINGS
     this.localBaseUrl = process.env.LOCAL_API_BASE_URL
     this.runpodApiKey = process.env.RUNPOD_API_KEY
-    this.lastPingTimestamp = 0
     this.pingCooldownSeconds = 60
   }
 
-  async ensureRunPodWarm() {
+  static lastPingTimestamps: Record<string, number> = {}
+
+  async ensureRunPodWarm(endpointType: EndpointType) {
     const now = Date.now()
-    const secondsSinceLastPing = (now - this.lastPingTimestamp) / 1000
+    const last = ModelsService.lastPingTimestamps[endpointType] || 0
+    const secondsSinceLastPing = (now - last) / 1000
 
     if (secondsSinceLastPing < this.pingCooldownSeconds) {
       return
     }
 
-    const { url, requestPayload, headers } = this.buildRequestConfig('ping', {})
+    const { url, requestPayload, headers } = this.buildRequestConfig('ping', {}, endpointType)
 
     try {
-      console.log('[RunPod] Checking Endpoint Status')
+      console.log('[RunPod] Checking Endpoint Status for type ' + endpointType)
       await axios.post(url, requestPayload, { headers })
-      this.lastPingTimestamp = Date.now()
+      ModelsService.lastPingTimestamps[endpointType] = Date.now()
       console.log('[RunPod] Endpoint warmed.')
     } catch (error) {
       console.warn('[RunPod] Ping failed (non-critical):', error.message)
     }
   }
 
-  buildRequestConfig(operation, payload, isEmbedding = false) {
+  buildRequestConfig(operation, payload, endpointType: EndpointType) {
     let url = ''
     let requestPayload = payload
     const headers = { 'Content-Type': 'application/json' }
 
     if (this.apiMode === 'REMOTE') {
-      url = isEmbedding ? this.remoteBaseUrlEmbeddings : this.remoteBaseUrl
-      requestPayload = isEmbedding
-        ? { input: { input: payload } }
-        : {
-            input: {
-              operation,
-              data: payload,
-            },
-          }
+      if (endpointType == 'embeddings') {
+        url = this.remoteBaseUrlEmbeddings
+      }
+      if (endpointType == 'logic') {
+        url = this.remoteBaseUrlLogic
+      }
+      if (endpointType == 'image') {
+        url = this.remoteBaseUrlImage
+      }
+      requestPayload =
+        endpointType == 'embeddings'
+          ? { input: { input: payload } }
+          : {
+              input: {
+                operation,
+                data: payload,
+              },
+            }
       if (this.runpodApiKey) {
         headers['Authorization'] = `Bearer ${this.runpodApiKey}`
       }
@@ -97,7 +112,7 @@ export default class ModelsService {
     return { url, requestPayload, headers }
   }
 
-  @withWarmUp()
+  @withWarmUp('logic')
   @MeasureExecutionTime
   async adjustProximitiesByContextInference(term, texts, termsType = 'tag') {
     try {
@@ -111,7 +126,7 @@ export default class ModelsService {
           ? 'adjust_tags_proximities_by_context_inference'
           : 'adjust_descs_proximities_by_context_inference'
 
-      const { url, requestPayload, headers } = this.buildRequestConfig(operation, payload)
+      const { url, requestPayload, headers } = this.buildRequestConfig(operation, payload, 'logic')
 
       let { data } = await axios.post(url, requestPayload, { headers })
 
@@ -131,10 +146,14 @@ export default class ModelsService {
     }
   }
 
-  // @withWarmUp()
+  @withCache({
+    key: (arg1) => `getEmbeddings_${JSON.stringify(arg1)}`,
+    provider: 'redis',
+    ttl: 50 * 5,
+  })
   async getEmbeddings(tags) {
     try {
-      const { url, requestPayload, headers } = this.buildRequestConfig('get_embeddings', tags, true)
+      const { url, requestPayload, headers } = this.buildRequestConfig('', tags, 'embeddings')
 
       const { data } = await axios.post(url, requestPayload, { headers })
 
@@ -147,13 +166,14 @@ export default class ModelsService {
     }
   }
 
-  @withWarmUp()
+  @withWarmUp('image')
   async getEmbeddingsImages(images: { id: string; base64: string }) {
     try {
       const payload = { images }
       const { url, requestPayload, headers } = this.buildRequestConfig(
         'get_embeddings_image',
-        payload
+        payload,
+        'image'
       )
 
       const { data } = await axios.post(url, requestPayload, { headers })
@@ -165,13 +185,14 @@ export default class ModelsService {
     }
   }
 
-  @withWarmUp()
+  @withWarmUp('image')
   async getPresenceMaps(images: { id: string; base64: string }) {
     try {
       const payload = { images }
       const { url, requestPayload, headers } = this.buildRequestConfig(
         'generate_presence_maps',
-        payload
+        payload,
+        'image'
       )
 
       const { data } = await axios.post(url, requestPayload, { headers })
@@ -183,31 +204,14 @@ export default class ModelsService {
     }
   }
 
-  @withWarmUp()
-  async getLineMaps(images: { id: string; base64: string }) {
-    try {
-      const payload = { images }
-      const { url, requestPayload, headers } = this.buildRequestConfig(
-        'generate_line_maps',
-        payload
-      )
-
-      const { data } = await axios.post(url, requestPayload, { headers })
-
-      return { maps: data }
-    } catch (error) {
-      console.error('Error en getPresenceMaps:', error.message)
-      return { maps: [] }
-    }
-  }
-
-  @withWarmUp()
+  @withWarmUp('image')
   async getObjectsDetections(images: { id: string; base64: string }, categories: any[]) {
     try {
       const payload = { images, categories }
       const { url, requestPayload, headers } = this.buildRequestConfig(
         'detect_objects_base64',
-        payload
+        payload,
+        'image'
       )
 
       const { data } = await axios.post(url, requestPayload, { headers })
@@ -224,7 +228,8 @@ export default class ModelsService {
       const payload = image
       const { url, requestPayload, headers } = this.buildRequestConfig(
         'find_similar_presence_maps',
-        payload
+        payload,
+        'image'
       )
 
       const { data } = await axios.post(url, requestPayload, { headers })
@@ -239,14 +244,15 @@ export default class ModelsService {
     }
   }
 
-  @withWarmUp()
+  @withWarmUp('logic')
   @MeasureExecutionTime
   async generateGroupsForTags(tags) {
     try {
       const payload = { tags }
       const { url, requestPayload, headers } = this.buildRequestConfig(
         'generate_groups_for_tags',
-        payload
+        payload,
+        'logic'
       )
 
       const { data } = await axios.post(url, requestPayload, { headers })
@@ -259,7 +265,7 @@ export default class ModelsService {
   }
 
   // @MeasureExecutionTime
-  @withWarmUp()
+  @withWarmUp('logic')
   async cleanDescriptions(texts, extract_ratio = 0.9) {
     try {
       const payload = {
@@ -267,7 +273,11 @@ export default class ModelsService {
         extract_ratio,
         purge_list: [],
       }
-      const { url, requestPayload, headers } = this.buildRequestConfig('clean_texts', payload)
+      const { url, requestPayload, headers } = this.buildRequestConfig(
+        'clean_texts',
+        payload,
+        'logic'
+      )
 
       const { data } = await axios.post(url, requestPayload, { headers })
 
@@ -278,12 +288,16 @@ export default class ModelsService {
     }
   }
 
-  @withWarmUp()
+  @withWarmUp('logic')
   @MeasureExecutionTime
   async getStructuredQuery(query) {
     try {
       const payload = { query }
-      const { url, requestPayload, headers } = this.buildRequestConfig('query_segment', payload)
+      const { url, requestPayload, headers } = this.buildRequestConfig(
+        'query_segment',
+        payload,
+        'logic'
+      )
 
       const { data } = await axios.post(url, requestPayload, { headers })
 
@@ -294,12 +308,16 @@ export default class ModelsService {
     }
   }
 
-  @withWarmUp()
+  @withWarmUp('logic')
   @MeasureExecutionTime
   async getNoPrefixQuery(query) {
     try {
       const payload = { query }
-      const { url, requestPayload, headers } = this.buildRequestConfig('query_no_prefix', payload)
+      const { url, requestPayload, headers } = this.buildRequestConfig(
+        'query_no_prefix',
+        payload,
+        'logic'
+      )
 
       const { data } = await axios.post(url, requestPayload, { headers })
 

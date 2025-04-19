@@ -433,28 +433,6 @@ export default class AnalyzerProcessRunner {
     }
   }
 
-  @MeasureExecutionTime
-  private async executeVisualLineTask(task: AnalyzerTask) {
-    // if (!task.data) {
-    //   task.data = {}
-    // }
-
-    let photosToProcess: PhotoImage[] = this.process.photoImages
-    for (let i = 0; i < photosToProcess.length; i += 16) {
-      await this.sleep(250)
-      const batch = photosToProcess.slice(i, i + 16)
-      const payload = batch.map((pi: PhotoImage) => ({ id: pi.photo.id, base64: pi.base64 }))
-      const { maps } = await this.modelsService.getLineMaps(payload)
-      // await Promise.all(
-      //   batch.map((pi: PhotoImage, index) => {
-      //     const photo: Photo = pi.photo
-      //     photo.embedding = embeddings.find((item) => item.id == pi.photo.id).embedding
-      //     return photo.save()
-      //   })
-      // )
-    }
-  }
-
   private async executeVisualDetectionTask(task: VisualDetectionTask) {
     if (!task.data) {
       task.data = {}
