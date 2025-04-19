@@ -45,6 +45,7 @@ export default class ModelsService {
   constructor() {
     this.apiMode = process.env.API_MODELS
     this.remoteBaseUrl = process.env.REMOTE_API_BASE_URL
+    this.remoteBaseUrlEmbeddings = process.env.REMOTE_API_BASE_URL_EMBEDDINGS
     this.localBaseUrl = process.env.LOCAL_API_BASE_URL
     this.runpodApiKey = process.env.RUNPOD_API_KEY
     this.lastPingTimestamp = 0
@@ -71,19 +72,21 @@ export default class ModelsService {
     }
   }
 
-  buildRequestConfig(operation, payload) {
+  buildRequestConfig(operation, payload, isEmbedding = false) {
     let url = ''
     let requestPayload = payload
     const headers = { 'Content-Type': 'application/json' }
 
     if (this.apiMode === 'REMOTE') {
-      url = this.remoteBaseUrl
-      requestPayload = {
-        input: {
-          operation,
-          data: payload,
-        },
-      }
+      url = isEmbedding ? this.remoteBaseUrlEmbeddings : this.remoteBaseUrl
+      requestPayload = isEmbedding
+        ? { input: { input: payload } }
+        : {
+            input: {
+              operation,
+              data: payload,
+            },
+          }
       if (this.runpodApiKey) {
         headers['Authorization'] = `Bearer ${this.runpodApiKey}`
       }
@@ -128,17 +131,18 @@ export default class ModelsService {
     }
   }
 
-  @withWarmUp()
+  // @withWarmUp()
   async getEmbeddings(tags) {
     try {
-      const payload = { tags }
-      const { url, requestPayload, headers } = this.buildRequestConfig('get_embeddings', payload)
+      const { url, requestPayload, headers } = this.buildRequestConfig('get_embeddings', tags, true)
 
       const { data } = await axios.post(url, requestPayload, { headers })
 
-      return data.output ? data.output : data || { embeddings: [] }
+      return data.output
+        ? { embeddings: data.output.data.map((d) => d.embedding) }
+        : { embeddings: [] }
     } catch (error) {
-      console.error('Error en getEmbeddings:', error.message)
+      console.error('Error en getEmbeddings:', error.message, JSON.stringify(tags))
       return { embeddings: [] }
     }
   }

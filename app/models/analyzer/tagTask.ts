@@ -16,7 +16,7 @@ export class TagTask extends AnalyzerTask {
   declare data: Record<string, { name: string; group: string }[]>
 
   public async commit() {
-    const batchEmbeddingsSize = 50 // tamaño inicial del lote
+    const batchEmbeddingsSize = 200 // tamaño inicial del lote
 
     const modelsService = new ModelsService()
     const tagPhotoManager = new TagPhotoManager()

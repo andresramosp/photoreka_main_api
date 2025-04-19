@@ -138,32 +138,32 @@ export default class PhotoManager {
     await photo.related('tags').createMany(newTags)
     await photo.load('tags', (tagPhoto) => tagPhoto.preload('tag'))
 
-    // const nlpService = new NLPService()
-    // const tagPhotosToProcess = photo.tags.filter((tp) =>
-    //   ['person', 'animals', 'objects'].includes(tp.tag.group)
-    // )
+    const nlpService = new NLPService()
+    const tagPhotosToProcess = photo.tags.filter((tp) =>
+      ['person', 'animals', 'objects'].includes(tp.tag.group)
+    )
 
-    // const tagToSust = new Map<TagPhoto, string[]>()
-    // const allSustSet = new Set<string>()
+    const tagToSust = new Map<TagPhoto, string[]>()
+    const allSustSet = new Set<string>()
 
-    // for (const tp of tagPhotosToProcess) {
-    //   const sust = nlpService.getSustantives(tp.tag.name) ?? []
-    //   tagToSust.set(tp, sust)
-    //   sust.forEach((s) => allSustSet.add(s))
-    // }
+    for (const tp of tagPhotosToProcess) {
+      const sust = nlpService.getSustantives(tp.tag.name) ?? []
+      tagToSust.set(tp, sust)
+      sust.forEach((s) => allSustSet.add(s))
+    }
 
-    // const allSustantives = Array.from(allSustSet)
-    // const modelsService = new ModelsService()
-    // const { embeddings } = await modelsService.getEmbeddings(allSustantives)
-    // const embeddingMap = new Map<string, number[]>()
-    // allSustantives.forEach((s, i) => embeddingMap.set(s, embeddings[i]))
-    // // -------------------------------------------------------------------
+    const allSustantives = Array.from(allSustSet)
+    const modelsService = new ModelsService()
+    const { embeddings } = await modelsService.getEmbeddings(allSustantives)
+    const embeddingMap = new Map<string, number[]>()
+    allSustantives.forEach((s, i) => embeddingMap.set(s, embeddings[i]))
+    // -------------------------------------------------------------------
 
-    // const tagPhotoManager = new TagPhotoManager()
+    const tagPhotoManager = new TagPhotoManager()
 
-    // for (const tp of tagPhotosToProcess) {
-    //   await tagPhotoManager.addSustantives(tp, tagToSust.get(tp)!, embeddingMap)
-    // }
+    for (const tp of tagPhotosToProcess) {
+      await tagPhotoManager.addSustantives(tp, tagToSust.get(tp)!, embeddingMap)
+    }
 
     return photo
   }
