@@ -16,6 +16,8 @@ export class TagTask extends AnalyzerTask {
   declare data: Record<string, { name: string; group: string }[]>
 
   public async commit() {
+    const batchEmbeddingsSize = 50 // tamaño inicial del lote
+
     const modelsService = new ModelsService()
     const tagPhotoManager = new TagPhotoManager()
     const photoManager = new PhotoManager()
@@ -31,16 +33,15 @@ export class TagTask extends AnalyzerTask {
       )
     )
 
-    // 2. Obtener embeddings en bloque
-    const { embeddings } = await modelsService.getEmbeddings(allTagNames)
-    // embeddings: Array de vectores matching allTagNames
-    const embeddingsMap = allTagNames.reduce(
-      (map, name, i) => {
-        map[name] = embeddings[i]
-        return map
-      },
-      /** @type Record<string, number[]> */ {}
-    )
+    // 2. Obtener embeddings en bloques por lotes
+    const embeddingsMap: Record<string, number[]> = {}
+    for (let i = 0; i < allTagNames.length; i += batchEmbeddingsSize) {
+      const batch = allTagNames.slice(i, i + batchEmbeddingsSize)
+      const { embeddings } = await modelsService.getEmbeddings(batch)
+      batch.forEach((name, idx) => {
+        embeddingsMap[name] = embeddings[idx]
+      })
+    }
 
     for (const photoId of Object.keys(this.data)) {
       const tagPhotosList: TagPhoto[] = []
@@ -48,7 +49,7 @@ export class TagTask extends AnalyzerTask {
         const lower = tagData.name.toLocaleLowerCase()
         if (STOPWORDS.includes(lower)) continue
 
-        // 3. Pasar solo el embedding precomputado
+        // 3. Usar el embedding precomputado del mapa
         const emb = embeddingsMap[tagData.name]
         const existingOrCreatedTag: Tag = await tagManager.getOrCreateSimilarTag(tagData, emb)
 
