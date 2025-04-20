@@ -92,12 +92,6 @@ export default class AnalyzerProcessRunner {
       await this.changeStage(`Tags task complete: ${task.name}`)
     }
 
-    if (tagsTasks.length) {
-      await this.changeStage('Tags Embeddings initiating', 'embeddings_tags')
-      await this.createTagsEmbeddings()
-      await this.changeStage('Tags Embeddings complete')
-    }
-
     const chunkTasks = this.process.tasks.filter((task) => task instanceof ChunkTask)
     for (const task of chunkTasks) {
       await this.changeStage(`Chunks Task initiating: ${task.name}`, 'chunks_tasks')
@@ -357,40 +351,6 @@ export default class AnalyzerProcessRunner {
       }
     })
     return { result: homogenizedResult }
-  }
-
-  // TODO: los tags deben compararse usando también el grupo (orange | fruit, orange | color)
-
-  @MeasureExecutionTime
-  public async createTagsEmbeddings() {
-    // Recorremos todas las fotos y recogemos los tags sin embedding (sin duplicados)
-    const allTagsMap = new Map<string, Tag>()
-    for (const photo of this.process.photos) {
-      await photo.load('tags')
-      for (const tagPhoto of photo.tags) {
-        await tagPhoto.load('tag')
-        if (!tagPhoto.tag.embedding) {
-          const key = tagPhoto.tag.name.toLowerCase()
-          if (!allTagsMap.has(key)) {
-            allTagsMap.set(key, tagPhoto.tag)
-          }
-        }
-      }
-    }
-    const tagsToCompute = Array.from(allTagsMap.values())
-    // Procesamos en lotes de 16
-    for (let i = 0; i < tagsToCompute.length; i += 16) {
-      await this.sleep(250)
-      const batch = tagsToCompute.slice(i, i + 16)
-      const tagNames = batch.map((tag) => tag.name)
-      const { embeddings } = await this.modelsService.getEmbeddings(tagNames)
-      await Promise.all(
-        batch.map((tag, index) => {
-          tag.embedding = embeddings[index]
-          return tag.save()
-        })
-      )
-    }
   }
 
   @MeasureExecutionTime

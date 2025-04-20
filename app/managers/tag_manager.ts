@@ -97,6 +97,8 @@ export default class TagManager {
       const newTag = new Tag()
       newTag.name = tag.name
       newTag.group = tag.group
+      // El hook @beforeSave se encargará de formatear el embedding
+      newTag.embedding = embedding
       await newTag.save()
       logger.debug(`Nuevo tag creado exitosamente: ${newTag.name} (ID: ${newTag.id})`)
       return newTag

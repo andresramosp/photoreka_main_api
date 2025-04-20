@@ -37,7 +37,7 @@ export default class Tag extends BaseModel {
   }
 
   @column({ serializeAs: null })
-  declare embedding: string
+  declare embedding: string | number[]
 
   @column.dateTime({ autoCreate: true })
   declare createdAt: DateTime
