@@ -107,7 +107,8 @@ export class TagTask extends AnalyzerTask {
         photoId,
         tagPhotosList,
         this.tagToSustantivesMap,
-        this.embeddingsMap
+        this.embeddingsMap,
+        false
       )
     }
   }
