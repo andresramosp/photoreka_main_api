@@ -133,9 +133,9 @@ export default class PhotoManager {
   public async updateTagsPhoto(
     photoId: string,
     newTags: Partial<TagPhoto>[],
-    replaceAll = false,
     tagToSustantivesMap?: Map<string, string[]>,
-    embeddingsMap?: Map<string, number[]>
+    embeddingsMap?: Map<string, number[]>,
+    replaceAll = false
   ) {
     const photo = await Photo.find(photoId)
     if (!photo) throw new Error('Photo not found')
