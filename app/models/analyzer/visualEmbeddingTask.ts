@@ -23,11 +23,7 @@ export class VisualEmbeddingTask extends AnalyzerTask {
     this.modelsService = new ModelsService()
   }
 
-  async prepare(process: AnalyzerProcess): Promise<void> {
-    // No se necesita preparación específica para VisualEmbeddingTask
-  }
-
-  async getPendingPhotos(process: AnalyzerProcess): Promise<PhotoImage[]> {
+  async prepare(process: AnalyzerProcess): Promise<PhotoImage[]> {
     if (process.mode === 'retry') {
       const failedPhotos = Object.entries(process.failed)
         .filter(([_, taskName]) => taskName === this.name)

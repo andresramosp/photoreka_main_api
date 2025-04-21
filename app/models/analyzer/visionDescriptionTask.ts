@@ -1,7 +1,6 @@
 import { DescriptionType, PhotoDescriptions } from '#models/photo'
 import Photo from '#models/photo'
 import PhotoManager from '../../managers/photo_manager.js'
-import TagPhotoManager from '../../managers/tag_photo_manager.js'
 import { AnalyzerTask } from './analyzerTask.js'
 import PhotoImage from './photoImage.js'
 import PhotoImageService from '../../services/photo_image_service.js'
@@ -15,10 +14,9 @@ logger.setLevel(LogLevel.DEBUG)
 type PromptFunction = (photos: Photo[]) => string
 type Prompt = string | PromptFunction
 
-export class VisionTask extends AnalyzerTask {
+export class VisionDescriptionTask extends AnalyzerTask {
   declare prompts: Prompt[]
   declare resolution: 'low' | 'high'
-  declare targetFieldType: 'descriptions' | 'tag_area'
   declare sequential: boolean
   declare imagesPerBatch: number
   declare useGuideLines: boolean
@@ -36,11 +34,7 @@ export class VisionTask extends AnalyzerTask {
     this.modelsService = new ModelsService()
   }
 
-  async prepare(process: AnalyzerProcess): Promise<void> {
-    // No se necesita preparación específica para VisionTask
-  }
-
-  async getPendingPhotos(process: AnalyzerProcess): Promise<PhotoImage[]> {
+  async prepare(process: AnalyzerProcess): Promise<PhotoImage[]> {
     const allImages = await this.photoImageService.getPhotoImages(process, this.useGuideLines)
 
     if (process.mode === 'retry') {
@@ -118,42 +112,14 @@ export class VisionTask extends AnalyzerTask {
   async commit(): Promise<void> {
     try {
       const photoManager = new PhotoManager()
-      const tagPhotoManager = new TagPhotoManager()
-
-      if (this.targetFieldType === 'tag_area') {
-        await Promise.all(
-          Object.entries(this.data)
-            .map(([photoId, tagPhotos]) => {
-              if (!isNaN(Number(photoId))) {
-                const targetField = this.targetFieldType.split('_')[1]
-                const tagPhotosToUpdate = Object.entries(tagPhotos).map(([id, value]) => ({
-                  id: Number(id),
-                  [targetField]: value,
-                }))
-
-                return tagPhotosToUpdate.map((tagPhotoDelta) =>
-                  tagPhotoManager.updateTagPhoto(tagPhotoDelta.id, {
-                    [targetField]: tagPhotoDelta[targetField],
-                  })
-                )
-              }
-              return []
-            })
-            .flat()
-        )
-      } else {
-        await Promise.all(
-          Object.entries(this.data).map(([photoId, descriptions]) => {
-            if (!isNaN(Number(photoId))) {
-              return photoManager.updatePhotoDescriptions(
-                photoId,
-                descriptions as PhotoDescriptions
-              )
-            }
-            return Promise.resolve(null)
-          })
-        )
-      }
+      await Promise.all(
+        Object.entries(this.data).map(([photoId, descriptions]) => {
+          if (!isNaN(Number(photoId))) {
+            return photoManager.updatePhotoDescriptions(photoId, descriptions as PhotoDescriptions)
+          }
+          return Promise.resolve(null)
+        })
+      )
     } catch (err) {
       logger.error(`Error guardando datos de VisionTask:`)
     }

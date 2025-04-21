@@ -1,7 +1,8 @@
 import { AnalyzerTask } from '#models/analyzer/analyzerTask'
 import { ChunkTask } from '#models/analyzer/chunkTask'
 import { TagTask } from '#models/analyzer/tagTask'
-import { VisionTask } from '#models/analyzer/visionTask'
+import { VisionDescriptionTask } from '#models/analyzer/visionDescriptionTask'
+import { VisionTopologicalTask } from '#models/analyzer/visionTopologicalTask'
 import { VisualDetectionTask } from '#models/analyzer/VisualDetectionTask'
 import { VisualEmbeddingTask } from '#models/analyzer/visualEmbeddingTask'
 import {
@@ -21,10 +22,9 @@ export const packages = [
     tasks: [
       {
         name: 'vision_context_story_accents',
-        type: 'VisionTask',
+        type: 'VisionDescriptionTask',
         model: 'GPT',
         sequential: false,
-        targetFieldType: 'descriptions',
         prompts: [MESSAGE_ANALYZER_GPT_CONTEXT_STORY_ACCENTS],
         resolution: 'high',
         imagesPerBatch: 4,
@@ -97,11 +97,10 @@ export const packages = [
     tasks: [
       {
         name: 'topological_tags',
-        type: 'VisionTask',
+        type: 'VisionTopologicalTask',
         model: 'GPT',
         sequential: false,
         resolution: 'high',
-        targetFieldType: 'tag_area',
         prompts: [MESSAGE_ANALYZER_GPT_TOPOLOGIC_TAGS],
         imagesPerBatch: 4,
         useGuideLines: true,
@@ -116,10 +115,9 @@ export const packages = [
     tasks: [
       {
         name: 'vision_context_story',
-        type: 'VisionTask',
+        type: 'VisionDescriptionTask',
         model: 'GPT',
         sequential: false,
-        targetFieldType: 'descriptions',
         prompts: [MESSAGE_ANALYZER_GPT_CONTEXT_AND_STORY],
         resolution: 'high',
         imagesPerBatch: 4,
@@ -129,10 +127,9 @@ export const packages = [
       {
         // xxxx por foto (xxxx con Batch API aprox.)
         name: 'vision_visual_accents',
-        type: 'VisionTask',
+        type: 'VisionDescriptionTask',
         model: 'Molmo',
         sequential: true,
-        targetFieldType: 'descriptions',
         prompts: [MESSAGE_ANALYZER_MOLMO_VISUAL_ACCENTS], // no va del todo mal, decirle que no coja elementos distantes o poco visibles
         imagesPerBatch: 4,
         promptsNames: ['visual_accents'],
@@ -176,8 +173,11 @@ export const getTaskList = (packageId: string): AnalyzerTask[] => {
   return pkg.tasks.map((taskData) => {
     let task: AnalyzerTask
     switch (taskData.type) {
-      case 'VisionTask':
-        task = new VisionTask()
+      case 'VisionDescriptionTask':
+        task = new VisionDescriptionTask()
+        break
+      case 'VisionTopologicalTask':
+        task = new VisionTopologicalTask()
         break
       case 'TagTask':
         task = new TagTask()

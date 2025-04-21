@@ -9,8 +9,7 @@ export abstract class AnalyzerTask {
   declare data: any
 
   // Métodos abstractos que todas las tareas deben implementar
-  abstract prepare(process: AnalyzerProcess): Promise<void>
-  abstract getPendingPhotos(process: AnalyzerProcess): Promise<Photo[] | PhotoImage[]>
+  abstract prepare(process: AnalyzerProcess): Promise<Photo[] | PhotoImage[]>
   abstract process(process: AnalyzerProcess, pendingPhotos: Photo[] | PhotoImage[]): Promise<void>
   abstract commit(): Promise<void>
 

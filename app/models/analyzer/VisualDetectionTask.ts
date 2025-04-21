@@ -6,7 +6,6 @@ import PhotoImage from './photoImage.js'
 import PhotoImageService from '../../services/photo_image_service.js'
 import ModelsService from '../../services/models_service.js'
 import Logger, { LogLevel } from '../../utils/logger.js'
-import Photo from '#models/photo'
 
 const logger = Logger.getInstance('AnalyzerProcess', 'VisualDetectionTask')
 logger.setLevel(LogLevel.DEBUG)
@@ -30,11 +29,7 @@ export class VisualDetectionTask extends AnalyzerTask {
     this.modelsService = new ModelsService()
   }
 
-  async prepare(process: AnalyzerProcess): Promise<void> {
-    // No se necesita preparación específica para VisualDetectionTask
-  }
-
-  async getPendingPhotos(process: AnalyzerProcess): Promise<PhotoImage[]> {
+  async prepare(process: AnalyzerProcess): Promise<PhotoImage[]> {
     if (process.mode === 'retry') {
       const failedPhotos = Object.entries(process.failed)
         .filter(([_, taskName]) => taskName === this.name)

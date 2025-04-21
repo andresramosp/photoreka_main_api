@@ -25,12 +25,7 @@ export class ChunkTask extends AnalyzerTask {
     super()
     this.modelsService = new ModelsService()
   }
-
-  async prepare(process: AnalyzerProcess): Promise<void> {
-    // No se necesita preparación específica para ChunkTask
-  }
-
-  async getPendingPhotos(process: AnalyzerProcess): Promise<Photo[]> {
+  async prepare(process: AnalyzerProcess): Promise<Photo[]> {
     if (process.mode === 'retry') {
       const failedPhotos = Object.entries(process.failed)
         .filter(([_, taskName]) => taskName === this.name)
