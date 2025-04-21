@@ -151,6 +151,7 @@ export default class ModelsService {
     provider: 'redis',
     ttl: 50 * 5,
   })
+  // @MeasureExecutionTime
   async getEmbeddings(tags) {
     try {
       const { url, requestPayload, headers } = this.buildRequestConfig('', tags, 'embeddings')
@@ -167,7 +168,7 @@ export default class ModelsService {
   }
 
   @withWarmUp('image')
-  async getEmbeddingsImages(images: { id: string; base64: string }) {
+  async getEmbeddingsImages(images: { id: string; base64: string }[]) {
     try {
       const payload = { images }
       const { url, requestPayload, headers } = this.buildRequestConfig(
@@ -205,7 +206,7 @@ export default class ModelsService {
   }
 
   @withWarmUp('image')
-  async getObjectsDetections(images: { id: string; base64: string }, categories: any[]) {
+  async getObjectsDetections(images: { id: string; base64: string }[], categories: any[]) {
     try {
       const payload = { images, categories }
       const { url, requestPayload, headers } = this.buildRequestConfig(

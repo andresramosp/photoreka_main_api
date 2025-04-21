@@ -5,6 +5,7 @@ import Photo, { PhotoDescriptions, PhotoDetections } from '#models/photo'
 import TagPhoto from '#models/tag_photo'
 import ModelsService from '#services/models_service'
 import NLPService from '#services/nlp_service'
+import { Logger } from '@adonisjs/core/logger'
 
 import { withCache } from '../decorators/withCache.js'
 import TagPhotoManager from './tag_photo_manager.js'
@@ -145,9 +146,7 @@ export default class PhotoManager {
     await photo.load('tags', (tagPhoto) => tagPhoto.preload('tag'))
 
     const nlpService = new NLPService()
-    const tagPhotosToProcess = photo.tags.filter((tp) =>
-      ['person', 'animals', 'objects'].includes(tp.tag.group)
-    )
+    const tagPhotosToProcess = photo.tags
 
     // Si no se proporcionan los mapas, los calculamos
     if (!tagToSustantivesMap || !embeddingsMap) {

@@ -1,41 +1,135 @@
 import { DescriptionType, PhotoDescriptions } from '#models/photo'
+import Photo from '#models/photo'
 import PhotoManager from '../../managers/photo_manager.js'
 import TagPhotoManager from '../../managers/tag_photo_manager.js'
 import { AnalyzerTask } from './analyzerTask.js'
+import PhotoImage from './photoImage.js'
+import PhotoImageService from '../../services/photo_image_service.js'
+import Logger, { LogLevel } from '../../utils/logger.js'
+import AnalyzerProcess from './analyzerProcess.js'
+import ModelsService from '../../services/models_service.js'
+
+const logger = Logger.getInstance('AnalyzerProcess', 'VisionTask')
+logger.setLevel(LogLevel.DEBUG)
+
+type PromptFunction = (photos: Photo[]) => string
+type Prompt = string | PromptFunction
 
 export class VisionTask extends AnalyzerTask {
-  declare prompts: string[] | Function[]
+  declare prompts: Prompt[]
   declare resolution: 'low' | 'high'
-  declare targetFieldType: 'descriptions' | 'tag_area' //
+  declare targetFieldType: 'descriptions' | 'tag_area'
   declare sequential: boolean
   declare imagesPerBatch: number
   declare useGuideLines: boolean
   declare promptDependentField: DescriptionType
-  declare promptsNames: DescriptionType[] // de momento queda solo para Molmo, por su tipo de input
-  declare data: Record<string, Record<string, string>> // foto -> { description_field -> text }
-  declare complete: boolean // TODO: que serialize a BD, y usar para saber si la task ya se completó, en vez de mirar los fields
+  declare promptsNames: DescriptionType[]
+  declare data: Record<string, Record<string, string>>
+  declare complete: boolean
 
-  public async commit() {
+  private photoImageService: PhotoImageService
+  private modelsService: ModelsService
+
+  constructor() {
+    super()
+    this.photoImageService = PhotoImageService.getInstance()
+    this.modelsService = new ModelsService()
+  }
+
+  async prepare(process: AnalyzerProcess): Promise<void> {
+    // No se necesita preparación específica para VisionTask
+  }
+
+  async getPendingPhotos(process: AnalyzerProcess): Promise<PhotoImage[]> {
+    const allImages = await this.photoImageService.getPhotoImages(process, this.useGuideLines)
+
+    if (process.mode === 'retry') {
+      const failedPhotos = Object.entries(process.failed)
+        .filter(([_, taskName]) => taskName === this.name)
+        .map(([photoId]) => photoId)
+
+      return allImages.filter((img) => failedPhotos.includes(img.photo.id))
+    }
+
+    return allImages
+  }
+
+  async process(process: AnalyzerProcess, pendingPhotos: PhotoImage[]): Promise<void> {
+    if (!this.data) {
+      this.data = {}
+    }
+
+    const batches: PhotoImage[][] = []
+    for (let i = 0; i < pendingPhotos.length; i += this.imagesPerBatch) {
+      const batch = pendingPhotos.slice(i, i + this.imagesPerBatch)
+      batches.push(batch)
+    }
+
+    const processBatch = async (batch: PhotoImage[], idx: number) => {
+      await this.sleep(idx * 1500)
+
+      let response: any
+      const injectedPrompts: any = await this.injectPromptsDependencies(batch)
+      logger.debug(`Llamando a ${this.model} para ${batch.length} imágenes...`)
+
+      try {
+        if (this.model === 'GPT') {
+          response = await this.executeGPTTask(injectedPrompts, batch)
+        } else if (this.model === 'Molmo') {
+          response = await this.executeMolmoTask(injectedPrompts, batch)
+        } else {
+          throw new Error(`Modelo no soportado: ${this.model}`)
+        }
+
+        if (process.mode === 'retry') {
+          process.removeFailedPhotos(
+            batch.map((b) => b.photo.id),
+            this.name
+          )
+        }
+      } catch (err) {
+        logger.error(`Error en ${this.model} para ${batch.length} imágenes:`)
+        process.addFailedPhotos(
+          batch.map((b) => b.photo.id),
+          this.name
+        )
+        return
+      }
+
+      response.result.forEach((res: any, photoIndex: number) => {
+        const { ...results } = res
+        const photoId = batch[photoIndex].photo.id
+        this.data[photoId] = { ...this.data[photoId], ...results }
+      })
+
+      await this.commit()
+      logger.debug(`Completada tarea ${this.model} para ${batch.length} imágenes`)
+    }
+
+    if (this.sequential) {
+      for (let i = 0; i < batches.length; i++) {
+        await processBatch(batches[i], i)
+      }
+    } else {
+      await Promise.all(batches.map((batch, idx) => processBatch(batch, idx)))
+    }
+  }
+
+  async commit(): Promise<void> {
     try {
       const photoManager = new PhotoManager()
       const tagPhotoManager = new TagPhotoManager()
-      if (this.targetFieldType == 'tag_area') {
+
+      if (this.targetFieldType === 'tag_area') {
         await Promise.all(
           Object.entries(this.data)
             .map(([photoId, tagPhotos]) => {
-              if ([11, 80, 107].includes(Number(photoId))) {
-                console.log()
-              }
-              if (!isNaN(photoId)) {
+              if (!isNaN(Number(photoId))) {
                 const targetField = this.targetFieldType.split('_')[1]
-                const tagPhotosToUpdate: { id: number; [targetField]: string }[] = Object.entries(
-                  tagPhotos
-                ).map(([id, value]) => ({
+                const tagPhotosToUpdate = Object.entries(tagPhotos).map(([id, value]) => ({
                   id: Number(id),
                   [targetField]: value,
                 }))
-
-                // Se podría re-chequear que los id's pertenecen a la foto (usando photoId)
 
                 return tagPhotosToUpdate.map((tagPhotoDelta) =>
                   tagPhotoManager.updateTagPhoto(tagPhotoDelta.id, {
@@ -50,7 +144,7 @@ export class VisionTask extends AnalyzerTask {
       } else {
         await Promise.all(
           Object.entries(this.data).map(([photoId, descriptions]) => {
-            if (!isNaN(photoId)) {
+            if (!isNaN(Number(photoId))) {
               return photoManager.updatePhotoDescriptions(
                 photoId,
                 descriptions as PhotoDescriptions
@@ -60,10 +154,75 @@ export class VisionTask extends AnalyzerTask {
           })
         )
       }
-
-      // this.data = {} // TODO: probar
     } catch (err) {
-      console.log(`[AnalyzerProcess] Error guardando ${JSON.stringify(this.data)}`)
+      logger.error(`Error guardando datos de VisionTask:`)
     }
+  }
+
+  private async executeGPTTask(prompts: string[], batch: PhotoImage[]): Promise<any> {
+    const prompt = prompts[0]
+    const images = batch.map((pp) => ({
+      type: 'image_url',
+      image_url: {
+        url: `data:image/jpeg;base64,${pp.base64}`,
+        detail: this.resolution,
+      },
+    }))
+    return await this.modelsService.getGPTResponse(prompt, images, 'gpt-4.1', null, 0)
+  }
+
+  private async executeMolmoTask(prompts: any[], batch: PhotoImage[]): Promise<any> {
+    const response = await this.modelsService.getMolmoResponse(
+      batch.map((pp) => ({ id: pp.photo.id, base64: pp.base64 })),
+      [],
+      prompts
+    )
+    if (!response) return { result: [] }
+
+    const { result } = response
+    return {
+      result: result.map((photoResult: any) => {
+        let descriptionsByPrompt: { [key: string]: any } = {}
+        this.promptsNames.forEach((targetPrompt) => {
+          try {
+            const descObj = photoResult.descriptions.find((d: any) => d.id_prompt === targetPrompt)
+            descriptionsByPrompt = descObj.description
+          } catch (err) {
+            logger.error(`Error en Molmo para foto ${photoResult.id}:`)
+          }
+        })
+        return {
+          [this.promptsNames[0]]: descriptionsByPrompt,
+        }
+      }),
+    }
+  }
+
+  private async injectPromptsDependencies(batch: PhotoImage[]): Promise<any> {
+    if (this.promptDependentField || this.model === 'Molmo') {
+      const promptList = this.promptsNames.map((target: DescriptionType, index: number) => ({
+        id: target,
+        prompt: this.prompts[index],
+      }))
+
+      return await Promise.all(
+        batch.map(async (photoImage: PhotoImage) => {
+          await photoImage.photo.refresh()
+          return {
+            id: photoImage.photo.id,
+            prompts: promptList.map((p) => ({
+              id: p.id,
+              text: typeof p.prompt === 'function' ? p.prompt([photoImage.photo]) : p.prompt,
+            })),
+          }
+        })
+      )
+    } else {
+      return this.prompts.map((p) => (typeof p === 'function' ? p(batch.map((b) => b.photo)) : p))
+    }
+  }
+
+  private sleep(ms: number) {
+    return new Promise((resolve) => setTimeout(resolve, ms))
   }
 }

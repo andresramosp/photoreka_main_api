@@ -83,9 +83,9 @@ export default class TagPhotoManager {
         await tagPhoto.save()
       } catch (err) {
         if (err.code === '23505') {
-          console.log(
-            `[TagPhotoManager] Sustantivo duplicado ignorado: ${sust} (tag ${parentTagPhoto.tag.name})`
-          )
+          // console.log(
+          //   `[TagPhotoManager] Sustantivo duplicado ignorado: ${sust} (tag ${parentTagPhoto.tag.name})`
+          // )
         } else {
           console.error('[TagPhotoManager] Error inesperado:', err)
         }
