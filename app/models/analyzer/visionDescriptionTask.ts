@@ -8,7 +8,7 @@ import Logger, { LogLevel } from '../../utils/logger.js'
 import AnalyzerProcess from './analyzerProcess.js'
 import ModelsService from '../../services/models_service.js'
 
-const logger = Logger.getInstance('AnalyzerProcess', 'VisionTask')
+const logger = Logger.getInstance('AnalyzerProcess', 'VisionDescriptionTask')
 logger.setLevel(LogLevel.DEBUG)
 
 type PromptFunction = (photos: Photo[]) => string

@@ -1,6 +1,5 @@
 import { DescriptionType } from '#models/photo'
 import Photo from '#models/photo'
-import PhotoManager from '../../managers/photo_manager.js'
 import TagPhotoManager from '../../managers/tag_photo_manager.js'
 import { AnalyzerTask } from './analyzerTask.js'
 import PhotoImage from './photoImage.js'
@@ -9,7 +8,7 @@ import Logger, { LogLevel } from '../../utils/logger.js'
 import AnalyzerProcess from './analyzerProcess.js'
 import ModelsService from '../../services/models_service.js'
 
-const logger = Logger.getInstance('AnalyzerProcess', 'VisionTask')
+const logger = Logger.getInstance('AnalyzerProcess', 'VisionTopologicalTask')
 logger.setLevel(LogLevel.DEBUG)
 
 type PromptFunction = (photos: Photo[]) => string
@@ -116,7 +115,6 @@ export class VisionTopologicalTask extends AnalyzerTask {
 
   async commit(): Promise<void> {
     try {
-      const photoManager = new PhotoManager()
       const tagPhotoManager = new TagPhotoManager()
 
       await Promise.all(
