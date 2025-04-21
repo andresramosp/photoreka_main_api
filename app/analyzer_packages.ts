@@ -7,7 +7,6 @@ import { VisualEmbeddingTask } from '#models/analyzer/visualEmbeddingTask'
 import {
   MESSAGE_ANALYZER_GPT_CONTEXT_AND_STORY,
   MESSAGE_ANALYZER_GPT_CONTEXT_STORY_ACCENTS,
-  MESSAGE_ANALYZER_GPT_VISUAL_ACCENTS,
   MESSAGE_ANALYZER_MOLMO_VISUAL_ACCENTS,
 } from './utils/prompts/descriptions.js'
 import {
@@ -93,60 +92,20 @@ export const packages = [
       },
     ],
   },
-  // Basic context-story + visual_accents GPT separados
   {
-    // 0,0082 por foto (0,0061 con Batch API aprox.)
-    id: 'basic_2',
+    id: 'topological_upgrade',
     tasks: [
       {
-        name: 'vision_context_story',
+        name: 'topological_tags',
         type: 'VisionTask',
         model: 'GPT',
         sequential: false,
-        targetFieldType: 'descriptions',
-        prompts: [MESSAGE_ANALYZER_GPT_CONTEXT_AND_STORY],
         resolution: 'high',
+        targetFieldType: 'tag_area',
+        prompts: [MESSAGE_ANALYZER_GPT_TOPOLOGIC_TAGS],
         imagesPerBatch: 4,
+        useGuideLines: true,
         promptDependentField: null,
-      },
-      // TODO: intentar mandar visual_accents con 1000px
-      {
-        // xxxx por foto (xxxx con Batch API aprox.)
-        name: 'vision_visual_accents',
-        type: 'VisionTask',
-        model: 'GPT',
-        sequential: false,
-        targetFieldType: 'descriptions',
-        prompts: [MESSAGE_ANALYZER_GPT_VISUAL_ACCENTS],
-        resolution: 'high',
-        imagesPerBatch: 8,
-        promptDependentField: null,
-      },
-      {
-        name: 'tags_context_story',
-        type: 'TagTask',
-        model: 'GPT',
-        prompt: MESSAGE_TAGS_TEXT_EXTRACTION,
-        descriptionSourceFields: ['context', 'story'],
-      },
-      {
-        name: 'tags_visual_accents',
-        type: 'TagTask',
-        model: 'GPT',
-        prompt: MESSAGE_TAGS_TEXT_EXTRACTION,
-        descriptionSourceFields: ['visual_accents'],
-      },
-      {
-        name: 'chunks_context_story_visual_accents',
-        type: 'ChunkTask',
-        prompt: null,
-        model: null,
-        descriptionSourceFields: ['context', 'story', 'visual_accents'],
-        descriptionsChunksMethod: {
-          context: { type: 'split_by_size', maxLength: 300 },
-          story: { type: 'split_by_size', maxLength: 300 },
-          visual_accents: { type: 'split_by_size', maxLength: 15 },
-        },
       },
     ],
   },
@@ -204,25 +163,6 @@ export const packages = [
           story: { type: 'split_by_size', maxLength: 300 },
           visual_accents: { type: 'split_by_size', maxLength: 15 },
         },
-      },
-    ],
-  },
-  {
-    // con request de 6, 0,002 por foto en low, 1500px (va regu)
-    // con request de 4, 0,0038 for foto, high, 1000px
-    id: 'topological_upgrade',
-    tasks: [
-      {
-        name: 'topological_tags',
-        type: 'VisionTask',
-        model: 'GPT',
-        sequential: false,
-        resolution: 'high',
-        targetFieldType: 'tag_area',
-        prompts: [MESSAGE_ANALYZER_GPT_TOPOLOGIC_TAGS],
-        imagesPerBatch: 4,
-        useGuideLines: true,
-        promptDependentField: null,
       },
     ],
   },
