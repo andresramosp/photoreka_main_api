@@ -22,7 +22,6 @@ export default class AnalyzerController {
       )
 
       const photos = await photoManager._getPhotosByUser(userId)
-      logger.debug(`Fotos encontradas para análisis: ${photos.length}`)
 
       if (photos.length) {
         await analyzerService.initProcess(photos, packageId, mode)

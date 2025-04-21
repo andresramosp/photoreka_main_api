@@ -60,7 +60,7 @@ export class TagTask extends AnalyzerTask {
       this.data = {}
     }
 
-    logger.debug('Iniciando fase 1 - Carga y limpieza de descripciones...')
+    logger.debug('Carga y limpieza de descripciones...')
     const cleanedResults = await this.cleanPhotosDescs(pendingPhotos)
     logger.debug('Procesando extracción de tags...')
 
@@ -157,7 +157,6 @@ export class TagTask extends AnalyzerTask {
 
   private async cleanPhotosDescs(photos: Photo[], batchSize = 5, delayMs = 500): Promise<string[]> {
     const results = []
-    logger.debug(`Iniciando limpieza de descripciones para ${photos.length} fotos`)
 
     for (let i = 0; i < photos.length; i += batchSize) {
       const batch = photos.slice(i, i + batchSize)
