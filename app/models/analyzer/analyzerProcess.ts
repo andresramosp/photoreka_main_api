@@ -8,6 +8,11 @@ import fs from 'fs/promises'
 import sharp from 'sharp'
 import { AnalyzerTask } from './analyzerTask.js'
 import { getUploadPath } from '../../utils/dataPath.js'
+import { getTaskList } from '../../analyzer_packages.js'
+import Logger, { LogLevel } from '../../utils/logger.js'
+
+const logger = Logger.getInstance('AnalyzerProcess')
+logger.setLevel(LogLevel.DEBUG)
 
 export type AnalyzerMode = 'first' | 'adding' | 'remake' | 'retry'
 export type ModelType = 'GPT' | 'Molmo'
@@ -61,6 +66,58 @@ export default class AnalyzerProcess extends BaseModel {
   public photoImages: PhotoImage[] = []
 
   public photoImagesWithGuides: PhotoImage[] = []
+
+  public async initialize(userPhotos: Photo[], packageId: string, mode: AnalyzerMode = 'first') {
+    logger.debug(`Inicializando proceso en modo ${mode} con paquete ${packageId}`)
+
+    this.mode = mode
+    this.packageId = packageId
+    this.tasks = getTaskList(packageId)
+    this.currentStage = 'init'
+    await this.save()
+
+    const photosToProcess = this.getInitialPhotos(userPhotos)
+    await this.setProcessPhotos(photosToProcess)
+    await this.populatePhotoImages()
+
+    logger.debug(`Proceso inicializado con ${photosToProcess.length} fotos`)
+  }
+
+  private getInitialPhotos(userPhotos: Photo[]): Photo[] {
+    switch (this.mode) {
+      case 'adding':
+        return userPhotos.filter((photo) => !photo.analyzerProcess)
+      case 'first':
+      case 'remake':
+        return userPhotos
+      case 'retry':
+        return []
+      default:
+        throw new Error(`Modo de proceso no válido: ${this.mode}`)
+    }
+  }
+
+  private async setProcessPhotos(photos: Photo[]) {
+    const newPhotosIds = photos.map((p) => p.id)
+
+    // Desasociar fotos que ya no están en el proceso
+    await Photo.query()
+      .where('analyzer_process_id', this.id)
+      .whereNotIn('id', newPhotosIds)
+      .update({ analyzer_process_id: null })
+
+    // Asociar nuevas fotos al proceso
+    await Photo.query().whereIn('id', newPhotosIds).update({ analyzer_process_id: this.id })
+
+    // Recargar el proceso con las fotos preload
+    const updatedProcess = await AnalyzerProcess.query()
+      .where('id', this.id)
+      .preload('photos')
+      .firstOrFail()
+
+    this.photos = updatedProcess.photos
+    await this.save()
+  }
 
   public async populatePhotoImages() {
     const uploadPath = getUploadPath()
@@ -133,32 +190,27 @@ export default class AnalyzerProcess extends BaseModel {
     this.photoImagesWithGuides = processesWithGuides.filter((pp) => pp !== null) as PhotoImage[]
   }
 
-  public async addFailed(photoIds: string[], taskName: string): Promise<void> {
-    console.log(`[AnalyzerProcess]: Failed Photos: ${photoIds}`)
+  public async addFailedPhotos(photoIds: string[], taskName: string): Promise<void> {
+    logger.debug(`Añadiendo ${photoIds.length} fotos fallidas para tarea ${taskName}`)
+
     if (!this.failed) {
       this.failed = {}
     }
     photoIds.forEach((id) => {
       this.failed[id] = taskName
     })
-    // Persistir los fallos en BD
     await this.save()
-
-    // "Desasociamos" las fotos fallidas: actualizamos su campo foráneo para que no se usen en el proceso
-    // await Photo.query().whereIn('id', photoIds).update({ analyzerProcessId: null })
   }
 
-  public async removeFailed(photoIds: string[], taskName: string): Promise<void> {
-    console.log(`[AnalyzerProcess]: Removing Failed Photos: ${photoIds}`)
-    if (!this.failed) {
-      return
-    }
+  public async removeFailedPhotos(photoIds: string[], taskName: string): Promise<void> {
+    logger.debug(`Eliminando ${photoIds.length} fotos fallidas para tarea ${taskName}`)
+
+    if (!this.failed) return
     photoIds.forEach((id) => {
-      if (this.failed[id]) {
+      if (this.failed[id] === taskName) {
         delete this.failed[id]
       }
     })
-    // Persistir la eliminación de los fallos en BD
     await this.save()
   }
 }

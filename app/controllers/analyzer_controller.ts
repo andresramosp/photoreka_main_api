@@ -48,7 +48,6 @@ export default class AnalyzerController {
   private async handleAnalysisStream(userId: string, stream: AsyncGenerator) {
     try {
       for await (const result of stream) {
-        logger.debug(`Emitting ${result.type} para usuario ${userId}`)
         ws.io?.emit(result.type, result.data)
       }
       logger.info(`Análisis completado para usuario ${userId}`)
@@ -56,7 +55,6 @@ export default class AnalyzerController {
       logger.error(`Error en el stream de análisis para usuario ${userId}:`, error)
     } finally {
       analysisProcesses.delete(userId)
-      logger.debug(`Proceso de análisis limpiado para usuario ${userId}`)
     }
   }
 }

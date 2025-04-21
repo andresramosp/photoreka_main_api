@@ -1,6 +1,7 @@
 // @ts-nocheck
 
 import { DescriptionType } from '#models/photo'
+import Photo from '#models/photo'
 import Tag from '#models/tag'
 import TagPhoto from '#models/tag_photo'
 import ModelsService from '#services/models_service'
@@ -10,26 +11,66 @@ import TagPhotoManager from '../../managers/tag_photo_manager.js'
 import { STOPWORDS } from '../../utils/StopWords.js'
 import { AnalyzerTask } from './analyzerTask.js'
 import NLPService from '../../services/nlp_service.js'
+import AnalyzerProcess from './analyzerProcess.js'
+import Logger, { LogLevel } from '../../utils/logger.js'
+
+const logger = Logger.getInstance('AnalyzerProcess', 'TagTask')
+logger.setLevel(LogLevel.DEBUG)
 
 export class TagTask extends AnalyzerTask {
   declare prompt: string | Function
   declare descriptionSourceFields: DescriptionType[]
   declare data: Record<string, { name: string; group: string }[]>
+
   private nlpService: NLPService
   private tagToSustantivesMap: Map<string, string[]>
   private embeddingsMap: Map<string, number[]>
+  private modelsService: ModelsService
 
   constructor() {
     super()
     this.nlpService = new NLPService()
     this.tagToSustantivesMap = new Map()
     this.embeddingsMap = new Map()
+    this.modelsService = new ModelsService()
   }
 
-  public async commit() {
+  async prepare(process: AnalyzerProcess): Promise<Photo[]> {
+    if (process.mode === 'retry') {
+      const failedPhotos = Object.entries(process.failed)
+        .filter(([_, taskName]) => taskName === this.name)
+        .map(([photoId]) => photoId)
+
+      return Photo.query()
+        .whereIn('id', failedPhotos)
+        .preload('tags', (query) => {
+          query.preload('tag')
+        })
+    }
+
+    return Photo.query()
+      .where('analyzer_process_id', process.id)
+      .preload('tags', (query) => {
+        query.preload('tag')
+      })
+  }
+
+  async process(process: AnalyzerProcess, pendingPhotos: Photo[]): Promise<void> {
+    if (!this.data) {
+      this.data = {}
+    }
+
+    logger.debug('Iniciando fase 1 - Carga y limpieza de descripciones...')
+    const cleanedResults = await this.cleanPhotosDescs(pendingPhotos)
+    logger.debug('Procesando extracción de tags...')
+
+    await this.requestTagsFromGPT(pendingPhotos, cleanedResults)
+    logger.debug('Procesando creación de tags...')
+  }
+
+  async commit(): Promise<void> {
     const batchEmbeddingsSize = 200 // tamaño inicial del lote
 
-    const modelsService = new ModelsService()
     const tagPhotoManager = new TagPhotoManager()
     const photoManager = new PhotoManager()
     const tagManager = new TagManager()
@@ -71,7 +112,8 @@ export class TagTask extends AnalyzerTask {
     const termsWithoutEmbeddings = termsArray.filter((term) => !this.embeddingsMap.has(term))
     for (let i = 0; i < termsWithoutEmbeddings.length; i += batchEmbeddingsSize) {
       const batch = termsWithoutEmbeddings.slice(i, i + batchEmbeddingsSize)
-      const { embeddings } = await modelsService.getEmbeddings(batch)
+      logger.debug(`Obteniendo embeddings para batch para ${batch.length}`)
+      const { embeddings } = await this.modelsService.getEmbeddings(batch)
       batch.forEach((name, idx) => {
         this.embeddingsMap.set(name, embeddings[idx])
       })
@@ -96,7 +138,7 @@ export class TagTask extends AnalyzerTask {
             (tp) => tp.tagId === tagPhoto.tagId && tp.category === tagPhoto.category
           )
         ) {
-          console.log(`[AnalyzerProcess] TagTask: skipping duplicate tagPhoto: ${tagPhoto.tagId}`)
+          logger.debug(`Saltando tagPhoto duplicado: ${tagPhoto.tagId}`)
           continue
         }
         tagPhotosList.push(tagPhoto)
@@ -111,5 +153,131 @@ export class TagTask extends AnalyzerTask {
         false
       )
     }
+  }
+
+  private async cleanPhotosDescs(photos: Photo[], batchSize = 5, delayMs = 500): Promise<string[]> {
+    const results = []
+    logger.debug(`Iniciando limpieza de descripciones para ${photos.length} fotos`)
+
+    for (let i = 0; i < photos.length; i += batchSize) {
+      const batch = photos.slice(i, i + batchSize)
+      logger.debug(
+        `Procesando lote ${i / batchSize + 1} de ${Math.ceil(photos.length / batchSize)}`
+      )
+
+      try {
+        const sourceTexts = batch.map((photo) => {
+          const text = this.getSourceTextFromPhoto(photo)
+          return text
+        })
+
+        const cleanResult = await this.modelsService.cleanDescriptions(sourceTexts, 0.9)
+
+        if (!cleanResult || !Array.isArray(cleanResult)) {
+          logger.error(`Resultado inesperado de cleanDescriptions: ${JSON.stringify(cleanResult)}`)
+          throw new Error('Resultado inválido de cleanDescriptions')
+        }
+
+        results.push(...cleanResult)
+        logger.debug(`Lote ${i / batchSize + 1} procesado exitosamente`)
+
+        if (i + batchSize < photos.length) {
+          await this.sleep(delayMs)
+        }
+      } catch (error) {
+        logger.error(`Error procesando lote ${i / batchSize + 1}:`, error)
+        throw error
+      }
+    }
+
+    return results
+  }
+
+  private async requestTagsFromGPT(photos: Photo[], cleanedResults: string[]) {
+    const tagRequests: Promise<void>[] = []
+    const totalPhotos = photos.length
+    process.stdout.write(`[TagTask]: Realizando requests GPT para `)
+
+    photos.forEach((photo, index) => {
+      const requestPromise = (async () => {
+        await this.sleep(index * 500)
+
+        try {
+          const { result: extractedTagsResponse } = await this.modelsService.getGPTResponse(
+            this.prompt as string,
+            JSON.stringify({ description: cleanedResults[index] }),
+            'gpt-4o-mini'
+          )
+          const { tags: tagList } = extractedTagsResponse
+
+          // Asegurar "no people" si no hay grupo 'person'
+          const hasPerson = tagList.some((t: string) => t.split('|')[1]?.trim() === 'person')
+          if (!hasPerson) {
+            tagList.push('no people | misc')
+          }
+
+          this.data[photo.id] = []
+
+          tagList.forEach((tagStr: string) => {
+            const [tag, group = 'misc'] = tagStr.split('|').map((i) => i.trim())
+            const newTag = new Tag()
+            newTag.name = tag
+            newTag.group = group
+            this.data[photo.id].push(newTag)
+          })
+        } catch (err) {
+          logger.error(`Error en ${this.name} -> ${err}`)
+          throw err
+        }
+
+        const progress = Math.floor(((index + 1) / totalPhotos) * 100)
+        process.stdout.write(`[${photo.id}] ${progress}% `)
+      })()
+
+      tagRequests.push(requestPromise)
+    })
+
+    await Promise.all(tagRequests)
+    process.stdout.write('\n')
+  }
+
+  private getSourceTextFromPhoto(photo: Photo) {
+    let text = ''
+
+    if (!photo || !photo.descriptions) {
+      return ''
+    }
+
+    for (const category of this.descriptionSourceFields) {
+      try {
+        const description = photo.descriptions[category]
+
+        let flattenedDescription: string
+
+        if (description === null || description === undefined) {
+          flattenedDescription = ''
+        } else if (typeof description === 'object') {
+          try {
+            flattenedDescription = JSON.stringify(description)
+          } catch (e) {
+            logger.error(`Error al serializar descripción para la foto ${photo.id}:`, e)
+            flattenedDescription = ''
+          }
+        } else {
+          flattenedDescription = String(description)
+        }
+
+        text += `${category}: ${flattenedDescription} | `
+      } catch (error) {
+        logger.error(`Error procesando categoría ${category} para la foto ${photo.id}:`, error)
+        continue
+      }
+    }
+
+    return text.trim().replace(/\|$/, '')
+  }
+
+  private sleep(ms: number) {
+    return new Promise((resolve) => setTimeout(resolve, ms))
   }
 }

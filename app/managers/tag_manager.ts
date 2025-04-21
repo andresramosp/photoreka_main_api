@@ -57,7 +57,7 @@ export default class TagManager {
     tag: Partial<Tag> & { name: string; group: TagGroups },
     embedding: number[]
   ): Promise<Tag> {
-    logger.debug(`Buscando tag: ${tag.name} (${tag.group})`)
+    // logger.debug(`Buscando tag: ${tag.name} (${tag.group})`)
     const embeddingsService = new EmbeddingsService()
 
     // 1. Buscar tag exacto
@@ -73,7 +73,7 @@ export default class TagManager {
       logger.debug(`Buscando tags similares para: ${tag.name}`)
       similarTagsResult =
         (await embeddingsService.findSimilarTagToEmbedding(embedding, 0.89, 5)) || []
-      logger.debug(`Resultados de búsqueda similar:`, similarTagsResult)
+      // logger.debug(`Resultados de búsqueda similar:`, similarTagsResult)
     } catch (error) {
       logger.error(`Error al buscar tags similares:`, error)
       // No lanzamos el error, continuamos con la creación de nuevo tag
@@ -82,7 +82,7 @@ export default class TagManager {
     if (similarTagsResult.length > 0) {
       const similarTag = similarTagsResult[0]
       if (!similarTag.tag_id) {
-        logger.error(`Tag similar encontrado pero sin tag_id:`, similarTag)
+        // logger.error(`Tag similar encontrado pero sin tag_id:`, similarTag)
         // Si no tiene tag_id, continuamos con la creación de nuevo tag
       } else {
         similarTag.id = similarTag.tag_id

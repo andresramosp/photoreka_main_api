@@ -5,22 +5,24 @@ export enum LogLevel {
   DEBUG = 'debug',
 }
 
-class Logger {
-  private static instance: Logger
-  private level: LogLevel = process.env.NODE_ENV === 'production' ? LogLevel.ERROR : LogLevel.INFO
-  private prefix: string = ''
+export class Logger {
+  private static instances: Map<string, Logger> = new Map()
+  private prefix: string
+  private suffix: string | null
+  private level: LogLevel
 
-  private constructor(prefix?: string) {
-    if (prefix) {
-      this.prefix = prefix
-    }
+  private constructor(prefix: string, suffix?: string) {
+    this.prefix = prefix
+    this.suffix = suffix || null
+    this.level = LogLevel.INFO
   }
 
-  public static getInstance(prefix?: string): Logger {
-    if (!Logger.instance) {
-      Logger.instance = new Logger(prefix)
+  public static getInstance(prefix: string, suffix?: string): Logger {
+    const key = suffix ? `${prefix}_${suffix}` : prefix
+    if (!Logger.instances.has(key)) {
+      Logger.instances.set(key, new Logger(prefix, suffix))
     }
-    return Logger.instance
+    return Logger.instances.get(key)!
   }
 
   public setLevel(level: LogLevel): void {
@@ -28,35 +30,36 @@ class Logger {
   }
 
   private shouldLog(level: LogLevel): boolean {
-    const levels = [LogLevel.ERROR, LogLevel.WARN, LogLevel.INFO, LogLevel.DEBUG]
-    return levels.indexOf(level) <= levels.indexOf(this.level)
+    return level >= this.level
   }
 
   private formatMessage(message: string): string {
-    return this.prefix ? `[${this.prefix}] ${message}` : message
+    const prefix = `[${this.prefix}]`
+    const suffix = this.suffix ? ` -> [${this.suffix}]` : ''
+    return `${prefix}${suffix} ${message}`
   }
 
-  public error(message: string, ...args: any[]): void {
-    if (this.shouldLog(LogLevel.ERROR)) {
-      console.error(`[ERROR] ${this.formatMessage(message)}`, ...args)
-    }
-  }
-
-  public warn(message: string, ...args: any[]): void {
-    if (this.shouldLog(LogLevel.WARN)) {
-      console.warn(`[WARN] ${this.formatMessage(message)}`, ...args)
-    }
-  }
-
-  public info(message: string, ...args: any[]): void {
-    if (this.shouldLog(LogLevel.INFO)) {
-      console.log(`[INFO] ${this.formatMessage(message)}`, ...args)
-    }
-  }
-
-  public debug(message: string, ...args: any[]): void {
+  public debug(message: string): void {
     if (this.shouldLog(LogLevel.DEBUG)) {
-      console.log(`[DEBUG] ${this.formatMessage(message)}`, ...args)
+      console.debug(this.formatMessage(message))
+    }
+  }
+
+  public info(message: string): void {
+    if (this.shouldLog(LogLevel.INFO)) {
+      console.info(this.formatMessage(message))
+    }
+  }
+
+  public warn(message: string): void {
+    if (this.shouldLog(LogLevel.WARN)) {
+      console.warn(this.formatMessage(message))
+    }
+  }
+
+  public error(message: string): void {
+    if (this.shouldLog(LogLevel.ERROR)) {
+      console.error(this.formatMessage(message))
     }
   }
 }
