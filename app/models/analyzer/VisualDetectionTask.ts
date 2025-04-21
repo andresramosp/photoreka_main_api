@@ -62,7 +62,7 @@ export class VisualDetectionTask extends AnalyzerTask {
       })
 
       await this.commit()
-      logger.debug(`Completada detección para ${batch.length} imágenes`)
+      logger.debug(`Datos salvados para ${batch.length} imágenes`)
     }
   }
 

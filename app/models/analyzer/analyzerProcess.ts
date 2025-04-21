@@ -68,8 +68,6 @@ export default class AnalyzerProcess extends BaseModel {
   public photoImagesWithGuides: PhotoImage[] = []
 
   public async initialize(userPhotos: Photo[], packageId: string, mode: AnalyzerMode = 'first') {
-    logger.debug(`Inicializando proceso en modo ${mode} con paquete ${packageId}`)
-
     this.mode = mode
     this.packageId = packageId
     this.tasks = getTaskList(packageId)
@@ -79,8 +77,6 @@ export default class AnalyzerProcess extends BaseModel {
     const photosToProcess = this.getInitialPhotos(userPhotos)
     await this.setProcessPhotos(photosToProcess)
     await this.populatePhotoImages()
-
-    logger.debug(`Proceso inicializado con ${photosToProcess.length} fotos`)
   }
 
   private getInitialPhotos(userPhotos: Photo[]): Photo[] {

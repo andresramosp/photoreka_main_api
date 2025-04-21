@@ -28,13 +28,13 @@ export const MESSAGE_ANALYZER_GPT_CONTEXT_STORY_ACCENTS = (photosBatch: Photo[])
 
 2. 'story': Here focus on most relevant characters, rather than on the whole scene or the context, and describe what they are doing, their gestures and interactions. 
    
-3. 'visual_accents': Here you must re-analyze the photo to detect others elements that were not mentioned in the previous sections but add value to the image.
+3. 'visual_accents': Here you must re-analyze the photo to detect others relevant elements that were not mentioned in the previous sections but add value to the image.
    Typically, you'll look for things like: Drawings, signs, symbols whose content adds visual value. Secondary characters with some interest. 
-   An object / dress weared by someone that adds a nuance. Any relevant/strange detail on the edges of the image or in the background.
+   An object / dress weared by someone that adds a nuance. Any relevant/strange detail on the scene.
    Be specific. Don't describe "a table with many items" but rather find a specific, interesting item and mention it. 
 
-*Guide lines for the 3 sections*
-1. DISMISS elements too far or barely visible, especially those that require zoom to be detected.
+*General rules*
+1. DON'T ADD elements distant or barely visible.
 2. Include only items that you have a high degree of certainty about (+90%).
 3. As a consequence of the previous rule, AVOID assumptions such as "He is holding something unclear that could be a cup"
    

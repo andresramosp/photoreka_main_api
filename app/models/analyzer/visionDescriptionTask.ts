@@ -97,7 +97,7 @@ export class VisionDescriptionTask extends AnalyzerTask {
       })
 
       await this.commit()
-      logger.debug(`Completada tarea ${this.model} para ${batch.length} imágenes`)
+      logger.debug(`Datos salvados ${this.model} para ${batch.length} imágenes`)
     }
 
     if (this.sequential) {

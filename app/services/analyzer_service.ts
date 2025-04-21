@@ -28,8 +28,6 @@ export default class AnalyzerProcessRunner {
     mode: AnalyzerMode = 'first',
     processId?: number
   ) {
-    logger.debug(`Iniciando proceso en modo ${mode} con paquete ${packageId}`)
-
     if (mode === 'retry' && processId) {
       this.process = await AnalyzerProcess.query()
         .where('id', processId)
@@ -39,7 +37,7 @@ export default class AnalyzerProcessRunner {
 
     await this.process.initialize(userPhotos, packageId, mode)
     await this.changeStage(
-      `Proceso Iniciado | Paquete: ${packageId} | ${this.process.photos.length} fotos`,
+      `Proceso Iniciado | Paquete: ${packageId} | Modo ${mode}`,
       'vision_tasks'
     )
   }
@@ -53,21 +51,22 @@ export default class AnalyzerProcessRunner {
       try {
         const pendingPhotos = await task.prepare(this.process)
         if (pendingPhotos.length > 0) {
-          await this.changeStage(`*** Procesando tarea *** | ${task.name}`)
+          await this.changeStage(
+            `\n *** Iniciando tarea *** | ${task.getName()} | Fotos: ${pendingPhotos.length} \n`
+          )
           await task.process(this.process, pendingPhotos)
         }
 
-        await this.changeStage(`*** Guardando resultados *** | ${task.name}`)
+        await this.changeStage(`*** Guardando resultados *** | ${task.getName()}`)
         await task.commit()
 
-        await this.changeStage(`*** Tarea completada *** | ${task.name}`)
+        await this.changeStage(`*** Tarea completada *** | ${task.getName()}`)
       } catch (error) {
         logger.error(`Error en tarea ${task.name}:`, error)
-        // Manejar errores y actualizar estado de fotos fallidas
       }
     }
 
-    await this.changeStage('***  Proceso Completado *** ', 'finished')
+    await this.changeStage('***  Proceso Completado *** \n', 'finished')
     yield { type: 'analysisComplete', data: { costs: [] } }
   }
 
