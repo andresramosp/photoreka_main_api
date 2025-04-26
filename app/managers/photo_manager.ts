@@ -9,6 +9,7 @@ import { Logger } from '@adonisjs/core/logger'
 
 import { withCache } from '../decorators/withCache.js'
 import TagPhotoManager from './tag_photo_manager.js'
+import MeasureExecutionTime from '../decorators/measureExecutionTime.js'
 
 export default class PhotoManager {
   constructor() {}
@@ -60,6 +61,7 @@ export default class PhotoManager {
     }))
   }
 
+  @MeasureExecutionTime
   public async _getPhotosByUser(userId: string) {
     let photos = await Photo.query()
       .preload('descriptionChunks')

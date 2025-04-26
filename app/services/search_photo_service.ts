@@ -16,6 +16,7 @@ import PhotoManager from '../managers/photo_manager.js'
 import DescriptionChunk from '#models/descriptionChunk'
 import EmbeddingsService from './embeddings_service.js'
 import VisualFeaturesService from './visual_features_service.js'
+import MeasureExecutionTime from '../decorators/measureExecutionTime.js'
 
 export type SearchByPhotoOptions = {
   photoIds: number[]
@@ -127,6 +128,7 @@ export default class SearchPhotoService {
       .filter((scored) => scored.score > 0)
   }
 
+  @MeasureExecutionTime
   private async getEmbeddingScoresByPhoto(
     query: SearchByPhotoOptions,
     photos: Photo[],
@@ -290,75 +292,5 @@ export default class SearchPhotoService {
         const overlapScore = similarPhotos.find((sp) => sp.id == photo.id).score
         return { photo, score: overlapScore }
       })
-  }
-
-  // OTRAS //
-
-  public async searchByPhotosByVectors(query: SearchByPhotoOptions) {
-    const { pageSize, iteration } = query
-    const photos = await this.photoManager.getPhotosByUser('1234')
-    const selectedPhotos = await this.photoManager.getPhotosByIds(query.photoIds)
-
-    let scoredPhotos: Photo[]
-
-    if (query.criteria === 'semantic') {
-      // Excluir fotos ya mostradas
-      const photosToSearch = photos.filter(
-        (photo: Photo) => !query.currentPhotosIds.includes(photo.id)
-      )
-
-      // Recopilar todos los chunks de todas las fotos base
-      let baseChunks: DescriptionChunk[] = []
-      for (const basePhoto of selectedPhotos) {
-        await basePhoto.load('descriptionChunks')
-        baseChunks.push(
-          ...basePhoto.descriptionChunks.filter(
-            (dc: DescriptionChunk) => dc.category === query.descriptionCategory
-          )
-        )
-      }
-
-      // Buscar chunks similares para cada chunk base
-      const similarChunksArrays = await Promise.all(
-        baseChunks.map((dc) =>
-          this.embeddingsService.findSimilarChunkToEmbedding(
-            dc.getParsedEmbedding(),
-            0.4,
-            50,
-            'cosine_similarity',
-            photosToSearch.map((p) => p.id),
-            [query.descriptionCategory]
-          )
-        )
-      )
-      const similarChunks = similarChunksArrays.flat()
-
-      // Combinar resultados: tomar el mayor proximity para cada chunk único
-      const chunkMap = new Map<string | number, number>()
-      similarChunks.forEach((chunk) => {
-        if (!chunkMap.has(chunk.id) || chunk.proximity > chunkMap.get(chunk.id)) {
-          chunkMap.set(chunk.id, chunk.proximity)
-        }
-      })
-
-      // Filtrar y puntuar las fotos candidatas según los chunks coincidentes
-      const relevantPhotos = photos.filter((photo) =>
-        photo.descriptionChunks?.some((chunk) => chunkMap.has(chunk.id))
-      )
-      scoredPhotos = relevantPhotos.map((photo) => {
-        const matchingChunks =
-          photo.descriptionChunks?.filter((chunk) => chunkMap.has(chunk.id)) || []
-        const proximities = matchingChunks.map((chunk) => chunkMap.get(chunk.id)!)
-        const descScore = this.scoringService.calculateProximitiesScores(proximities)
-        return { photo, descScore }
-      })
-
-      scoredPhotos = scoredPhotos
-        .filter((sc) => sc.descScore > 0)
-        .sort((a, b) => b.descScore - a.descScore)
-        .map((sc) => sc.photo)
-    }
-
-    return scoredPhotos.slice(0, 3)
   }
 }
