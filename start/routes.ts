@@ -27,6 +27,8 @@ router.get('/uploads/photos/:filename', async ({ params, response }) => {
 
   const absolutePath = path.join(basePath, normalized)
 
+  console.log(absolutePath)
+
   if (!existsSync(absolutePath)) {
     return response.notFound('Archivo no encontrado')
   }
