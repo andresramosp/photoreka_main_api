@@ -3,30 +3,23 @@ import { InferConnections } from '@adonisjs/redis/types'
 import { URL } from 'url'
 import env from '#start/env'
 
-// const redisUrl = new URL(env.get('REDIS_URL'))
-// console.log('[REDIS]: ' + redisUrl)
-// console.log('[REDIS host]: ' + redisUrl.hostname)
-// console.log('[REDIS port]: ' + redisUrl.port)
-// console.log('[REDIS password]: ' + redisUrl.password)
+// Validamos explícitamente
+const redisUrlString = env.get('REDIS_URL')
+if (!redisUrlString) {
+  throw new Error('[REDIS]: REDIS_URL no está definido en el entorno')
+}
+
+const redisUrl = new URL(redisUrlString)
 
 const redisConfig = defineConfig({
   connection: 'main',
-
   connections: {
     main: {
-      // host: redisUrl.hostname,
-      // port: Number(redisUrl.port),
-      // password: redisUrl.password,
-      // db: 0,
-      // keyPrefix: '',
-      // tls: {},
-      // retryStrategy(times) {
-      //   return times > 10 ? null : times * 50
-      // },
-      url: env.get('REDIS_URL'),
-      retryStrategy(times) {
-        return times > 10 ? null : times * 50
-      },
+      host: redisUrl.hostname,
+      port: Number(redisUrl.port),
+      password: redisUrl.password || undefined,
+      db: Number(redisUrl.pathname.slice(1)) || 0,
+      tls: redisUrl.protocol === 'rediss:' ? {} : undefined, // Soporte TLS si la URL es rediss://
     },
   },
 })

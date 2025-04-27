@@ -61,7 +61,11 @@ export default class PhotoManager {
     }))
   }
 
-  @MeasureExecutionTime
+  @withCache({
+    key: (arg1) => `getPhotosByUser${arg1}`,
+    provider: 'redis',
+    ttl: 50 * 5,
+  })
   public async _getPhotosByUser(userId: string) {
     let photos = await Photo.query()
       .preload('descriptionChunks')
