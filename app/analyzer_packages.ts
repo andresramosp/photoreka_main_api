@@ -71,7 +71,7 @@ export const packages = [
       },
       {
         name: 'visual_detections_task',
-        type: 'VisualDetectionsTask',
+        type: 'VisualDetectionTask',
         needsImage: true,
         categories: [
           {
@@ -199,7 +199,7 @@ export const getTaskList = (packageId: string, process: AnalyzerProcess): Analyz
       case 'VisualEmbeddingTask':
         task = new VisualEmbeddingTask(process)
         break
-      case 'VisualDetectionsTask':
+      case 'VisualDetectionTask':
         task = new VisualDetectionTask(process)
         break
       default:
