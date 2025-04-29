@@ -2,19 +2,15 @@ import { DateTime } from 'luxon'
 import { BaseModel, column, hasMany } from '@adonisjs/lucid/orm'
 import type { HasMany } from '@adonisjs/lucid/types/relations'
 import Photo from '../photo.js'
-import PhotoImage from './photoImage.js'
-import path from 'path'
-import fs from 'fs/promises'
-import sharp from 'sharp'
 import { AnalyzerTask } from './analyzerTask.js'
-import { getUploadPath } from '../../utils/dataPath.js'
 import { getTaskList } from '../../analyzer_packages.js'
 import Logger, { LogLevel } from '../../utils/logger.js'
+import _ from 'lodash'
 
 const logger = Logger.getInstance('AnalyzerProcess')
 logger.setLevel(LogLevel.DEBUG)
 
-export type AnalyzerMode = 'first' | 'adding' | 'remake' | 'retry'
+export type AnalyzerMode = 'adding' | 'remake' | 'retry'
 export type ModelType = 'GPT' | 'Molmo'
 export type StageType =
   | 'init'
@@ -24,7 +20,12 @@ export type StageType =
   | 'chunks_tasks'
   | 'embeddings_chunks'
   | 'finished'
-export type FailedPhotos = Record<string, string | null>
+export type ProcessSheet = {
+  [taskName: string]: {
+    pendingPhotoIds: number[]
+    completedPhotoIds: number[]
+  }
+}
 
 export default class AnalyzerProcess extends BaseModel {
   @column({ isPrimary: true })
@@ -37,13 +38,8 @@ export default class AnalyzerProcess extends BaseModel {
   declare mode: AnalyzerMode
 
   @column()
-  declare failed: FailedPhotos
+  declare processSheet: ProcessSheet | null
 
-  @column({
-    serializeAs: 'tasks',
-    prepare: (value: AnalyzerTask[] | null) =>
-      value ? { tasks: value.map((task) => task.toJSON()) } : null,
-  })
   declare tasks: AnalyzerTask[] | null
 
   @column()
@@ -63,33 +59,29 @@ export default class AnalyzerProcess extends BaseModel {
   })
   declare photos: HasMany<typeof Photo>
 
-  public photoImages: PhotoImage[] = []
-
-  public photoImagesWithGuides: PhotoImage[] = []
-
-  public async initialize(userPhotos: Photo[], packageId: string, mode: AnalyzerMode = 'first') {
+  public async initialize(userPhotos: Photo[], packageId: string, mode: AnalyzerMode = 'adding') {
     this.mode = mode
     this.packageId = packageId
-    this.tasks = getTaskList(packageId)
+    this.tasks = getTaskList(packageId, this)
     this.currentStage = 'init'
     await this.save()
 
     const photosToProcess = this.getInitialPhotos(userPhotos)
     await this.setProcessPhotos(photosToProcess)
-    await this.populatePhotoImages()
+    if (this.mode !== 'retry') {
+      this.initializeProcessSheet()
+      await this.save()
+    }
   }
 
   private getInitialPhotos(userPhotos: Photo[]): Photo[] {
     switch (this.mode) {
       case 'adding':
         return userPhotos.filter((photo) => !photo.analyzerProcess)
-      case 'first':
-      case 'remake':
+      case 'remake': // incluye upgrade, siempre sobre todas las fotos
         return userPhotos
-      case 'retry':
-        return []
       default:
-        throw new Error(`Modo de proceso no válido: ${this.mode}`)
+        return userPhotos.filter((photo) => photo.analyzerProcessId == this.id)
     }
   }
 
@@ -115,98 +107,65 @@ export default class AnalyzerProcess extends BaseModel {
     await this.save()
   }
 
-  public async populatePhotoImages() {
-    const uploadPath = getUploadPath()
-    const withGuidesPath = path.join(uploadPath, 'withGuides')
-    await fs.mkdir(withGuidesPath, { recursive: true })
-
-    // Procesamiento de imágenes originales
-    const processes = await Promise.all(
-      this.photos.map(async (photo) => {
-        const filePath = path.join(uploadPath, photo.name)
-        try {
-          await fs.access(filePath)
-          const resizedBuffer = await sharp(filePath).toBuffer()
-          const base64Image = resizedBuffer.toString('base64')
-          const pp = new PhotoImage()
-          pp.photo = photo
-          pp.base64 = base64Image
-          return pp
-        } catch (error) {
-          console.warn(`No se pudo procesar la imagen con ID: ${photo.id}`, error)
-          return null
-        }
-      })
-    )
-    this.photoImages = processes.filter((pp) => pp !== null) as PhotoImage[]
-
-    // Procesamiento de imágenes con guías (líneas verticales)
-    const processesWithGuides = await Promise.all(
-      this.photos.map(async (photo) => {
-        const filePath = path.join(uploadPath, photo.name)
-        try {
-          await fs.access(filePath)
-          // Redimensionar y obtener el buffer redimensionado
-          const resizedBuffer = await sharp(filePath)
-            .resize({ width: 1200, fit: 'inside' })
-            .toBuffer()
-          // Crear instancia a partir del buffer redimensionado para obtener dimensiones reales
-          const resizedImage = sharp(resizedBuffer)
-          const metadata = await resizedImage.metadata()
-          const width = metadata.width || 0
-          const height = metadata.height || 0
-          const lineThickness = 5 // Grosor de la línea en píxeles
-          const leftLineX = Math.floor(0.375 * width)
-          const rightLineX = Math.floor(0.625 * width)
-          // Crear overlay SVG con dos líneas verticales
-          const svgOverlay = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
-            <rect x="${leftLineX}" y="0" width="${lineThickness}" height="${height}" fill="white"/>
-            <rect x="${rightLineX}" y="0" width="${lineThickness}" height="${height}" fill="white"/>
-          </svg>`
-          const imageWithGuideBuffer = await resizedImage
-            .composite([{ input: Buffer.from(svgOverlay) }])
-            .toBuffer()
-          // Guardar la imagen modificada para debuguear
-          const outputFilePath = path.join(withGuidesPath, photo.name)
-          await fs.writeFile(outputFilePath, imageWithGuideBuffer)
-          const base64ImageWithGuide = imageWithGuideBuffer.toString('base64')
-          const ppGuide = new PhotoImage()
-          ppGuide.photo = photo
-          ppGuide.base64 = base64ImageWithGuide
-          return ppGuide
-        } catch (error) {
-          console.warn(
-            `No se pudo procesar la imagen con guía para la imagen con ID: ${photo.id}`,
-            error
-          )
-          return null
-        }
-      })
-    )
-    this.photoImagesWithGuides = processesWithGuides.filter((pp) => pp !== null) as PhotoImage[]
-  }
-
-  public async addFailedPhotos(photoIds: string[], taskName: string): Promise<void> {
-    logger.debug(`Añadiendo ${photoIds.length} fotos fallidas para tarea ${taskName}`)
-
-    if (!this.failed) {
-      this.failed = {}
-    }
-    photoIds.forEach((id) => {
-      this.failed[id] = taskName
-    })
-    await this.save()
-  }
-
-  public async removeFailedPhotos(photoIds: string[], taskName: string): Promise<void> {
-    logger.debug(`Eliminando ${photoIds.length} fotos fallidas para tarea ${taskName}`)
-
-    if (!this.failed) return
-    photoIds.forEach((id) => {
-      if (this.failed[id] === taskName) {
-        delete this.failed[id]
+  private initializeProcessSheet() {
+    if (!this.tasks) return
+    const allPhotoIds = this.photos.map((photo) => photo.id)
+    const sheet: ProcessSheet = {}
+    for (const task of this.tasks) {
+      sheet[task.name] = {
+        pendingPhotoIds: [...allPhotoIds],
+        completedPhotoIds: [],
       }
-    })
+    }
+    this.processSheet = sheet
+  }
+
+  public getPendingPhotosForTask(taskName: string): number[] {
+    return this.processSheet?.[taskName]?.pendingPhotoIds || []
+  }
+
+  public getCompletedPhotosForTask(taskName: string): number[] {
+    return this.processSheet?.[taskName]?.completedPhotoIds || []
+  }
+
+  public async markPhotosCompleted(taskName: string, photoIds: number[]) {
+    if (!this.processSheet || !this.processSheet[taskName]) return
+
+    const task = this.processSheet[taskName]
+
+    const photoIdsSet = new Set(photoIds)
+
+    // Eliminar IDs de pending (aunque no estuvieran, para garantizar idempotencia)
+    task.pendingPhotoIds = task.pendingPhotoIds.filter((id) => !photoIdsSet.has(id))
+
+    // Añadir a completed, evitando duplicados
+    const existingCompleted = new Set(task.completedPhotoIds)
+    for (const id of photoIds) {
+      if (!existingCompleted.has(id)) {
+        task.completedPhotoIds.push(id)
+      }
+    }
+
     await this.save()
+  }
+
+  public formatProcessSheet(): string {
+    let output = '\n=== Process Sheet ===\n'
+
+    for (const [taskName, taskState] of Object.entries(this.processSheet as ProcessSheet)) {
+      output += `\n▶ ${_.startCase(_.toLower(taskName))}:\n`
+
+      const allPhotoIds = new Set([...taskState.pendingPhotoIds, ...taskState.completedPhotoIds])
+
+      const sortedPhotoIds = Array.from(allPhotoIds).sort((a, b) => a - b)
+
+      for (const photoId of sortedPhotoIds) {
+        const isCompleted = taskState.completedPhotoIds.includes(photoId)
+        const mark = isCompleted ? '✅' : '❌'
+        output += `  ${mark} Foto ID ${photoId}\n`
+      }
+    }
+
+    return output
   }
 }

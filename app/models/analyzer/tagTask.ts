@@ -25,46 +25,24 @@ export class TagTask extends AnalyzerTask {
   private nlpService: NLPService
   private tagToSustantivesMap: Map<string, string[]>
   private embeddingsMap: Map<string, number[]>
-  private modelsService: ModelsService
 
-  constructor() {
-    super()
+  async process(pendingPhotos: Photo[]): Promise<void> {
     this.nlpService = new NLPService()
     this.tagToSustantivesMap = new Map()
     this.embeddingsMap = new Map()
-    this.modelsService = new ModelsService()
-  }
 
-  async prepare(process: AnalyzerProcess): Promise<Photo[]> {
-    if (process.mode === 'retry') {
-      const failedPhotos = Object.entries(process.failed)
-        .filter(([_, taskName]) => taskName === this.name)
-        .map(([photoId]) => photoId)
-
-      return Photo.query()
-        .whereIn('id', failedPhotos)
-        .preload('tags', (query) => {
-          query.preload('tag')
-        })
-    }
-
-    return Photo.query()
-      .where('analyzer_process_id', process.id)
-      .preload('tags', (query) => {
-        query.preload('tag')
-      })
-  }
-
-  async process(process: AnalyzerProcess, pendingPhotos: Photo[]): Promise<void> {
     if (!this.data) {
       this.data = {}
     }
 
+    const photoIds = pendingPhotos.map((photo) => photo.id)
+    const photosWithTags = await Photo.query().whereIn('id', photoIds).preload('tags')
+
     logger.debug('Carga y limpieza de descripciones...')
-    const cleanedResults = await this.cleanPhotosDescs(pendingPhotos)
+    const cleanedResults = await this.cleanPhotosDescs(photosWithTags)
     logger.debug('Procesando extracción de tags...')
 
-    await this.requestTagsFromGPT(pendingPhotos, cleanedResults)
+    await this.requestTagsFromGPT(photosWithTags, cleanedResults)
     logger.debug('Procesando creación de tags...')
   }
 
@@ -153,6 +131,9 @@ export class TagTask extends AnalyzerTask {
         false
       )
     }
+
+    const photoIds = Object.keys(this.data).map(Number)
+    await this.analyzerProcess.markPhotosCompleted(this.name, photoIds)
   }
 
   private async cleanPhotosDescs(photos: Photo[], batchSize = 5, delayMs = 500): Promise<string[]> {
@@ -160,9 +141,7 @@ export class TagTask extends AnalyzerTask {
 
     for (let i = 0; i < photos.length; i += batchSize) {
       const batch = photos.slice(i, i + batchSize)
-      logger.debug(
-        `Procesando lote ${i / batchSize + 1} de ${Math.ceil(photos.length / batchSize)}`
-      )
+      logger.debug(`Llamando a GPT para ${batchSize} imágenes`)
 
       try {
         const sourceTexts = batch.map((photo) => {

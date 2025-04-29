@@ -113,7 +113,7 @@ export default class TagManager {
           return concurrentTag
         }
       }
-      logger.error(`Error al crear tag ${tag.name}:`, err)
+      logger.error(`Error al crear tag ${tag.name}:`)
       throw new Error(`No se pudo crear o recuperar el tag: ${tag.name}. Error: ${err.message}`)
     }
   }

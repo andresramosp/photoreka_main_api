@@ -7,7 +7,7 @@ export default class DescriptionChunk extends BaseModel {
   declare id: number
 
   @column()
-  declare photoId: string
+  declare photoId: number
 
   @column()
   declare category: string

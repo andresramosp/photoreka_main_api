@@ -11,7 +11,7 @@ export type PhotoDescriptions = Record<DescriptionType, string>
 
 export default class Photo extends BaseModel {
   @column({ isPrimary: true })
-  declare id: string
+  declare id: number
 
   @column()
   declare descriptions: PhotoDescriptions | null
@@ -32,7 +32,7 @@ export default class Photo extends BaseModel {
   declare url: string
 
   @column({ serializeAs: null })
-  declare embedding: string
+  declare embedding: string | number[]
 
   @column.dateTime({ autoCreate: true })
   declare createdAt: DateTime
@@ -117,7 +117,7 @@ export default class Photo extends BaseModel {
   }
 
   public getParsedEmbedding(): number[] | null {
-    return this.embedding ? JSON.parse(this.embedding) : null
+    return this.embedding ? JSON.parse(this.embedding as string) : null
   }
 
   @computed()

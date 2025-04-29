@@ -20,29 +20,7 @@ export class VisualDetectionTask extends AnalyzerTask {
   declare minBoxSize: number
   declare data: Record<string, Record<string, number[][]>> // foto -> { object_detected -> box }
 
-  private photoImageService: PhotoImageService
-  private modelsService: ModelsService
-
-  constructor() {
-    super()
-    this.photoImageService = PhotoImageService.getInstance()
-    this.modelsService = new ModelsService()
-  }
-
-  async prepare(process: AnalyzerProcess): Promise<PhotoImage[]> {
-    if (process.mode === 'retry') {
-      const failedPhotos = Object.entries(process.failed)
-        .filter(([_, taskName]) => taskName === this.name)
-        .map(([photoId]) => photoId)
-
-      const allImages = await this.photoImageService.getPhotoImages(process)
-      return allImages.filter((img) => failedPhotos.includes(img.photo.id))
-    }
-
-    return await this.photoImageService.getPhotoImages(process)
-  }
-
-  async process(process: AnalyzerProcess, pendingPhotos: PhotoImage[]): Promise<void> {
+  async process(pendingPhotos: PhotoImage[]): Promise<void> {
     if (!this.data) {
       this.data = {}
     }
@@ -90,6 +68,9 @@ export class VisualDetectionTask extends AnalyzerTask {
         return photoManager.updatePhotoDetections(photoId, detectionsPhotos)
       })
     )
+
+    const photoIds = Object.keys(this.data).map(Number)
+    await this.analyzerProcess.markPhotosCompleted(this.name, photoIds)
   }
 
   private sleep(ms: number) {

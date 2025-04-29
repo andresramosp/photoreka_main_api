@@ -11,6 +11,10 @@
 import router from '@adonisjs/core/services/router'
 import server from '@adonisjs/core/services/server'
 
+import db from '@adonisjs/lucid/services/db'
+import app from '@adonisjs/core/services/app'
+import { MigrationRunner } from '@adonisjs/lucid/migration'
+
 /**
  * The error handler is used to convert an exception
  * to a HTTP response.
@@ -26,7 +30,7 @@ server.use([
   () => import('#middleware/container_bindings_middleware'),
   () => import('#middleware/force_json_response_middleware'),
   () => import('@adonisjs/cors/cors_middleware'),
-  () => import('@adonisjs/static/static_middleware')
+  () => import('@adonisjs/static/static_middleware'),
 ])
 
 /**
@@ -40,3 +44,17 @@ router.use([() => import('@adonisjs/core/bodyparser_middleware')])
  * the routes or the routes group.
  */
 export const middleware = router.named({})
+
+const migrator = new MigrationRunner(db, app, {
+  direction: 'up',
+  dryRun: false,
+})
+
+try {
+  await migrator.run()
+  console.log('Migraciones ejecutadas correctamente.')
+} catch (error) {
+  console.error('Error ejecutando migraciones:', error)
+} finally {
+  await db.manager.closeAll()
+}

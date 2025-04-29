@@ -7,8 +7,7 @@ export default class CreateAnalyzerProcesses extends BaseSchema {
     this.schema.createTable(this.tableName, (table) => {
       table.increments('id').primary()
       table.string('package_id', 255)
-      table.jsonb('tasks').nullable() // Se almacena como JSONB
-      table.jsonb('failed').nullable() // Se almacena como JSONB
+      table.jsonb('process_sheet').nullable() // Se almacena como JSONB
       table.enum('mode', ['first', 'adding', 'remake', 'retry']).nullable()
       table
         .enum('current_stage', [

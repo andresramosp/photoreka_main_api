@@ -13,9 +13,6 @@ const schema = {
   DB_USER: Env.schema.string(),
   DB_PASSWORD: Env.schema.string.optional(),
   DB_DATABASE: Env.schema.string(),
-  REDIS_HOST: Env.schema.string({ format: 'host' }),
-  REDIS_PORT: Env.schema.number(),
-  REDIS_PASSWORD: Env.schema.string.optional(),
   APP_NAME: Env.schema.string(),
   REDIS_URL: Env.schema.string(),
 }

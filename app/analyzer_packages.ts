@@ -1,9 +1,10 @@
+import AnalyzerProcess from '#models/analyzer/analyzerProcess'
 import { AnalyzerTask } from '#models/analyzer/analyzerTask'
 import { ChunkTask } from '#models/analyzer/chunkTask'
 import { TagTask } from '#models/analyzer/tagTask'
 import { VisionDescriptionTask } from '#models/analyzer/visionDescriptionTask'
 import { VisionTopologicalTask } from '#models/analyzer/visionTopologicalTask'
-import { VisualDetectionTask } from '#models/analyzer/VisualDetectionTask'
+import { VisualDetectionTask } from '#models/analyzer/visualDetectionTask'
 import { VisualEmbeddingTask } from '#models/analyzer/visualEmbeddingTask'
 import {
   MESSAGE_ANALYZER_GPT_CONTEXT_AND_STORY,
@@ -24,6 +25,7 @@ export const packages = [
         name: 'vision_context_story_accents',
         type: 'VisionDescriptionTask',
         model: 'GPT',
+        needsImage: true,
         sequential: false,
         prompts: [MESSAGE_ANALYZER_GPT_CONTEXT_STORY_ACCENTS],
         resolution: 'high',
@@ -34,6 +36,8 @@ export const packages = [
         name: 'tags_context_story',
         type: 'TagTask',
         model: 'GPT',
+        needsImage: false,
+        dependsOn: 'vision_context_story_accents',
         prompt: MESSAGE_TAGS_TEXT_EXTRACTION,
         descriptionSourceFields: ['context', 'story'],
       },
@@ -41,6 +45,8 @@ export const packages = [
         name: 'tags_visual_accents',
         type: 'TagTask',
         model: 'GPT',
+        dependsOn: 'vision_context_story_accents',
+        needsImage: false,
         prompt: MESSAGE_TAGS_TEXT_EXTRACTION,
         descriptionSourceFields: ['visual_accents'],
       },
@@ -49,6 +55,8 @@ export const packages = [
         type: 'ChunkTask',
         prompt: null,
         model: null,
+        needsImage: false,
+        dependsOn: 'vision_context_story_accents',
         descriptionSourceFields: ['context', 'story', 'visual_accents'],
         descriptionsChunksMethod: {
           context: { type: 'split_by_size', maxLength: 250 },
@@ -59,10 +67,12 @@ export const packages = [
       {
         name: 'visual_embedding_task',
         type: 'VisualEmbeddingTask',
+        needsImage: true,
       },
       {
         name: 'visual_detections_task',
         type: 'VisualDetectionsTask',
+        needsImage: true,
         categories: [
           {
             name: 'person',
@@ -99,6 +109,7 @@ export const packages = [
         name: 'topological_tags',
         type: 'VisionTopologicalTask',
         model: 'GPT',
+        needsImage: true,
         sequential: false,
         resolution: 'high',
         prompts: [MESSAGE_ANALYZER_GPT_TOPOLOGIC_TAGS],
@@ -165,7 +176,7 @@ export const packages = [
   },
 ]
 
-export const getTaskList = (packageId: string): AnalyzerTask[] => {
+export const getTaskList = (packageId: string, process: AnalyzerProcess): AnalyzerTask[] => {
   const pkg = packages.find((p) => p.id === packageId)
   if (!pkg) {
     throw new Error(`Package with id ${packageId} not found`)
@@ -174,22 +185,22 @@ export const getTaskList = (packageId: string): AnalyzerTask[] => {
     let task: AnalyzerTask
     switch (taskData.type) {
       case 'VisionDescriptionTask':
-        task = new VisionDescriptionTask()
+        task = new VisionDescriptionTask(process)
         break
       case 'VisionTopologicalTask':
-        task = new VisionTopologicalTask()
+        task = new VisionTopologicalTask(process)
         break
       case 'TagTask':
-        task = new TagTask()
+        task = new TagTask(process)
         break
       case 'ChunkTask':
-        task = new ChunkTask()
+        task = new ChunkTask(process)
         break
       case 'VisualEmbeddingTask':
-        task = new VisualEmbeddingTask()
+        task = new VisualEmbeddingTask(process)
         break
       case 'VisualDetectionsTask':
-        task = new VisualDetectionTask()
+        task = new VisualDetectionTask(process)
         break
       default:
         throw new Error(`Unknown task type: ${taskData.type}`)

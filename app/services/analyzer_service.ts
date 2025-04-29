@@ -52,21 +52,21 @@ export default class AnalyzerProcessRunner {
         const pendingPhotos = await task.prepare(this.process)
         if (pendingPhotos.length > 0) {
           await this.changeStage(
-            `\n *** Iniciando tarea *** | ${task.getName()} | Fotos: ${pendingPhotos.length} \n`
+            `\n *** Iniciando tarea *** | ${task.getName()} | Fotos: ${pendingPhotos.length} | ${this.process.mode.toUpperCase()} \n`
           )
-          await task.process(this.process, pendingPhotos)
+          await task.process(pendingPhotos)
+          await this.changeStage(`*** Guardando resultados *** | ${task.getName()}`)
+          await task.commit()
+
+          await this.changeStage(`*** Tarea completada *** | ${task.getName()}`)
         }
-
-        await this.changeStage(`*** Guardando resultados *** | ${task.getName()}`)
-        await task.commit()
-
-        await this.changeStage(`*** Tarea completada *** | ${task.getName()}`)
       } catch (error) {
         logger.error(`Error en tarea ${task.name}:`, error)
       }
     }
 
     await this.changeStage('***  Proceso Completado *** \n', 'finished')
+    logger.info(`\n  ${this.process.formatProcessSheet()} \n `)
     yield { type: 'analysisComplete', data: { costs: [] } }
   }
 

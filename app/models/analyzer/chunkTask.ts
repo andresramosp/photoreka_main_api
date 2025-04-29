@@ -19,25 +19,7 @@ export class ChunkTask extends AnalyzerTask {
   declare descriptionsChunksMethod: Record<DescriptionType, SplitMethod>
   declare data: Record<string, DescriptionChunk[]>
 
-  private modelsService: ModelsService
-
-  constructor() {
-    super()
-    this.modelsService = new ModelsService()
-  }
-  async prepare(process: AnalyzerProcess): Promise<Photo[]> {
-    if (process.mode === 'retry') {
-      const failedPhotos = Object.entries(process.failed)
-        .filter(([_, taskName]) => taskName === this.name)
-        .map(([photoId]) => photoId)
-
-      return Photo.query().whereIn('id', failedPhotos)
-    }
-
-    return Photo.query().where('analyzer_process_id', process.id)
-  }
-
-  async process(process: AnalyzerProcess, pendingPhotos: Photo[]): Promise<void> {
+  async process(pendingPhotos: Photo[]): Promise<void> {
     const batchEmbeddingsSize = 50 // tamaño inicial del lote
 
     if (!this.data) {
@@ -52,6 +34,7 @@ export class ChunkTask extends AnalyzerTask {
     }
 
     for (let photo of pendingPhotos) {
+      await photo.refresh()
       if (!photo.descriptions || typeof photo.descriptions !== 'object') {
         throw new Error('No descriptions found for this photo')
       }
@@ -104,7 +87,7 @@ export class ChunkTask extends AnalyzerTask {
 
   async commit(): Promise<void> {
     // Fase 1: Eliminar todos los chunks existentes de las fotos procesadas
-    const photoIds = Object.keys(this.data)
+    const photoIds = Object.keys(this.data).map(Number)
     await DescriptionChunk.query().whereIn('photoId', photoIds).delete()
 
     // Fase 2: Guardar todos los nuevos chunks
@@ -113,6 +96,8 @@ export class ChunkTask extends AnalyzerTask {
         .flat()
         .map((chunk) => chunk.save())
     )
+
+    await this.analyzerProcess.markPhotosCompleted(this.name, photoIds)
   }
 
   private splitIntoChunks(desc: string, maxLength: number = 300): string[] {

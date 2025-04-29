@@ -168,7 +168,7 @@ export default class ModelsService {
   }
 
   @withWarmUp('image')
-  async getEmbeddingsImages(images: { id: string; base64: string }[]) {
+  async getEmbeddingsImages(images: { id: number; base64: string }[]) {
     try {
       const payload = { images }
       const { url, requestPayload, headers } = this.buildRequestConfig(
@@ -206,7 +206,7 @@ export default class ModelsService {
   }
 
   @withWarmUp('image')
-  async getObjectsDetections(images: { id: string; base64: string }[], categories: any[]) {
+  async getObjectsDetections(images: { id: number; base64: string }[], categories: any[]) {
     try {
       const payload = { images, categories }
       const { url, requestPayload, headers } = this.buildRequestConfig(
@@ -393,6 +393,14 @@ export default class ModelsService {
   ): Promise<any> {
     let cacheDuration = 60 * 5
     try {
+      const simulateErrorRate: number = 0
+
+      // Simular fallo aleatorio si está activado
+      if (simulateErrorRate > 0 && Math.random() < simulateErrorRate) {
+        console.warn('Simulando error artificial en getGPTResponse()')
+        throw new Error('Simulated GPT request failure')
+      }
+
       let payload: any = {
         model,
         temperature,
@@ -482,10 +490,7 @@ export default class ModelsService {
             : parsedResult,
         cost: {
           totalCostInEur,
-          // inputCost,
-          // outputCost,
           totalTokens,
-          // promptTokens,
           promptCacheMissTokens: promptTokens - promptTokensDetails.cached_tokens,
           promptCacheHitTokens: promptTokensDetails.cached_tokens,
           completionTokens,
@@ -498,7 +503,7 @@ export default class ModelsService {
       return result
     } catch (error) {
       console.error('Error fetching GPT response:', error)
-      throw error // re-lanza la excepción para que se active la lógica de reintentos
+      throw error
     }
   }
 
