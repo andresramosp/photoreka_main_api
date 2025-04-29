@@ -1,10 +1,7 @@
 import { AnalyzerTask } from './analyzerTask.js'
 import PhotoManager from '../../managers/photo_manager.js'
 import DetectionPhoto from '#models/detection_photo'
-import AnalyzerProcess from './analyzerProcess.js'
 import PhotoImage from './photoImage.js'
-import PhotoImageService from '../../services/photo_image_service.js'
-import ModelsService from '../../services/models_service.js'
 import Logger, { LogLevel } from '../../utils/logger.js'
 
 const logger = Logger.getInstance('AnalyzerProcess', 'VisualDetectionTask')
