@@ -4,7 +4,7 @@ import { ChunkTask } from '#models/analyzer/chunkTask'
 import { TagTask } from '#models/analyzer/tagTask'
 import { VisionDescriptionTask } from '#models/analyzer/visionDescriptionTask'
 import { VisionTopologicalTask } from '#models/analyzer/visionTopologicalTask'
-import { VisualDetectionTask } from '#models/analyzer/visualDetectionTask'
+import { VisualDetectionTask } from '#models/analyzer/temp'
 import { VisualEmbeddingTask } from '#models/analyzer/visualEmbeddingTask'
 import {
   MESSAGE_ANALYZER_GPT_CONTEXT_AND_STORY,
