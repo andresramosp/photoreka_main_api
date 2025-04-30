@@ -135,7 +135,8 @@ export class TagTask extends AnalyzerTask {
       )
     }
 
-    logger.info(`Guardando en BD ${concurrencyLimit} fotos...`)
+    const totalPhotos = Object.keys(this.data).length
+    logger.info(`Guardando en BD ${totalPhotos} fotos (máximo ${concurrencyLimit} en paralelo)...`)
     await Promise.all(
       Object.entries(this.data).map(([photoId, tagDataList]) =>
         limit(() => processPhoto(photoId, tagDataList))
