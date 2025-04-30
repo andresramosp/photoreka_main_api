@@ -118,7 +118,7 @@ export class TagTask extends AnalyzerTask {
             (tp) => tp.tagId === tagPhoto.tagId && tp.category === tagPhoto.category
           )
         ) {
-          logger.debug(`Saltando tagPhoto duplicado: ${tagPhoto.tagId}`)
+          logger.info(`Saltando tagPhoto duplicado: ${tagPhoto.tagId}`)
           continue
         }
         tagPhotosList.push(tagPhoto)

@@ -260,7 +260,7 @@ export default class EmbeddingsService {
     return result.rows
   }
 
-  // @MeasureExecutionTime
+  @MeasureExecutionTime
   public async findSimilarTagToEmbedding(
     embedding: number[],
     threshold: Threshold = 0.3,

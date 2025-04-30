@@ -1,5 +1,6 @@
 import Tag, { TagGroups } from '#models/tag'
 import EmbeddingsService from '#services/embeddings_service'
+import MeasureExecutionTime from '../decorators/measureExecutionTime.js'
 import Logger from '../utils/logger.js'
 
 const logger = Logger.getInstance('AnalyzerService')
@@ -53,6 +54,7 @@ export default class TagManager {
     return { message: 'Tag deleted successfully' }
   }
 
+  @MeasureExecutionTime
   public async getOrCreateSimilarTag(
     tag: Partial<Tag> & { name: string; group: TagGroups },
     embedding: number[]
