@@ -33,33 +33,34 @@ export class Logger {
     return level >= this.level
   }
 
-  private formatMessage(message: string): string {
+  private formatMessage(message: string, isTitle?: boolean): string {
     const prefix = `[${this.prefix}]`
     const suffix = this.suffix ? ` -> [${this.suffix}]` : ''
-    return `${prefix}${suffix} ${message}`
+    const formatted = `${prefix}${suffix} ${message}`
+    return isTitle ? `\n${formatted}\n` : formatted
   }
 
-  public debug(message: string): void {
+  public debug(message: string, isTitle?: boolean): void {
     if (this.shouldLog(LogLevel.DEBUG)) {
-      console.debug(this.formatMessage(message))
+      console.debug(this.formatMessage(message, isTitle))
     }
   }
 
-  public info(message: string): void {
+  public info(message: string, isTitle?: boolean): void {
     if (this.shouldLog(LogLevel.INFO)) {
-      console.info(this.formatMessage(message))
+      console.info(this.formatMessage(message, isTitle))
     }
   }
 
-  public warn(message: string): void {
+  public warn(message: string, isTitle?: boolean): void {
     if (this.shouldLog(LogLevel.WARN)) {
-      console.warn(this.formatMessage(message))
+      console.warn(this.formatMessage(message, isTitle))
     }
   }
 
-  public error(message: string): void {
+  public error(message: string, isTitle?: boolean): void {
     if (this.shouldLog(LogLevel.ERROR)) {
-      console.error(this.formatMessage(message))
+      console.error(this.formatMessage(message, isTitle))
     }
   }
 }

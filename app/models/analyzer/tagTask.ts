@@ -90,7 +90,9 @@ export class TagTask extends AnalyzerTask {
     const termsWithoutEmbeddings = termsArray.filter((term) => !this.embeddingsMap.has(term))
     for (let i = 0; i < termsWithoutEmbeddings.length; i += batchEmbeddingsSize) {
       const batch = termsWithoutEmbeddings.slice(i, i + batchEmbeddingsSize)
-      logger.debug(`Obteniendo embeddings para batch para ${batch.length}`)
+
+      logger.debug(`Obteniendo embeddings para batch de ${batch.length} tags`)
+
       const { embeddings } = await this.modelsService.getEmbeddings(batch)
       batch.forEach((name, idx) => {
         this.embeddingsMap.set(name, embeddings[idx])
@@ -134,6 +136,7 @@ export class TagTask extends AnalyzerTask {
 
     const photoIds = Object.keys(this.data).map(Number)
     await this.analyzerProcess.markPhotosCompleted(this.name, photoIds)
+    logger.debug(`Datos salvados para ${photoIds.length} imágenes`)
   }
 
   private async cleanPhotosDescs(photos: Photo[], batchSize = 5, delayMs = 500): Promise<string[]> {
@@ -157,7 +160,6 @@ export class TagTask extends AnalyzerTask {
         }
 
         results.push(...cleanResult)
-        logger.debug(`Lote ${i / batchSize + 1} procesado exitosamente`)
 
         if (i + batchSize < photos.length) {
           await this.sleep(delayMs)
@@ -174,7 +176,7 @@ export class TagTask extends AnalyzerTask {
   private async requestTagsFromGPT(photos: Photo[], cleanedResults: string[]) {
     const tagRequests: Promise<void>[] = []
     const totalPhotos = photos.length
-    process.stdout.write(`[TagTask]: Realizando requests GPT para `)
+    logger.info(`[TagTask]: Realizando requests GPT para ${photos.length} fotos`)
 
     photos.forEach((photo, index) => {
       const requestPromise = (async () => {
@@ -209,14 +211,14 @@ export class TagTask extends AnalyzerTask {
         }
 
         const progress = Math.floor(((index + 1) / totalPhotos) * 100)
-        process.stdout.write(`[${photo.id}] ${progress}% `)
+        // process.stdout.write(`[${photo.id}] ${progress}% `)
       })()
 
       tagRequests.push(requestPromise)
     })
 
     await Promise.all(tagRequests)
-    process.stdout.write('\n')
+    // process.stdout.write('\n')
   }
 
   private getSourceTextFromPhoto(photo: Photo) {

@@ -52,10 +52,10 @@ export default class AnalyzerProcessRunner {
         const pendingPhotos = await task.prepare(this.process)
         if (pendingPhotos.length > 0) {
           await this.changeStage(
-            `\n *** Iniciando tarea *** | ${task.getName()} | Fotos: ${pendingPhotos.length} | ${this.process.mode.toUpperCase()} \n`
+            `*** Iniciando tarea *** | ${task.getName()} | Fotos: ${pendingPhotos.length} | ${this.process.mode.toUpperCase()}`
           )
           await task.process(pendingPhotos)
-          await this.changeStage(`*** Guardando resultados *** | ${task.getName()}`)
+          await this.changeStage(`*** Proceso finalizado *** | ${task.getName()}`)
           await task.commit()
 
           await this.changeStage(`*** Tarea completada *** | ${task.getName()}`)
@@ -71,7 +71,7 @@ export default class AnalyzerProcessRunner {
   }
 
   private async changeStage(message: string, nextStage: string = null) {
-    logger.info(message)
+    logger.info(message, true)
     if (nextStage) {
       this.process.currentStage = nextStage
       await this.process.save()
