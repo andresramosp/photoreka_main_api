@@ -185,7 +185,7 @@ export class TagTask extends AnalyzerTask {
     const tagRequests: Promise<void>[] = []
     const totalPhotos = photos.length
 
-    logger.debug(`Llamando a GPT para ${photos.length} imágenes`)
+    logger.debug(`Llamadas individuales a GPT para ${photos.length} imágenes`)
 
     photos.forEach((photo, index) => {
       const requestPromise = (async () => {

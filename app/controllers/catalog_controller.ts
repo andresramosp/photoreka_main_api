@@ -112,7 +112,7 @@ export default class CatalogController {
   public async getPhotos({ response }: HttpContext) {
     const photoManager = new PhotoManager()
     try {
-      const photos = await photoManager._getPhotosByUser('1234')
+      const photos = await photoManager.getPhotos('1234', true)
       return response.ok({ photos })
     } catch (error) {
       console.error('Error fetching photos:', error)

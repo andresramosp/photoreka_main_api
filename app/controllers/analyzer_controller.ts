@@ -21,7 +21,7 @@ export default class AnalyzerController {
         `Iniciando análisis para usuario ${userId} - Paquete: ${packageId} - Modo: ${mode}`
       )
 
-      const photos = await photoManager._getPhotosByUser(userId)
+      const photos = await photoManager.getPhotos(userId, false)
 
       if (photos.length) {
         await analyzerService.initProcess(photos, packageId, mode, processId)

@@ -39,44 +39,43 @@ export default class PhotoManager {
     return photos
   }
 
-  @withCache({
-    key: (arg1) => `getPhotosByUser_${arg1}`,
-    provider: 'redis',
-    ttl: 50 * 5,
-  })
-  public async getPhotosByUser(userId: string[]) {
-    let photos = await Photo.query()
-      .preload('tags', (query) => {
-        query.preload('tag')
-      })
+  private async fetchPhotosByUser(userId: string): Promise<Photo[]> {
+    return await Photo.query()
+      // .where('user_id', userId)
+      .preload('tags', (query) => query.preload('tag'))
       .preload('descriptionChunks')
       .preload('detections')
       .preload('analyzerProcess')
+      .orderBy('created_at', 'desc')
+  }
+
+  @withCache({
+    key: (userId) => `getPhotosCached_${userId}`,
+    provider: 'redis',
+    ttl: 60,
+  })
+  private async getPhotosCached(userId: string): Promise<Photo[]> {
+    return this.fetchPhotosByUser(userId)
+  }
+
+  // Devuelve las instancias Lucid, aptas para escritura
+  public async getPhotos(userId: string, useCache = true): Promise<Photo[]> {
+    if (useCache) {
+      return this.getPhotosCached(userId)
+    } else {
+      return this.fetchPhotosByUser(userId)
+    }
+  }
+
+  // Devuelve las instancias aplanadas, aptas para expansión
+  public async getPhotosReadOnly(userId: string, useCache = true) {
+    const photos = await this.getPhotos(userId, useCache)
     return photos.map((photo) => ({
       ...photo.$attributes,
       tags: photo.tags,
       descriptionChunks: photo.descriptionChunks,
       descriptions: photo.descriptions,
-      tempID: Math.random().toString(36).substr(2, 4),
     }))
-  }
-
-  // @withCache({
-  //   key: (arg1) => `_getPhotosByUser${arg1}`,
-  //   provider: 'redis',
-  //   ttl: 50 * 5,
-  // })
-  public async _getPhotosByUser(userId: string) {
-    let photos = await Photo.query()
-      .preload('descriptionChunks')
-      .preload('analyzerProcess')
-      .preload('detections')
-      .preload('tags', (query) => {
-        query.preload('tag')
-      })
-      .orderBy('created_at', 'desc')
-    // .limit(10)
-    return photos
   }
 
   public async updatePhoto(id: string, updates: Partial<Photo>) {

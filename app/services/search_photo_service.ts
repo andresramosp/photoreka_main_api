@@ -49,7 +49,7 @@ export default class SearchPhotoService {
   sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
   public async searchByPhotos(query: SearchByPhotoOptions): Promise<Photo[]> {
-    const photos = await this.photoManager._getPhotosByUser('1234')
+    const photos = await this.photoManager.getPhotos('1234', true)
     const selectedPhotos = await this.photoManager.getPhotosByIds(query.photoIds)
     let scoredPhotos: { photo: Photo; score: number }[] = []
 

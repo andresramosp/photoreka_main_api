@@ -71,7 +71,7 @@ export default class SearchTextService {
     }
   ) {
     let { searchMode, withInsights, pageSize, iteration } = options
-    const photos = await this.photoManager.getPhotosByUser('1234')
+    const photos = await this.photoManager.getPhotosReadOnly('1234', true)
 
     const { structuredResult, sourceResult, useImage, expansionCost } =
       await this.queryService.structureQuery(query)
@@ -106,7 +106,6 @@ export default class SearchTextService {
         },
       }
 
-      // Salvo que queramos procesar con IA los insights, ya tenemos el resultado de esta página
       if (!withInsights) {
         return
       }
@@ -121,6 +120,7 @@ export default class SearchTextService {
 
       const batchPromises = photoBatches.map(async (batch, index) => {
         await this.sleep(100 * index)
+
         const { modelResult, modelCost } = await this.processBatchInsightsImage(
           batch,
           structuredResult,
@@ -130,18 +130,16 @@ export default class SearchTextService {
         modelCosts.push(modelCost)
 
         return batch
-          .map((item) => {
-            console.log(modelResult)
-            const result = modelResult.find((res) => res.id === item.photo.tempID)
+          .map((item, idx) => {
+            const result = modelResult[idx]
             const reasoning = result?.reasoning || ''
-            const isInsight =
-              result?.isInsight == true || result?.isInsight == 'true' ? true : false
+            const isInsight = result?.isInsight === true || result?.isInsight === 'true'
 
             return reasoning
               ? { photo: item.photo, score: item.tagScore, isInsight, reasoning }
               : { photo: item.photo, score: item.tagScore, isInsight }
           })
-          .filter((item) => modelResult.find((res) => res.id === item.photo.tempID))
+          .filter((_, idx) => modelResult[idx]?.reasoning)
       })
 
       const batchResults = await Promise.all(batchPromises)
@@ -176,7 +174,7 @@ export default class SearchTextService {
   //   @withCostWS
   public async *searchByTags(options: SearchTagsOptions) {
     const { included, excluded, iteration, pageSize, searchMode } = options
-    const photos = await this.photoManager.getPhotosByUser('1234')
+    const photos = await this.photoManager.getPhotosReadOnly('1234', true)
 
     let embeddingScoredPhotos = await this.scoringService.getScoredPhotosByTags(
       photos,
@@ -205,7 +203,7 @@ export default class SearchTextService {
 
   public async *searchTopological(query: any, options: SearchTopologicalOptions) {
     const { pageSize, iteration, searchMode } = options
-    const photos = await this.photoManager.getPhotosByUser('1234')
+    const photos = await this.photoManager.getPhotosReadOnly('1234', true)
 
     let embeddingScoredPhotos = await this.scoringService.getScoredPhotosByTopoAreas(
       photos,
@@ -312,9 +310,7 @@ export default class SearchTextService {
 
     const imagesPayload = await this.generateImagesPayload(batch.map((cp) => cp.photo))
 
-    // Prellenamos un mapa por posición
-    const defaultResults: any[] = batch.map((cp) => ({
-      id: cp.photo.tempID,
+    const defaultResults = batch.map(() => ({
       isInsight: false,
       reasoning: null,
     }))
@@ -342,16 +338,13 @@ export default class SearchTextService {
       modelCost = response.cost || 0
     }
 
-    // Reemplazamos los resultados por los devueltos por el modelo, respetando el orden
-    for (let i = 0; i < modelResult.length; i++) {
-      defaultResults[i] = {
-        id: batch[i].photo.tempID,
-        ...modelResult[i],
-      }
-    }
+    const combinedResults = defaultResults.map((defaultResult, i) => ({
+      ...defaultResult,
+      ...modelResult[i],
+    }))
 
     return {
-      modelResult: defaultResults,
+      modelResult: combinedResults,
       modelCost,
     }
   }
