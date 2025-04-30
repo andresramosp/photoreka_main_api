@@ -144,7 +144,6 @@ export class TagTask extends AnalyzerTask {
 
     for (let i = 0; i < photos.length; i += batchSize) {
       const batch = photos.slice(i, i + batchSize)
-      logger.debug(`Llamando a GPT para ${batchSize} imágenes`)
 
       try {
         const sourceTexts = batch.map((photo) => {
@@ -176,7 +175,8 @@ export class TagTask extends AnalyzerTask {
   private async requestTagsFromGPT(photos: Photo[], cleanedResults: string[]) {
     const tagRequests: Promise<void>[] = []
     const totalPhotos = photos.length
-    logger.info(`[TagTask]: Realizando requests GPT para ${photos.length} fotos`)
+
+    logger.debug(`Llamando a GPT para ${photos.length} imágenes`)
 
     photos.forEach((photo, index) => {
       const requestPromise = (async () => {

@@ -64,13 +64,13 @@ export default class TagPhotoManager {
     embeddingMap: Map<string, number[]>
   ) {
     const tagManager = new TagManager()
+    const tagPhotoArray: TagPhoto[] = []
 
     for (const sust of sustantives) {
       const sustTag = new Tag()
       sustTag.name = sust
       sustTag.group = 'misc'
 
-      // se pasa el embedding precalculado como 2.º argumento
       const existingTag = await tagManager.getOrCreateSimilarTag(sustTag, embeddingMap.get(sust))
 
       const tagPhoto = new TagPhoto()
@@ -79,17 +79,16 @@ export default class TagPhotoManager {
       tagPhoto.category = parentTagPhoto.category
       tagPhoto.parentId = parentTagPhoto.id
 
-      try {
-        await tagPhoto.save()
-      } catch (err) {
-        if (err.code === '23505') {
-          // console.log(
-          //   `[TagPhotoManager] Sustantivo duplicado ignorado: ${sust} (tag ${parentTagPhoto.tag.name})`
-          // )
-        } else {
-          console.error('[TagPhotoManager] Error inesperado:', err)
-        }
+      tagPhotoArray.push(tagPhoto)
+    }
+
+    try {
+      await TagPhoto.createMany(tagPhotoArray)
+    } catch (err) {
+      if (err.code !== '23505') {
+        console.error('[TagPhotoManager] Error inesperado en insert masivo:', err)
       }
+      // Opcional: podrías hacer un fallback por separado si quieres insertar los que no sean duplicados
     }
   }
 }
