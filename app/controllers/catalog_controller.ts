@@ -52,11 +52,11 @@ export default class CatalogController {
   public async uploadLocal({ request, response }: HttpContext) {
     try {
       const reqPhotos = request.files('photos')
+
       if (!reqPhotos || reqPhotos.length === 0) {
         return response.badRequest({ message: 'No se recibieron imágenes' })
       }
 
-      // 🔹 Asegurar que las promesas se resuelvan antes de pasarlas a savePhotos
       const photosData = await Promise.all(
         reqPhotos.map(async (photo) => ({
           buffer: await fs.readFile(photo.tmpPath!),
@@ -112,7 +112,7 @@ export default class CatalogController {
   public async getPhotos({ response }: HttpContext) {
     const photoManager = new PhotoManager()
     try {
-      const photos = await photoManager.getPhotos('1234', true)
+      const photos = await photoManager.getPhotos('1234', false)
       return response.ok({ photos })
     } catch (error) {
       console.error('Error fetching photos:', error)
