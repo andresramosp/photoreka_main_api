@@ -13,6 +13,7 @@ import { AnalyzerTask } from './analyzerTask.js'
 import NLPService from '../../services/nlp_service.js'
 import AnalyzerProcess from './analyzerProcess.js'
 import Logger, { LogLevel } from '../../utils/logger.js'
+import pLimit from 'p-limit'
 
 const logger = Logger.getInstance('AnalyzerProcess', 'TagTask')
 logger.setLevel(LogLevel.DEBUG)
@@ -47,12 +48,14 @@ export class TagTask extends AnalyzerTask {
   }
 
   async commit(): Promise<void> {
-    const batchEmbeddingsSize = 200 // tamaño inicial del lote
+    const batchEmbeddingsSize = 200
+    const concurrencyLimit = 10
 
     const tagPhotoManager = new TagPhotoManager()
     const photoManager = new PhotoManager()
     const tagManager = new TagManager()
     const category = this.descriptionSourceFields.join('_')
+    const limit = pLimit(concurrencyLimit)
 
     // 1. Agregar todos los nombres de tags únicos y recolectar sus sustantivos
     const allTagNames = Array.from(
@@ -71,48 +74,45 @@ export class TagTask extends AnalyzerTask {
       sustantives.forEach((s) => allTerms.add(s))
     }
 
-    // 3. Verificar qué términos ya tienen embeddings en la base de datos
+    // 3. Verificar qué términos ya tienen embeddings
     const termsArray = Array.from(allTerms)
     const existingTags = await Tag.query()
       .whereIn('name', termsArray)
       .whereNotNull('embedding')
       .select('name', 'embedding')
 
-    // 4. Cargar embeddings existentes en el mapa
     for (const tag of existingTags) {
       const embedding = tag.getParsedEmbedding()
-      if (embedding) {
-        this.embeddingsMap.set(tag.name, embedding)
-      }
+      if (embedding) this.embeddingsMap.set(tag.name, embedding)
     }
 
-    // 5. Obtener embeddings solo para los términos que no los tienen
+    // 5. Obtener embeddings solo para los que no los tienen aún
     const termsWithoutEmbeddings = termsArray.filter((term) => !this.embeddingsMap.has(term))
     for (let i = 0; i < termsWithoutEmbeddings.length; i += batchEmbeddingsSize) {
       const batch = termsWithoutEmbeddings.slice(i, i + batchEmbeddingsSize)
-
       logger.debug(`Obteniendo embeddings para batch de ${batch.length} tags`)
-
       const { embeddings } = await this.modelsService.getEmbeddings(batch)
       batch.forEach((name, idx) => {
         this.embeddingsMap.set(name, embeddings[idx])
       })
     }
 
-    for (const photoId of Object.keys(this.data)) {
+    // 6. Procesar las fotos con concurrencia limitada
+    const processPhoto = async (photoId: string, tagDataList: TagPhotoInput[]) => {
       const tagPhotosList: TagPhoto[] = []
-      for (const tagData of this.data[photoId]) {
+
+      for (const tagData of tagDataList) {
         const lower = tagData.name.toLocaleLowerCase()
         if (STOPWORDS.includes(lower)) continue
 
-        // 6. Usar el embedding precomputado del mapa
         const emb = this.embeddingsMap.get(tagData.name)
-        const existingOrCreatedTag: Tag = await tagManager.getOrCreateSimilarTag(tagData, emb)
+        const existingOrCreatedTag = await tagManager.getOrCreateSimilarTag(tagData, emb)
 
         const tagPhoto = new TagPhoto()
         tagPhoto.tagId = existingOrCreatedTag.id
         tagPhoto.photoId = Number(photoId)
         tagPhoto.category = category
+
         if (
           tagPhotosList.some(
             (tp) => tp.tagId === tagPhoto.tagId && tp.category === tagPhoto.category
@@ -121,6 +121,7 @@ export class TagTask extends AnalyzerTask {
           logger.info(`Saltando tagPhoto duplicado: ${tagPhoto.tagId}`)
           continue
         }
+
         tagPhotosList.push(tagPhoto)
       }
 
@@ -133,6 +134,13 @@ export class TagTask extends AnalyzerTask {
         false
       )
     }
+
+    logger.info(`Guardando en BD ${concurrencyLimit} fotos...`)
+    await Promise.all(
+      Object.entries(this.data).map(([photoId, tagDataList]) =>
+        limit(() => processPhoto(photoId, tagDataList))
+      )
+    )
 
     const photoIds = Object.keys(this.data).map(Number)
     await this.analyzerProcess.markPhotosCompleted(this.name, photoIds)

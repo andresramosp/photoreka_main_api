@@ -31,7 +31,6 @@ export default class AnalyzerController {
           analysisProcesses.set(userId, process)
 
           this.handleAnalysisStream(userId, process)
-          logger.info(`Análisis iniciado para usuario ${userId}`)
           return response.ok({ message: 'Analysis started', userId })
         }
       }

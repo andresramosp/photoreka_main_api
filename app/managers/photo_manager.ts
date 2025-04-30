@@ -144,37 +144,26 @@ export default class PhotoManager {
     embeddingsMap?: Map<string, number[]>,
     replaceAll = false
   ) {
-    console.time('updateTagsPhoto')
-
-    console.time('1. load photo')
     const photo = await Photo.find(photoId)
     if (!photo) throw new Error('Photo not found')
-    console.timeEnd('1. load photo')
 
     if (replaceAll) {
-      console.time('2. delete existing tags')
       await photo.related('tags').query().delete()
-      console.timeEnd('2. delete existing tags')
     }
 
-    console.time('3. create new tags')
     try {
       await photo.related('tags').createMany(newTags)
     } catch (err) {
       console.error('❌ Error al crear tags:', err)
     }
-    console.timeEnd('3. create new tags')
 
-    console.time('4. preload tags and nested tag')
     await photo.load('tags', (tagPhoto) => tagPhoto.preload('tag'))
-    console.timeEnd('4. preload tags and nested tag')
 
     const nlpService = new NLPService()
     const tagPhotosToProcess = photo.tags
 
     // Cálculo de sustantivos y embeddings si no se pasaron
     if (!tagToSustantivesMap || !embeddingsMap) {
-      console.time('5. NLP: calcular sustantivos')
       const tagToSust = new Map<TagPhoto, string[]>()
       const allSustSet = new Set<string>()
 
@@ -183,15 +172,12 @@ export default class PhotoManager {
         tagToSust.set(tp, sust)
         sust.forEach((s) => allSustSet.add(s))
       }
-      console.timeEnd('5. NLP: calcular sustantivos')
 
-      console.time('6. Obtener embeddings')
       const allSustantives = Array.from(allSustSet)
       const modelsService = new ModelsService()
       const { embeddings } = await modelsService.getEmbeddings(allSustantives)
       const embeddingMap = new Map<string, number[]>()
       allSustantives.forEach((s, i) => embeddingMap.set(s, embeddings[i]))
-      console.timeEnd('6. Obtener embeddings')
 
       tagToSustantivesMap = tagToSust
       embeddingsMap = embeddingMap
@@ -199,14 +185,11 @@ export default class PhotoManager {
 
     const tagPhotoManager = new TagPhotoManager()
 
-    console.time('7. Añadir sustantivos a cada tag')
     for (const tp of tagPhotosToProcess) {
       const sustantives = tagToSustantivesMap.get(tp.tag.name) ?? []
       await tagPhotoManager.addSustantives(tp, sustantives, embeddingsMap)
     }
-    console.timeEnd('7. Añadir sustantivos a cada tag')
 
-    console.timeEnd('updateTagsPhoto')
     return photo
   }
 

@@ -69,6 +69,7 @@
     "munkres-js": "^1.2.2",
     "natural": "^8.0.1",
     "node-cache": "^5.1.2",
+    "p-limit": "^6.2.0",
     "pg": "^8.13.1",
     "reflect-metadata": "^0.2.2",
     "sharp": "^0.33.5",

@@ -71,7 +71,7 @@ export default class AnalyzerProcessRunner {
   }
 
   private async changeStage(message: string, nextStage: string = null) {
-    logger.info(message, true)
+    logger.info(message, false)
     if (nextStage) {
       this.process.currentStage = nextStage
       await this.process.save()
