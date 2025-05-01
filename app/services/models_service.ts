@@ -146,11 +146,11 @@ export default class ModelsService {
     }
   }
 
-  @withCache({
-    key: (arg1) => `getEmbeddings_${JSON.stringify(arg1)}`,
-    provider: 'redis',
-    ttl: 50 * 5,
-  })
+  // @withCache({
+  //   key: (arg1) => `getEmbeddings_${JSON.stringify(arg1)}`,
+  //   provider: 'redis',
+  //   ttl: 50 * 5,
+  // })
   // @MeasureExecutionTime
   async getEmbeddings(tags) {
     try {

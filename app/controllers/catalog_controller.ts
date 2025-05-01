@@ -8,6 +8,7 @@ import crypto from 'crypto'
 import Photo from '#models/photo'
 import { GoogleAuthService } from '#services/google_photos_service'
 import PhotoManager from '../managers/photo_manager.js'
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 
 // Configura R2
 const s3 = new S3Client({
@@ -68,30 +69,69 @@ export default class CatalogController {
 
   public async uploadLocal({ request, response }: HttpContext) {
     try {
-      const reqPhotos = request.files('photos')
-
-      if (!reqPhotos || reqPhotos.length === 0) {
-        return response.badRequest({ message: 'No se recibieron imágenes' })
+      const { fileType } = request.only(['fileType'])
+      if (!fileType) {
+        return response.badRequest({ message: 'Falta fileType' })
       }
 
-      const photosData = await Promise.all(
-        reqPhotos.map(async (photo) => ({
-          buffer: await fs.readFile(photo.tmpPath!),
-          filename: photo.clientName,
-        }))
-      )
+      const id = crypto.randomUUID()
+      const extension = fileType.includes('jpeg') ? '.jpg' : '.png'
+      const key = `${id}${extension}`
+      const thumbnailKey = `${id}-thumb${extension}`
 
-      const savedPhotos = await this.savePhotos(photosData)
+      // Comando para original
+      const originalCommand = new PutObjectCommand({
+        Bucket: process.env.R2_BUCKET,
+        Key: key,
+        ContentType: fileType,
+      })
+
+      // Comando para thumbnail
+      const thumbnailCommand = new PutObjectCommand({
+        Bucket: process.env.R2_BUCKET,
+        Key: thumbnailKey,
+        ContentType: fileType,
+      })
+
+      const [uploadUrl, thumbnailUploadUrl] = await Promise.all([
+        getSignedUrl(s3, originalCommand, { expiresIn: 3600 }),
+        getSignedUrl(s3, thumbnailCommand, { expiresIn: 3600 }),
+      ])
+
+      // Guarda en base de datos
+      const photo = await Photo.create({
+        name: key,
+        thumbnailName: thumbnailKey,
+      })
 
       return response.ok({
-        message: 'Fotos subidas exitosamente',
-        savedPhotos,
+        uploadUrl,
+        thumbnailUploadUrl,
+        photo,
       })
     } catch (error) {
-      console.error('Error subiendo fotos:', error)
-      return response.internalServerError({ message: 'Error procesando las imágenes' })
+      console.error('Error generando URLs firmadas:', error)
+      return response.internalServerError({ message: 'Error generando URLs' })
     }
   }
+
+  // public async confirmUpload({ request, response }: HttpContext) {
+  //   try {
+  //     const { photoId } = request.only(['photoId'])
+  //     const photo = await Photo.findOrFail(photoId)
+
+  //     // Aquí podrías generar y subir un thumbnail si lo deseas
+  //     // (con sharp desde la URL ya subida o usando otra función)
+
+  //     photo.isUploaded = true // marca como confirmada si tienes este campo
+  //     await photo.save()
+
+  //     return response.ok({ message: 'Subida confirmada' })
+  //   } catch (error) {
+  //     console.error('Error confirmando subida:', error)
+  //     return response.internalServerError({ message: 'Error confirmando subida' })
+  //   }
+  // }
 
   public async uploadGooglePhotos({ request, response }: HttpContext) {
     try {

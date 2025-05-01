@@ -261,7 +261,7 @@ export default class EmbeddingsService {
   }
 
   // TODO: para el cuello de botella en prod: probar lo de sacar el where para que "aproveche" el index, que ahora en teoría no lo hace
-  @MeasureExecutionTime
+  // @MeasureExecutionTime
   public async findSimilarTagToEmbedding(
     embedding: number[],
     threshold: Threshold = 0.3,

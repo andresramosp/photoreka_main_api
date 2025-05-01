@@ -54,7 +54,7 @@ export default class TagManager {
     return { message: 'Tag deleted successfully' }
   }
 
-  @MeasureExecutionTime
+  // @MeasureExecutionTime
   public async getOrCreateSimilarTag(
     tag: Partial<Tag> & { name: string; group: TagGroups },
     embedding: number[]

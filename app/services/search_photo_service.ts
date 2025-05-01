@@ -170,41 +170,6 @@ export default class SearchPhotoService {
       .map((photo) => ({ photo, score: photoScoreMap.get(photo.id)! }))
   }
 
-  private async geGeometricalScoresByPhoto(
-    query: SearchByPhotoOptions,
-    photos: Photo[],
-    selectedPhotos: Photo[]
-  ): Promise<{ photo: Photo; score: number }[]> {
-    const photosToSearch = photos.filter(
-      (photo: Photo) => !query.currentPhotosIds.includes(photo.id)
-    )
-
-    const referencePhoto = selectedPhotos[0]
-    const uploadPath = getUploadPath()
-
-    const filePath = path.join(uploadPath, referencePhoto.name)
-    const presenceMapBuffer = await fs.readFile(filePath)
-    const base64 = (await sharp(presenceMapBuffer).toBuffer()).toString('base64')
-
-    // Buscar fotos similares
-    const similarPhotos = await this.modelsService.findSimilarPresenceMaps({
-      id: referencePhoto.id,
-      base64: base64,
-    })
-
-    const photoScoreMap = new Map<number | number, number>()
-    similarPhotos.forEach((item) => {
-      const proximity = 1 / (1 + item.distance) // opcional: transformar distancia en score
-      if (!photoScoreMap.has(item.id) || proximity > photoScoreMap.get(item.id)!) {
-        photoScoreMap.set(Number(item.id), proximity)
-      }
-    })
-
-    return photosToSearch
-      .filter((photo) => photoScoreMap.has(photo.id))
-      .map((photo) => ({ photo, score: photoScoreMap.get(photo.id)! }))
-  }
-
   private async getTagBasedScoresByPhoto(
     query: SearchByPhotoOptions,
     photos: Photo[],

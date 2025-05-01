@@ -21,6 +21,8 @@ import DescriptionChunk from '#models/descriptionChunk'
 import EmbeddingsService from './embeddings_service.js'
 import Tag from '#models/tag'
 import { getUploadPath } from '../utils/dataPath.js'
+import PhotoImage from '#models/analyzer/photoImage'
+import PhotoImageService from './photo_image_service.js'
 
 export type SearchMode = 'logical' | 'creative'
 export type SearchType = 'semantic' | 'tags' | 'topological'
@@ -377,23 +379,16 @@ export default class SearchTextService {
 
   public async generateImagesPayload(photos: Photo[]) {
     const validImages: any[] = []
-    const uploadPath = getUploadPath()
 
     for (const photo of photos) {
-      const filePath = path.join(uploadPath, `${photo.name}`)
-
       try {
-        await fs.access(filePath)
-
-        const resizedBuffer = await sharp(filePath)
-          // .resize({ width: 1012, fit: 'inside' })
-          .toBuffer()
+        const buffer = await PhotoImageService.getInstance().getImageBufferFromR2(photo.name)
 
         validImages.push({
-          base64: resizedBuffer.toString('base64'),
+          base64: buffer.toString('base64'),
         })
       } catch (error) {
-        console.warn(`No se pudo procesar la imagen con ID: ${photo.id}`, error)
+        console.warn(`No se pudo obtener la imagen ${photo.name} desde R2`, error)
       }
     }
 
