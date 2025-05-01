@@ -52,7 +52,7 @@ export default class PhotoManager {
   @withCache({
     key: (userId) => `getPhotosCached_${userId}`,
     provider: 'redis',
-    ttl: 60,
+    ttl: 60 * 5,
   })
   private async getPhotosCached(userId: string): Promise<Photo[]> {
     return this.fetchPhotosByUser(userId)
