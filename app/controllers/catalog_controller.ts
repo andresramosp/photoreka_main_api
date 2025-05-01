@@ -3,47 +3,64 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import sharp from 'sharp'
 import { promises as fs } from 'fs'
-import path from 'path'
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
 import crypto from 'crypto'
 import Photo from '#models/photo'
 import { GoogleAuthService } from '#services/google_photos_service'
 import PhotoManager from '../managers/photo_manager.js'
-import { getUploadPath } from '../utils/dataPath.js'
+
+// Configura R2
+const s3 = new S3Client({
+  region: 'auto',
+  endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+  credentials: {
+    accessKeyId: process.env.R2_ACCESS_KEY!,
+    secretAccessKey: process.env.R2_SECRET_KEY!,
+  },
+})
+async function uploadToR2(buffer, key, contentType) {
+  await s3.send(
+    new PutObjectCommand({
+      Bucket: process.env.R2_BUCKET,
+      Key: key,
+      Body: buffer,
+      ContentType: contentType,
+    })
+  )
+  return `https://${process.env.R2_BUCKET}.r2.cloudflarestorage.com/${key}`
+}
 
 export default class CatalogController {
-  private async savePhotos(
-    photosData: Array<{ buffer: Buffer; filename: string; url: string | undefined }>
-  ) {
-    const uploadPath = getUploadPath()
-    await fs.mkdir(uploadPath, { recursive: true })
+  private async savePhotos(photosData) {
+    const savedPhotos = await Promise.all(
+      photosData.map(async (photoData) => {
+        const id = crypto.randomUUID()
+        const extension = '.jpg'
+        const fileName = `${id}${extension}`
+        const thumbnailName = `${id}-thumb${extension}`
 
-    const savedPhotos = []
+        // Procesa original y thumbnail en paralelo
+        const [resizedBuffer, thumbnailBuffer] = await Promise.all([
+          sharp(photoData.buffer).resize({ width: 1500, fit: 'inside' }).jpeg().toBuffer(),
+          sharp(photoData.buffer)
+            .resize({ width: 800, fit: 'inside' })
+            .jpeg({ quality: 80 })
+            .toBuffer(),
+        ])
 
-    for (const photoData of photosData) {
-      const fileName = `${Date.now()}-${photoData.filename}`
-      const thumbnailName = `thumb-${fileName}`
-      const outputPath = path.join(uploadPath, fileName)
-      const thumbnailPath = path.join(uploadPath, thumbnailName)
+        // Sube ambos a R2 en paralelo
+        await Promise.all([
+          uploadToR2(resizedBuffer, fileName, 'image/jpeg'),
+          uploadToR2(thumbnailBuffer, thumbnailName, 'image/jpeg'),
+        ])
 
-      // Guardar versión original para análisis
-      await sharp(photoData.buffer)
-        .resize({ width: 1500, fit: 'inside' })
-        .toFormat('jpeg')
-        .toFile(outputPath)
+        const photo = new Photo()
+        photo.name = fileName
+        photo.thumbnailName = thumbnailName
 
-      // Generar versión optimizada para visualización
-      await sharp(photoData.buffer)
-        .resize({ width: 800, fit: 'inside' })
-        .jpeg({ quality: 80 })
-        .toFile(thumbnailPath)
-
-      const photo = new Photo()
-      photo.name = fileName
-      photo.thumbnailName = thumbnailName
-      photo.url = photoData.url
-
-      savedPhotos.push(photo)
-    }
+        return photo
+      })
+    )
 
     await Photo.createMany(savedPhotos)
     return savedPhotos

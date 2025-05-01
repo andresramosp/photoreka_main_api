@@ -7,33 +7,42 @@
 |
 */
 
-import path from 'path'
-import { existsSync } from 'node:fs'
 import router from '@adonisjs/core/services/router'
-import { normalize } from 'node:path'
-import { getUploadPath } from '../app/utils/dataPath.js'
+import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3'
+import { Readable } from 'node:stream'
 
-const PATH_TRAVERSAL_REGEX = /(?:^|[\\/])\.\.(?:[\\/]|$)/
-
+const s3 = new S3Client({
+  region: 'auto',
+  endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+  credentials: {
+    accessKeyId: process.env.R2_ACCESS_KEY!,
+    secretAccessKey: process.env.R2_SECRET_KEY!,
+  },
+})
 router.get('/uploads/photos/:filename', async ({ params, response }) => {
   const filename = params.filename
-  const normalized = normalize(filename)
 
-  if (PATH_TRAVERSAL_REGEX.test(normalized)) {
-    return response.badRequest('Ruta malformada')
+  try {
+    const command = new GetObjectCommand({
+      Bucket: process.env.R2_BUCKET!,
+      Key: filename,
+    })
+
+    const s3Response = await s3.send(command)
+
+    if (!s3Response.Body) {
+      return response.notFound('Archivo no encontrado')
+    }
+
+    // Aserción de tipo para indicar que Body es un Readable stream
+    const streamBody = s3Response.Body as Readable
+
+    response.header('Content-Type', s3Response.ContentType || 'application/octet-stream')
+    return response.stream(streamBody)
+  } catch (error) {
+    console.error('Error descargando desde R2:', error)
+    return response.internalServerError('Error al obtener el archivo')
   }
-
-  const basePath = getUploadPath()
-
-  const absolutePath = path.join(basePath, normalized)
-
-  console.log(absolutePath)
-
-  if (!existsSync(absolutePath)) {
-    return response.notFound('Archivo no encontrado')
-  }
-
-  return response.download(absolutePath)
 })
 
 const AnalyzerController = () => import('#controllers/analyzer_controller')

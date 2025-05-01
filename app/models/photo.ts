@@ -122,12 +122,12 @@ export default class Photo extends BaseModel {
 
   @computed()
   public get thumbnailUrl(): string {
-    return `/uploads/${this.thumbnailName}`
+    return `https://${process.env.R2_BUCKET}.r2.cloudflarestorage.com/${this.thumbnailName}`
   }
 
   @computed()
   public get originalUrl(): string {
-    return `/uploads/${this.name}`
+    return `https://${process.env.R2_BUCKET}.r2.cloudflarestorage.com/${this.name}`
   }
 
   @computed()
