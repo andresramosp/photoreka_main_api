@@ -39,32 +39,18 @@ export default class PhotoManager {
     return photos
   }
 
-  private async fetchPhotosByUser(userId: string): Promise<Photo[]> {
-    return await Photo.query()
+  private async fetchPhotosByUser(userId: string, eager: boolean): Promise<Photo[]> {
+    const query = Photo.query()
       // .where('user_id', userId)
-      .preload('tags', (query) => query.preload('tag'))
-      .preload('descriptionChunks')
+      .preload('tags', (q) => q.preload('tag'))
       .preload('detections')
-      .preload('analyzerProcess')
       .orderBy('created_at', 'desc')
-  }
 
-  @withCache({
-    key: (userId) => `getPhotosCached_${userId}`,
-    provider: 'redis',
-    ttl: 60 * 30,
-  })
-  private async getPhotosCached(userId: string): Promise<Photo[]> {
-    return this.fetchPhotosByUser(userId)
-  }
-
-  // Devuelve las instancias Lucid, aptas para escritura
-  public async getPhotos(userId: string, useCache = true): Promise<Photo[]> {
-    if (useCache) {
-      return this.getPhotosCached(userId)
-    } else {
-      return this.fetchPhotosByUser(userId)
+    if (eager) {
+      query.preload('descriptionChunks').preload('analyzerProcess')
     }
+
+    return await query
   }
 
   @withCache({
@@ -72,8 +58,8 @@ export default class PhotoManager {
     provider: 'redis',
     ttl: 60 * 30,
   })
-  public async getPhotos(userId: string, useCache = true) {
-    const photos = await this.fetchPhotosByUser(userId, useCache)
+  public async getPhotos(userId: string) {
+    const photos = await this.fetchPhotosByUser(userId, false)
     return photos
   }
 
@@ -82,8 +68,8 @@ export default class PhotoManager {
     provider: 'redis',
     ttl: 60 * 30,
   })
-  public async getPhotosForSearch(userId: string, useCache = true) {
-    const photos = await this.fetchPhotosByUser(userId, useCache)
+  public async getPhotosForSearch(userId: string) {
+    const photos = await this.fetchPhotosByUser(userId, true)
     return photos.map((photo) => ({
       ...photo.$attributes,
       tags: photo.tags,
