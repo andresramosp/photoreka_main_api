@@ -9,8 +9,8 @@ import Photo from '#models/photo'
 import { GoogleAuthService } from '#services/google_photos_service'
 import PhotoManager from '../managers/photo_manager.js'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
+import { invalidateCache } from '../decorators/withCache.js'
 
-// Configura R2
 const s3 = new S3Client({
   region: 'auto',
   endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
@@ -32,41 +32,6 @@ async function uploadToR2(buffer, key, contentType) {
 }
 
 export default class CatalogController {
-  private async savePhotos(photosData) {
-    const savedPhotos = await Promise.all(
-      photosData.map(async (photoData) => {
-        const id = crypto.randomUUID()
-        const extension = '.jpg'
-        const fileName = `${id}${extension}`
-        const thumbnailName = `${id}-thumb${extension}`
-
-        // Procesa original y thumbnail en paralelo
-        const [resizedBuffer, thumbnailBuffer] = await Promise.all([
-          sharp(photoData.buffer).resize({ width: 1500, fit: 'inside' }).jpeg().toBuffer(),
-          sharp(photoData.buffer)
-            .resize({ width: 800, fit: 'inside' })
-            .jpeg({ quality: 80 })
-            .toBuffer(),
-        ])
-
-        // Sube ambos a R2 en paralelo
-        await Promise.all([
-          uploadToR2(resizedBuffer, fileName, 'image/jpeg'),
-          uploadToR2(thumbnailBuffer, thumbnailName, 'image/jpeg'),
-        ])
-
-        const photo = new Photo()
-        photo.name = fileName
-        photo.thumbnailName = thumbnailName
-
-        return photo
-      })
-    )
-
-    await Photo.createMany(savedPhotos)
-    return savedPhotos
-  }
-
   public async uploadLocal({ request, response }: HttpContext) {
     try {
       const { fileType } = request.only(['fileType'])
@@ -103,6 +68,9 @@ export default class CatalogController {
         name: key,
         thumbnailName: thumbnailKey,
       })
+
+      await invalidateCache(`getPhotos_${1234}`)
+      await invalidateCache(`getPhotosForSearch_${1234}`)
 
       return response.ok({
         uploadUrl,
@@ -154,6 +122,9 @@ export default class CatalogController {
 
       const savedPhotos = await this.savePhotos(photosData)
 
+      invalidateCache(`getPhotos_${1234}`)
+      invalidateCache(`getPhotosForSearch_${1234}`)
+
       return response.ok({
         message: 'Fotos de Google Photos guardadas exitosamente',
         savedPhotos,
@@ -169,7 +140,7 @@ export default class CatalogController {
   public async getPhotos({ response }: HttpContext) {
     const photoManager = new PhotoManager()
     try {
-      const photos = await photoManager.getPhotos('1234', false)
+      const photos = await photoManager.getPhotos('1234', true)
       return response.ok({ photos })
     } catch (error) {
       console.error('Error fetching photos:', error)

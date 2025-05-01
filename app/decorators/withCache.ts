@@ -38,3 +38,11 @@ export function withCache(options: CacheOptions) {
     }
   }
 }
+
+export async function invalidateCache(key: string, provider: 'nodecache' | 'redis' = 'redis') {
+  if (provider === 'nodecache') {
+    nodeCache.del(key)
+  } else {
+    await redis.del(key)
+  }
+}

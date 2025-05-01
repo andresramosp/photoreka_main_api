@@ -120,6 +120,43 @@ export const packages = [
     ],
   },
   {
+    id: 'embeddings_remake',
+    tasks: [
+      {
+        name: 'tags_context_story',
+        type: 'TagTask',
+        model: 'GPT',
+        needsImage: false,
+        dependsOn: 'vision_context_story_accents',
+        prompt: MESSAGE_TAGS_TEXT_EXTRACTION,
+        descriptionSourceFields: ['context', 'story'],
+      },
+      {
+        name: 'tags_visual_accents',
+        type: 'TagTask',
+        model: 'GPT',
+        dependsOn: 'vision_context_story_accents',
+        needsImage: false,
+        prompt: MESSAGE_TAGS_TEXT_EXTRACTION,
+        descriptionSourceFields: ['visual_accents'],
+      },
+      {
+        name: 'chunks_context_story_visual_accents',
+        type: 'ChunkTask',
+        prompt: null,
+        model: null,
+        needsImage: false,
+        dependsOn: 'vision_context_story_accents',
+        descriptionSourceFields: ['context', 'story', 'visual_accents'],
+        descriptionsChunksMethod: {
+          context: { type: 'split_by_size', maxLength: 250 },
+          story: { type: 'split_by_size', maxLength: 250 },
+          visual_accents: { type: 'split_by_size', maxLength: 15 },
+        },
+      },
+    ],
+  },
+  {
     // Context Story GPT + Accents Molmo
     // Habria que arreglar tema crops + revisar pequeñas alucinaciones (que no saque elementos borrosos o distantes). Plantear inyección contexto.
     id: 'basic_3',

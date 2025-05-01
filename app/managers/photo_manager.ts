@@ -52,7 +52,7 @@ export default class PhotoManager {
   @withCache({
     key: (userId) => `getPhotosCached_${userId}`,
     provider: 'redis',
-    ttl: 60 * 5,
+    ttl: 60 * 30,
   })
   private async getPhotosCached(userId: string): Promise<Photo[]> {
     return this.fetchPhotosByUser(userId)
@@ -67,9 +67,23 @@ export default class PhotoManager {
     }
   }
 
-  // Devuelve las instancias aplanadas, aptas para expansión
-  public async getPhotosReadOnly(userId: string, useCache = true) {
-    const photos = await this.getPhotos(userId, useCache)
+  @withCache({
+    key: (userId) => `getPhotos_${userId}`,
+    provider: 'redis',
+    ttl: 60 * 30,
+  })
+  public async getPhotos(userId: string, useCache = true) {
+    const photos = await this.fetchPhotosByUser(userId, useCache)
+    return photos
+  }
+
+  @withCache({
+    key: (userId) => `getPhotosForSearch_${userId}`,
+    provider: 'redis',
+    ttl: 60 * 30,
+  })
+  public async getPhotosForSearch(userId: string, useCache = true) {
+    const photos = await this.fetchPhotosByUser(userId, useCache)
     return photos.map((photo) => ({
       ...photo.$attributes,
       tags: photo.tags,

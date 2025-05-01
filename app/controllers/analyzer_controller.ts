@@ -6,6 +6,7 @@ import ws from '#services/ws'
 import Photo from '#models/photo'
 import PhotoManager from '../managers/photo_manager.js'
 import Logger from '../utils/logger.js'
+import { invalidateCache } from '../decorators/withCache.js'
 
 const analysisProcesses = new Map<string, AsyncGenerator>()
 const logger = Logger.getInstance('AnalyzerProcess')
@@ -28,6 +29,7 @@ export default class AnalyzerController {
 
         if (!analysisProcesses.has(userId)) {
           const process = analyzerService.run()
+
           analysisProcesses.set(userId, process)
 
           this.handleAnalysisStream(userId, process)

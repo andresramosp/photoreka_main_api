@@ -73,7 +73,7 @@ export default class SearchTextService {
     }
   ) {
     let { searchMode, withInsights, pageSize, iteration } = options
-    const photos = await this.photoManager.getPhotosReadOnly('1234', true)
+    const photos = await this.photoManager.getPhotosForSearch('1234', true)
 
     const { structuredResult, sourceResult, useImage, expansionCost } =
       await this.queryService.structureQuery(query)
@@ -176,7 +176,7 @@ export default class SearchTextService {
   //   @withCostWS
   public async *searchByTags(options: SearchTagsOptions) {
     const { included, excluded, iteration, pageSize, searchMode } = options
-    const photos = await this.photoManager.getPhotosReadOnly('1234', true)
+    const photos = await this.photoManager.getPhotosForSearch('1234', true)
 
     let embeddingScoredPhotos = await this.scoringService.getScoredPhotosByTags(
       photos,
@@ -205,7 +205,7 @@ export default class SearchTextService {
 
   public async *searchTopological(query: any, options: SearchTopologicalOptions) {
     const { pageSize, iteration, searchMode } = options
-    const photos = await this.photoManager.getPhotosReadOnly('1234', true)
+    const photos = await this.photoManager.getPhotosForSearch('1234', true)
 
     let embeddingScoredPhotos = await this.scoringService.getScoredPhotosByTopoAreas(
       photos,

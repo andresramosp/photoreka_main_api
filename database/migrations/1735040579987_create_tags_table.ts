@@ -9,7 +9,7 @@ export default class extends BaseSchema {
         id SERIAL PRIMARY KEY,
         name VARCHAR(255) NOT NULL,
         "group" VARCHAR(255),
-        embedding VECTOR(768),
+        embedding VECTOR(384),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE (name, "group") 

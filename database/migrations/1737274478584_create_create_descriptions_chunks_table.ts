@@ -11,7 +11,7 @@ export default class extends BaseSchema {
         chunk TEXT,
         category VARCHAR(128),
         area VARCHAR(32),
-        embedding VECTOR(768),
+        embedding VECTOR(384),
         CONSTRAINT fk_photo FOREIGN KEY (photo_id) REFERENCES photos(id) ON DELETE CASCADE
       )
     `)

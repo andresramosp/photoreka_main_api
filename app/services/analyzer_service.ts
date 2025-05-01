@@ -7,6 +7,7 @@ import { Exception } from '@adonisjs/core/exceptions'
 import { getTaskList } from '../analyzer_packages.js'
 import Logger, { LogLevel } from '../utils/logger.js'
 import PhotoImageService from './photo_image_service.js'
+import { invalidateCache } from '../decorators/withCache.js'
 
 const logger = Logger.getInstance('AnalyzerProcess')
 logger.setLevel(LogLevel.DEBUG)
@@ -28,6 +29,9 @@ export default class AnalyzerProcessRunner {
     mode: AnalyzerMode = 'first',
     processId?: number
   ) {
+    await invalidateCache(`getPhotos_${1234}`)
+    await invalidateCache(`getPhotosForSearch_${1234}`)
+
     if (mode === 'retry' && processId) {
       this.process = await AnalyzerProcess.query()
         .where('id', processId)
@@ -66,6 +70,10 @@ export default class AnalyzerProcessRunner {
 
     await this.changeStage('***  Proceso Completado *** \n', 'finished')
     logger.info(`\n  ${this.process.formatProcessSheet()} \n `)
+
+    await invalidateCache(`getPhotos_${1234}`)
+    await invalidateCache(`getPhotosForSearch_${1234}`)
+
     yield { type: 'analysisComplete', data: { costs: [] } }
   }
 

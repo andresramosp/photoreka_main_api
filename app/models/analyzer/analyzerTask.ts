@@ -37,7 +37,10 @@ export abstract class AnalyzerTask {
     let candidates = myTaskState.pendingPhotoIds
     const initialCandidates = [...candidates] // Para comparar luego
 
-    if (this.dependsOn) {
+    // En remake permitimos iniciar tareas aisladas usando lo que está en BD de la tarea previa
+    // TODO: habria que crear un remakePartial para este caso, ya que actualmente se rompe el condicionamiento
+    // de la tarea anterior para remakes de paquetes enteros
+    if (this.dependsOn && process.mode !== 'remake') {
       const dependsTaskState = processSheet[this.dependsOn]
       if (!dependsTaskState)
         throw new Error(`DependsOn task "${this.dependsOn}" not found in process sheet.`)
