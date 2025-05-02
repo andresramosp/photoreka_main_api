@@ -30,7 +30,7 @@ export default class AnalyzerProcessRunner {
     processId?: number
   ) {
     await invalidateCache(`getPhotos_${1234}`)
-    await invalidateCache(`getPhotosForSearch_${1234}`)
+    await invalidateCache(`getPhotosIdsByUser_${1234}`)
 
     if (mode === 'retry' && processId) {
       this.process = await AnalyzerProcess.query()
@@ -72,7 +72,7 @@ export default class AnalyzerProcessRunner {
     logger.info(`\n  ${this.process.formatProcessSheet()} \n `)
 
     await invalidateCache(`getPhotos_${1234}`)
-    await invalidateCache(`getPhotosForSearch_${1234}`)
+    await invalidateCache(`getPhotosIdsByUser_${1234}`)
 
     yield { type: 'analysisComplete', data: { costs: [] } }
   }

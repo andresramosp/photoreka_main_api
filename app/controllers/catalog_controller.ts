@@ -70,7 +70,7 @@ export default class CatalogController {
       })
 
       await invalidateCache(`getPhotos_${1234}`)
-      await invalidateCache(`getPhotosForSearch_${1234}`)
+      await invalidateCache(`getPhotosIdsByUser_${1234}`)
 
       return response.ok({
         uploadUrl,
@@ -123,7 +123,7 @@ export default class CatalogController {
       const savedPhotos = await this.savePhotos(photosData)
 
       invalidateCache(`getPhotos_${1234}`)
-      invalidateCache(`getPhotosForSearch_${1234}`)
+      invalidateCache(`getPhotosIdsByUser_${1234}`)
 
       return response.ok({
         message: 'Fotos de Google Photos guardadas exitosamente',
@@ -140,7 +140,7 @@ export default class CatalogController {
   public async getPhotos({ response }: HttpContext) {
     const photoManager = new PhotoManager()
     try {
-      const photos = await photoManager.getPhotos('1234', true)
+      const photos = await photoManager.getPhotos('1234')
       return response.ok({ photos })
     } catch (error) {
       console.error('Error fetching photos:', error)

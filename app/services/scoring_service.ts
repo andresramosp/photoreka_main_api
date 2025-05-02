@@ -197,7 +197,9 @@ export default class ScoringService {
     const photosWithExcludedTags = await Photo.query()
       .whereIn('id', photoIds)
       .whereHas('tags', (query) => {
-        query.whereIn('name', excludedTagNames)
+        query.whereHas('tag', (tagQuery) => {
+          tagQuery.whereIn('name', excludedTagNames)
+        })
       })
       .select('id')
 

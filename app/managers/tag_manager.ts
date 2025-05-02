@@ -29,11 +29,11 @@ export default class TagManager {
   }
 
   // Obtiene todos los Tags
-  @withCache({
-    key: (userId) => `getTagsByUser_${userId}`,
-    provider: 'redis',
-    ttl: 60 * 30,
-  })
+  // @withCache({
+  //   key: (userId) => `getTagsByUser_${userId}`,
+  //   provider: 'redis',
+  //   ttl: 60 * 30,
+  // })
   public async getTagsByUser(userId: string): Promise<Tag[]> {
     const tags = await Tag.all()
     return tags

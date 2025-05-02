@@ -39,28 +39,21 @@ export default class PhotoManager {
     return photos
   }
 
-  private async fetchPhotosByUser(userId: string, eager: boolean): Promise<Photo[]> {
-    const query = Photo.query()
-      // .where('user_id', userId)
-      .preload('tags', (q) => q.preload('tag'))
-      .preload('detections')
-      .orderBy('created_at', 'desc')
-
-    if (eager) {
-      query.preload('descriptionChunks').preload('analyzerProcess')
-    }
-
-    return await query
-  }
-
   @withCache({
     key: (userId) => `getPhotos_${userId}`,
     provider: 'redis',
     ttl: 60 * 30,
   })
   public async getPhotos(userId: string) {
-    const photos = await this.fetchPhotosByUser(userId, false)
-    return photos
+    const query = Photo.query()
+      // .where('user_id', userId)
+      .preload('tags', (q) => q.preload('tag'))
+      .preload('detections')
+      .preload('descriptionChunks')
+      .preload('analyzerProcess')
+      .orderBy('created_at', 'desc')
+
+    return await query
   }
 
   @withCache({
