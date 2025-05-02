@@ -136,6 +136,7 @@ export default class ModelsService {
         name: text.name,
         tag_photo_id: text.tag_photo_id,
         tag_id: text.tag_id,
+        photo_id: text.photo_id,
         chunk_id: text.chunk_id,
         embeddingsProximity: text.proximity,
         logicProximity: data[text.name]?.adjusted_proximity,
