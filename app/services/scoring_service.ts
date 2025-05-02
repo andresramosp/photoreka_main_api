@@ -171,19 +171,6 @@ export default class ScoringService {
       }))
 
     return filteredSortedScores
-
-    // // Cargamos las fotos reales solo al final
-    // const photoModels = await Photo.query().whereIn(
-    //   'id',
-    //   filteredSortedScores.map((s) => s.id)
-    // )
-
-    // const photoMap = new Map(photoModels.map((p) => [p.id, p]))
-
-    // return filteredSortedScores.map((score) => ({
-    //   ...score,
-    //   photo: photoMap.get(score.id),
-    // }))
   }
 
   // TODO: replantear: tiene
@@ -236,7 +223,7 @@ export default class ScoringService {
     const weights = getWeights(searchMode == 'creative')
 
     // Aplicar exclusión directamente a nivel de IDs
-    const filteredPhotoIds = await this.filterExcludedPhotosByTags(photoIds, excluded)
+    const filteredPhotoIds = await this.filterExcludedPhotoIdsByTags(photoIds, excluded)
 
     let aggregatedScores: ScoredPhoto[] = filteredPhotoIds.map((id) => ({
       id,
@@ -272,18 +259,7 @@ export default class ScoringService {
         matchPercent: Math.min(100, (score.totalScore * 100) / potentialMaxScore),
       }))
 
-    // Cargar las fotos reales solo al final
-    const photoModels = await Photo.query().whereIn(
-      'id',
-      sortedScores.map((s) => s.id)
-    )
-
-    const photoMap = new Map(photoModels.map((p) => [p.id, p]))
-
-    return sortedScores.map((score) => ({
-      ...score,
-      photo: photoMap.get(score.id),
-    }))
+    return sortedScores
   }
 
   // TODO: cache

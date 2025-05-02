@@ -64,18 +64,16 @@ export default class PhotoManager {
   }
 
   @withCache({
-    key: (userId) => `getPhotosForSearch_${userId}`,
+    key: (userId) => `getPhotosIdsByUser_${userId}`,
     provider: 'redis',
     ttl: 60 * 30,
   })
-  public async getPhotosForSearch(userId: string) {
-    const photos = await this.fetchPhotosByUser(userId, true)
-    return photos.map((photo) => ({
-      ...photo.$attributes,
-      tags: photo.tags,
-      descriptionChunks: photo.descriptionChunks,
-      descriptions: photo.descriptions,
-    }))
+  public async getPhotosIdsByUser(userId: string): Promise<number[]> {
+    const photos = await Photo.query()
+      // .where('user_id', userId)  // <-- preparado para futuro filtro
+      .select('id')
+
+    return photos.map((p) => p.id)
   }
 
   public async updatePhoto(id: string, updates: Partial<Photo>) {
