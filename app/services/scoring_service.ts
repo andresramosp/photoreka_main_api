@@ -18,10 +18,12 @@ const pluralize = require('pluralize')
 const cache = new NodeCache({ stdTTL: 3600 })
 
 interface ScoredPhoto {
-  photo: Photo
-  tagScore?: number // Puntuación por tags
-  descScore?: number // Puntuación por embeddings
-  totalScore?: number // Puntaje total calculado
+  id: number
+  tagScore?: number
+  descScore?: number
+  totalScore?: number
+  matchingTags?: any[]
+  matchingChunks?: any[]
 }
 
 const MAX_SIMILAR_TAGS = 1250
@@ -74,30 +76,31 @@ export default class ScoringService {
   // @MeasureExecutionTime
   // TODO: userid!!
   @withCache({
-    key: (_, arg2, arg3, arg4) => `getScoredPhotosByTagsAndDesc_ ${arg2.original}_${arg3}`,
+    key: (_, arg2, arg3) => `getScoredPhotosByTagsAndDesc_${arg2.original}_${arg3}`,
     provider: 'redis',
     ttl: 60 * 5,
   })
   public async getScoredPhotosByTagsAndDesc(
-    photos: Photo[],
+    photoIds: number[],
     structuredQuery: any,
     searchMode: SearchMode
   ): Promise<ScoredPhoto[] | undefined> {
     let weights = getWeights(searchMode == 'creative')
-    let aggregatedScores: ScoredPhoto[] = photos.map((photo) => ({
-      photo,
+
+    // Inicializamos solo IDs, no objetos completos
+    let aggregatedScores: ScoredPhoto[] = photoIds.map((id) => ({
+      id,
       tagScore: 0,
       descScore: 0,
       totalScore: 0,
     }))
 
     const strictInference = searchMode == 'logical'
-
     const performFullQuerySearch = structuredQuery.positive_segments.length > 1
 
     const fullQueryPromise: Promise<ScoredPhoto[]> = performFullQuerySearch
       ? this.getScoredPhotoDescBySegment(
-          photos,
+          photoIds,
           { name: structuredQuery.no_prefix, index: -1 },
           weights.semantic.embeddingsFullQueryThreshold,
           strictInference,
@@ -139,14 +142,12 @@ export default class ScoringService {
       return scores
     })()
 
-    // Esperamos ambas promesas en paralelo.
     const [scoresAfterSegments, fullQueryDescScores, nuancesQueryTagsScore] = await Promise.all([
       segmentsPromise,
       fullQueryPromise,
       nuancesQuery,
     ])
 
-    // Mergeamos el score fullQuery en los resultados finales.
     let finalScores = this.mergeTagDescScoredPhotos(scoresAfterSegments, [], fullQueryDescScores, {
       tags: 0,
       desc: weights.semantic.fullQuery,
@@ -161,25 +162,29 @@ export default class ScoringService {
 
     let potentialMaxScore = this.getMaxPotentialScore(structuredQuery, 'semantic', weights)
 
-    return finalScores
+    const filteredSortedScores = finalScores
       .filter((scores) => scores.totalScore > 0)
-      .sort((a, b) => {
-        return b.totalScore - a.totalScore
-      })
+      .sort((a, b) => b.totalScore - a.totalScore)
       .map((score) => ({
         ...score,
         matchPercent: Math.min(100, (score.totalScore * 100) / potentialMaxScore),
       }))
+
+    return filteredSortedScores
   }
 
   // TODO: replantear: tiene
-  private async filterExcludedPhotosByTags(photos: Photo[], excluded: string[]) {
+  private async filterExcludedPhotoIdsByTags(
+    photoIds: number[],
+    excluded: string[]
+  ): Promise<number[]> {
     const proximityThreshold = 1 + 0.6
     const allTags = await this.tagManager.getTagsByUser('1234')
 
     const matchingPromises = excluded.map((tag) =>
-      this.findMatchingTagsForSegment({ name: tag, index: 1 }, allTags, 0.2, true, photos)
+      this.findMatchingTagsForSegment({ name: tag, index: 1 }, allTags, 0.2, true, photoIds)
     )
+
     const matchingResults = await Promise.all(matchingPromises)
     const allExcludedTags = matchingResults.map((mr) => mr.matchingPhotoTags).flat()
     const excludedTagNames = allExcludedTags
@@ -188,10 +193,20 @@ export default class ScoringService {
 
     console.log(`Excluded: ${excludedTagNames}`)
 
-    return photos.filter(
-      (photo) =>
-        !photo.tags?.some((tagPhoto: TagPhoto) => excludedTagNames.includes(tagPhoto.tag.name))
-    )
+    // Ahora consultamos solo los IDs que tengan esos tags
+    const photosWithExcludedTags = await Photo.query()
+      .whereIn('id', photoIds)
+      .whereHas('tags', (query) => {
+        query.whereHas('tag', (tagQuery) => {
+          tagQuery.whereIn('name', excludedTagNames)
+        })
+      })
+      .select('id')
+
+    const excludedPhotoIds = photosWithExcludedTags.map((p) => p.id)
+
+    // Devolvemos solo los IDs que no están excluidos
+    return photoIds.filter((id) => !excludedPhotoIds.includes(id))
   }
 
   // TODO: userid!!
@@ -202,18 +217,20 @@ export default class ScoringService {
     ttl: 120,
   })
   public async getScoredPhotosByTags(
-    photos: Photo[],
+    photoIds: number[],
     included: string[],
     excluded: string[],
     searchMode: SearchMode
   ): Promise<ScoredPhoto[] | undefined> {
-    let weights = getWeights(searchMode == 'creative') // TODO: añadir parametros
+    const weights = getWeights(searchMode == 'creative')
 
-    let filteredPhotos = await this.filterExcludedPhotosByTags(photos, excluded)
+    // Aplicar exclusión directamente a nivel de IDs
+    const filteredPhotoIds = await this.filterExcludedPhotoIdsByTags(photoIds, excluded)
 
-    let aggregatedScores: ScoredPhoto[] = filteredPhotos.map((photo) => ({
-      photo,
+    let aggregatedScores: ScoredPhoto[] = filteredPhotoIds.map((id) => ({
+      id,
       tagScore: 0,
+      descScore: 0,
       totalScore: 1, // Para que devuelva algo si solo hay negativos
     }))
 
@@ -232,59 +249,52 @@ export default class ScoringService {
       return scores
     })()
 
-    // Esperamos ambas promesas en paralelo.
     const [finalScores] = await Promise.all([includedPromise])
 
-    let potentialMaxScore = 10 // //this.getMaxPotentialScore(structuredQuery, searchType, weights)
+    const potentialMaxScore = 10 // O ajusta usando this.getMaxPotentialScore si lo prefieres
 
-    return finalScores
+    const sortedScores = finalScores
       .filter((scores) => scores.totalScore > 0)
-      .sort((a, b) => {
-        return b.totalScore - a.totalScore
-      })
+      .sort((a, b) => b.totalScore - a.totalScore)
       .map((score) => ({
         ...score,
         matchPercent: Math.min(100, (score.totalScore * 100) / potentialMaxScore),
       }))
+
+    return sortedScores
   }
 
   // TODO: cache
   // TODO: Probar solo excluir area contraria
   public async getScoredPhotosByTopoAreas(
-    photos: Photo[],
+    photoIds: number[],
     queryByAreas: { left: string; right: string; middle: string },
     searchMode: SearchMode
   ): Promise<ScoredPhoto[] | undefined> {
-    let weights = getWeights(searchMode == 'creative')
+    const weights = getWeights(searchMode == 'creative')
 
-    let aggregatedScores: ScoredPhoto[] = photos.map((photo) => ({
-      photo,
+    let aggregatedScores: ScoredPhoto[] = photoIds.map((id) => ({
+      id,
       descScore: 0,
       tagScore: 0,
       totalScore: 1,
+      matchingTags: [],
+      matchingChunks: [],
     }))
 
-    // Diccionario de áreas opuestas
     const oppositeAreas: { [key: string]: string } = {
       left: 'right',
       right: 'left',
     }
 
-    // Determinar qué áreas tienen contenido en la consulta
     const filledAreas = Object.entries(queryByAreas)
       .filter(([_, value]) => value?.trim())
-      .map(([area, value]) => ({ area, content: value }))
+      .map(([area, content]) => ({ area, content }))
 
     const includedPromise = (async () => {
       let scores = aggregatedScores
       for (const [index, { area, content }] of filledAreas.entries()) {
-        let areasToSearch: string[] = [area]
-        // if (area === 'middle') {
-        //   areasToSearch = ['middle']
-        // } else {
-        //   // Se usan todas las áreas menos la opuesta
-        //   areasToSearch = Object.keys(queryByAreas).filter((a) => a !== oppositeAreas[area])
-        // }
+        const areasToSearch = [area]
         scores = await this.processSegment(
           { name: content, index },
           scores,
@@ -299,66 +309,82 @@ export default class ScoringService {
     })()
 
     const [finalScores] = await Promise.all([includedPromise])
-    let potentialMaxScore = 10
+    const potentialMaxScore = 10
 
-    return finalScores
+    const sortedScores = finalScores
       .filter((scores) => scores.totalScore > 0)
       .sort((a, b) => b.totalScore - a.totalScore)
       .map((score) => ({
         ...score,
         matchPercent: Math.min(100, (score.totalScore * 100) / potentialMaxScore),
       }))
+
+    const photoModels = await Photo.query().whereIn(
+      'id',
+      sortedScores.map((s) => s.id)
+    )
+
+    const photoMap = new Map(photoModels.map((p) => [p.id, p]))
+
+    return sortedScores.map((score) => ({
+      ...score,
+      photo: photoMap.get(score.id),
+    }))
   }
 
   private mergeTagDescScoredPhotos(
     aggregatedScores: ScoredPhoto[],
-    newScoredTagsPhotos: ScoredPhoto[],
-    newScoredDescsPhotos: ScoredPhoto[],
+    newScoredTagsPhotos: { id: number; tagScore: number; matchingTags?: any[] }[],
+    newScoredDescsPhotos: { id: number; descScore: number; matchingChunks?: any[] }[],
     weights: any
   ): ScoredPhoto[] {
     const map = new Map<number, ScoredPhoto>()
 
     // Inicia con los scores acumulados previos.
     for (const scored of aggregatedScores) {
-      map.set(scored.photo.id, { ...scored })
+      map.set(scored.id, { ...scored })
     }
 
     // Acumula nuevos scores por tags.
     for (const scored of newScoredTagsPhotos) {
-      const id = scored.photo.id
+      const id = scored.id
       if (map.has(id)) {
         const entry = map.get(id)!
-        entry.tagScore += scored.tagScore
-        entry.totalScore += scored.tagScore * weights.tags
-        entry.photo.matchingTags = Array.from(
-          new Set([...entry.photo.matchingTags, ...scored.photo.matchingTags])
+        entry.tagScore = (entry.tagScore || 0) + scored.tagScore
+        entry.totalScore = (entry.totalScore || 0) + scored.tagScore * weights.tags
+        entry.matchingTags = Array.from(
+          new Set([...(entry.matchingTags || []), ...(scored.matchingTags || [])])
         )
       } else {
         map.set(id, {
-          photo: { ...scored.photo },
+          id,
           tagScore: scored.tagScore,
           descScore: 0,
           totalScore: scored.tagScore * weights.tags,
+          matchingTags: scored.matchingTags || [],
+          matchingChunks: [],
         })
       }
     }
 
     // Acumula nuevos scores por descripción.
     for (const scored of newScoredDescsPhotos) {
-      const id = scored.photo.id
+      const id = scored.id
       if (map.has(id)) {
         const entry = map.get(id)!
-        entry.descScore += scored.descScore
-        entry.totalScore += scored.descScore * weights.desc
-        entry.photo.matchingChunks = Array.from(
-          new Set([...entry.photo.matchingChunks, ...scored.photo.matchingChunks])
+        entry.descScore = (entry.descScore || 0) + scored.descScore
+        entry.totalScore = (entry.totalScore || 0) + scored.descScore * weights.desc
+        entry.matchingChunks = Array.from(
+          new Set([...(entry.matchingChunks || []), ...(scored.matchingChunks || [])])
         )
       } else {
         map.set(id, {
-          photo: { ...scored.photo },
+          id,
           tagScore: 0,
           descScore: scored.descScore,
           totalScore: scored.descScore * weights.desc,
+          matchingTags: [],
+          matchingChunks: scored.matchingChunks || [],
         })
       }
     }
@@ -375,11 +401,12 @@ export default class ScoringService {
     descCategories: string[],
     areas: string[]
   ): Promise<ScoredPhoto[]> {
-    const photosToReview = aggregatedScores.map((s) => s.photo)
+    const photoIds = aggregatedScores.map((s) => s.id)
+
     const tagPromise =
       weights.tags > 0
         ? this.getScoredPhotoTagsBySegment(
-            photosToReview,
+            photoIds,
             segment,
             weights.embeddingsTagsThreshold,
             strictInference,
@@ -387,10 +414,11 @@ export default class ScoringService {
             areas
           )
         : Promise.resolve([])
+
     const descPromise =
       weights.desc > 0
         ? this.getScoredPhotoDescBySegment(
-            photosToReview,
+            photoIds,
             segment,
             weights.embeddingsDescsThreshold,
             strictInference,
@@ -402,9 +430,10 @@ export default class ScoringService {
 
     const [newTagScores, newDescScores] = await Promise.all([tagPromise, descPromise])
 
-    const matchingSegmentPhotoIds = Array.from(
-      new Set([...newTagScores.map((t) => t.photo.id), ...newDescScores.map((t) => t.photo.id)])
-    )
+    const matchingSegmentPhotoIds = new Set([
+      ...newTagScores.map((t) => t.id),
+      ...newDescScores.map((d) => d.id),
+    ])
 
     let updatedScores = this.mergeTagDescScoredPhotos(
       aggregatedScores,
@@ -413,20 +442,19 @@ export default class ScoringService {
       weights
     )
 
-    return updatedScores.filter((score) => matchingSegmentPhotoIds.includes(score.photo.id))
+    return updatedScores.filter((score) => matchingSegmentPhotoIds.has(score.id))
   }
 
   // TODO: hay que penalizar un poco matcheos negativos
   private async getScoredPhotoDescBySegment(
-    photos: Photo[],
+    photoIds: number[],
     segment: { name: string; index: number },
     embeddingsProximityThreshold: number = 0.2,
     strictInference: boolean,
     isFullQuery: boolean = false,
     categories: string[],
     areas: string[]
-  ): Promise<{ photo: Photo; descScore: number }[]> {
-    // Solo lematizamos para casos sencillos, tipo tags
+  ): Promise<{ id: number; descScore: number; matchingChunks: any[] }[]> {
     const numberOfWords = segment.name.split(' ').length
     const term = numberOfWords < 2 ? pluralize.singular(segment.name.toLowerCase()) : segment.name
 
@@ -435,7 +463,7 @@ export default class ScoringService {
       embeddingsProximityThreshold,
       MAX_SIMILAR_CHUNKS,
       'cosine_similarity',
-      photos.map((photo) => photo.id),
+      photoIds,
       categories,
       areas
     )
@@ -443,113 +471,92 @@ export default class ScoringService {
     let adjustedChunks = await this.adjustProximities(
       segment.name,
       matchingChunks.map((mc) => ({
-        name: mc.chunk.replace(/\.$/, ''), // quitamos el punto y final si lo tiene
+        name: mc.chunk.replace(/\.$/, ''),
         proximity: mc.proximity,
         chunk_id: mc.id,
+        photo_id: mc.photo_id, // asegurarte que viene incluido desde embeddingsService
       })),
       'desc',
       strictInference
     )
 
-    // Crear un mapa de chunk id a proximidad ajustada
-    const chunkMap = new Map<string | number, number>(
-      adjustedChunks.map((chunk) => [chunk.chunk_id, chunk.proximity])
-    )
-
-    // Filtrar las fotos que tienen al menos un chunk relevante
-    const relevantPhotos = photos.filter((photo) =>
-      photo.descriptionChunks?.some((chunk) => chunkMap.has(chunk.id))
-    )
-
-    console.log(`[DESC] Relevant photos for ${segment.name}: ${relevantPhotos.length}`)
-
-    // Calcular el score para cada foto basado en los chunks coincidentes
-    let scoredPhotos = relevantPhotos.map((photo) => {
-      if (photo.id == '333') {
-        console.log()
+    const photoChunkMap = new Map<number, any[]>()
+    for (const chunk of adjustedChunks) {
+      if (!photoChunkMap.has(chunk.photo_id)) {
+        photoChunkMap.set(chunk.photo_id, [])
       }
-      photo.matchingChunks = photo.matchingChunks || []
-      const matchingPhotoChunks =
-        photo.descriptionChunks?.filter((chunk) => chunkMap.has(chunk.id)) || []
-      photo.matchingChunks = [
-        ...photo.matchingChunks,
-        ...matchingPhotoChunks
-          .filter((item) => chunkMap.get(item.id) > 0)
-          .map((item) => ({
-            chunk: item.chunk,
-            proximity: chunkMap.get(item.id),
-            isFullQuery,
-          })),
-      ]
+      if (chunk.proximity > 0) {
+        photoChunkMap.get(chunk.photo_id).push({
+          chunk: chunk.name,
+          proximity: chunk.proximity,
+          isFullQuery,
+        })
+      }
+    }
 
-      const proximities = matchingPhotoChunks.map((chunk) => chunkMap.get(chunk.id)!)
-      let descScore = this.calculateProximitiesScores(proximities)
-
-      return { photo, descScore }
+    const scoredPhotos = Array.from(photoChunkMap.entries()).map(([photoId, matchingChunks]) => {
+      const proximities = matchingChunks.map((c) => c.proximity)
+      const descScore = this.calculateProximitiesScores(proximities)
+      return {
+        id: photoId,
+        descScore,
+        matchingChunks,
+      }
     })
 
-    // Ordenar de mayor a menor y filtrar según la configuración
-    scoredPhotos = scoredPhotos
+    return scoredPhotos
       .filter((score) => score.descScore > 0)
       .sort((a, b) => b.descScore - a.descScore)
-    return scoredPhotos
   }
 
   private async getScoredPhotoTagsBySegment(
-    photos: Photo[],
+    photoIds: number[],
     segment: { name: string; index: number },
     embeddingsProximityThreshold: number = 0.15,
     strictInference: boolean,
-    categories?: string[], // parámetro opcional para filtrar por categoría
+    categories?: string[],
     areas: string[]
-  ): Promise<{ photo: Photo; tagScore: number }[]> {
+  ): Promise<{ id: number; tagScore: number; matchingTags: any[] }[]> {
     let userTags = await this.tagManager.getTagsByUser('1234')
     userTags = userTags.filter((tag: Tag) => !areas || areas.includes(tag.area))
 
-    // Obtenemos los matching tags directamente del segmento
     const { matchingPhotoTags } = await this.findMatchingTagsForSegment(
       segment,
       userTags,
       embeddingsProximityThreshold,
       strictInference,
-      photos,
+      photoIds,
       categories,
       areas
     )
-    const tagMap = new Map<number, {}>()
-    matchingPhotoTags.forEach((pt: any) => {
-      tagMap.set(pt.tag_photo_id, { proximity: pt.proximity, name: pt.name })
-    })
 
-    // Calcular el score para cada foto basándonos en los tags coincidentes,
-    // aplicando un filtro extra para que el tag coincida con la categoría indicada
-    let scoredPhotos = photos.map((photo) => {
-      photo.matchingTags = photo.matchingTags || []
-      const matchingPhotoTags =
-        photo.tags?.filter((tagPhoto: TagPhoto) => {
-          return tagMap.has(tagPhoto.id) && (!categories || categories.includes(tagPhoto.category))
-        }) || []
-      photo.matchingTags = [
-        ...photo.matchingTags,
-        ...matchingPhotoTags.map((tagPhoto: TagPhoto) => ({
-          name: tagPhoto.tag.name,
-          ...tagMap.get(tagPhoto.id),
-        })),
-      ]
-      let tagScore = 0
-      if (matchingPhotoTags.length > 0) {
-        const proximities = matchingPhotoTags.map(
-          (tagPhoto: TagPhoto) => tagMap.get(tagPhoto.id).proximity!
-        )
-        tagScore = this.calculateProximitiesScores(proximities)
+    const photoTagMap = new Map<number, any[]>()
+
+    for (const pt of matchingPhotoTags) {
+      if (!categories || categories.includes(pt.category)) {
+        if (!photoTagMap.has(pt.photo_id)) {
+          photoTagMap.set(pt.photo_id, [])
+        }
+        photoTagMap.get(pt.photo_id).push({
+          name: pt.name,
+          proximity: pt.proximity,
+        })
       }
-      return { photo, tagScore }
+    }
+
+    const scoredPhotos = Array.from(photoTagMap.entries()).map(([photoId, matchingTags]) => {
+      const proximities = matchingTags.map((t) => t.proximity)
+      const tagScore = this.calculateProximitiesScores(proximities)
+      return {
+        id: photoId,
+        tagScore,
+        matchingTags,
+      }
     })
 
-    scoredPhotos = scoredPhotos
+    return scoredPhotos
       .filter((score) => score.tagScore > 0)
       .sort((a, b) => b.tagScore - a.tagScore)
-    return scoredPhotos
   }
 
   public async findMatchingTagsForSegment(
@@ -557,7 +564,7 @@ export default class ScoringService {
     userTags,
     embeddingsProximityThreshold: number,
     strictInference: boolean,
-    photos: Photo[],
+    photoIds: number[],
     categories: string[],
     areas: string[]
   ) {
@@ -565,15 +572,15 @@ export default class ScoringService {
 
     // TODO: rehacer para que funcione con tag_photo y solo si no hay areas!!
     let { lematizedTerm, stringMatches, remainingTags } = this.getStringMatches(segment, userTags)
-    stringMatches = []
+    stringMatches = [] // seguimos desactivando como antes
 
     // 2) Comparación y ajuste semántico/lógico
     const semanticMatches = await this.getSemanticMatches(
       lematizedTerm,
       segment.name,
-      userTags, //remainingTags,
+      userTags,
       embeddingsProximityThreshold,
-      photos,
+      photoIds,
       categories,
       areas,
       strictInference
@@ -624,7 +631,7 @@ export default class ScoringService {
     originalSegmentName: string,
     userTags,
     embeddingsProximityThreshold: number,
-    photos: Photo[],
+    photoIds: number[],
     categories: string[],
     areas: string[],
     strictInference: boolean
@@ -640,7 +647,7 @@ export default class ScoringService {
       userTags.map((t) => t.id),
       categories,
       areas,
-      photos.map((p) => p.id)
+      photoIds
     )
 
     // Ajustar proximidades según inferencia lógica

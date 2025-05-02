@@ -39,43 +39,34 @@ export default class PhotoManager {
     return photos
   }
 
-  private async fetchPhotosByUser(userId: string, eager: boolean): Promise<Photo[]> {
-    const query = Photo.query()
-      // .where('user_id', userId)
-      .preload('tags', (q) => q.preload('tag'))
-      .preload('detections')
-      .orderBy('created_at', 'desc')
-
-    if (eager) {
-      query.preload('descriptionChunks').preload('analyzerProcess')
-    }
-
-    return await query
-  }
-
   @withCache({
     key: (userId) => `getPhotos_${userId}`,
     provider: 'redis',
     ttl: 60 * 30,
   })
   public async getPhotos(userId: string) {
-    const photos = await this.fetchPhotosByUser(userId, false)
-    return photos
+    const query = Photo.query()
+      // .where('user_id', userId)
+      .preload('tags', (q) => q.preload('tag'))
+      .preload('detections')
+      .preload('descriptionChunks')
+      .preload('analyzerProcess')
+      .orderBy('created_at', 'desc')
+
+    return await query
   }
 
   @withCache({
-    key: (userId) => `getPhotosForSearch_${userId}`,
+    key: (userId) => `getPhotosIdsByUser_${userId}`,
     provider: 'redis',
     ttl: 60 * 30,
   })
-  public async getPhotosForSearch(userId: string) {
-    const photos = await this.fetchPhotosByUser(userId, true)
-    return photos.map((photo) => ({
-      ...photo.$attributes,
-      tags: photo.tags,
-      descriptionChunks: photo.descriptionChunks,
-      descriptions: photo.descriptions,
-    }))
+  public async getPhotosIdsByUser(userId: string): Promise<number[]> {
+    const photos = await Photo.query()
+      // .where('user_id', userId)  // <-- preparado para futuro filtro
+      .select('id')
+
+    return photos.map((p) => p.id)
   }
 
   public async updatePhoto(id: string, updates: Partial<Photo>) {

@@ -339,6 +339,7 @@ export default class EmbeddingsService {
         tags.id AS tag_id, 
         tags.name, 
         tags."group", 
+        tags_photos.photo_id,
         tags_photos.category, 
         tags_photos.area, 
         tags.created_at, 

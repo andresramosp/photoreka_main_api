@@ -73,7 +73,8 @@ export default class SearchTextService {
     }
   ) {
     let { searchMode, withInsights, pageSize, iteration } = options
-    const photos = await this.photoManager.getPhotosForSearch('1234', true)
+
+    const photoIds = await this.photoManager.getPhotosIdsByUser('1234')
 
     const { structuredResult, sourceResult, useImage, expansionCost } =
       await this.queryService.structureQuery(query)
@@ -83,13 +84,13 @@ export default class SearchTextService {
     let attempts = 0
 
     let embeddingScoredPhotos = await this.scoringService.getScoredPhotosByTagsAndDesc(
-      photos,
+      photoIds,
       structuredResult,
       searchMode
     )
 
     do {
-      const { paginatedPhotos, hasMore } = this.getPaginatedPhotosByPage(
+      const { paginatedPhotos, hasMore } = await this.getPaginatedPhotosByPage(
         embeddingScoredPhotos,
         pageSize,
         iteration
@@ -100,7 +101,7 @@ export default class SearchTextService {
         data: {
           hasMore,
           results: {
-            [iteration]: paginatedPhotos,
+            [iteration]: paginatedPhotos, // ya viene con { ...photo, matchPercent }
           },
           cost: { expansionCost },
           iteration: iteration,
@@ -132,14 +133,19 @@ export default class SearchTextService {
         modelCosts.push(modelCost)
 
         return batch
-          .map((item, idx) => {
+          .map((scoredPhoto, idx) => {
             const result = modelResult[idx]
             const reasoning = result?.reasoning || ''
             const isInsight = result?.isInsight === true || result?.isInsight === 'true'
 
             return reasoning
-              ? { photo: item.photo, score: item.tagScore, isInsight, reasoning }
-              : { photo: item.photo, score: item.tagScore, isInsight }
+              ? {
+                  ...scoredPhoto,
+                  score: scoredPhoto.tagScore || scoredPhoto.score,
+                  isInsight,
+                  reasoning,
+                }
+              : { ...scoredPhoto, score: scoredPhoto.tagScore || scoredPhoto.score, isInsight }
           })
           .filter((_, idx) => modelResult[idx]?.reasoning)
       })
@@ -176,16 +182,17 @@ export default class SearchTextService {
   //   @withCostWS
   public async *searchByTags(options: SearchTagsOptions) {
     const { included, excluded, iteration, pageSize, searchMode } = options
-    const photos = await this.photoManager.getPhotosForSearch('1234', true)
+
+    const photoIds = await this.photoManager.getPhotosIdsByUser('1234')
 
     let embeddingScoredPhotos = await this.scoringService.getScoredPhotosByTags(
-      photos,
+      photoIds,
       included,
       excluded,
       searchMode
     )
 
-    const { paginatedPhotos, hasMore } = this.getPaginatedPhotosByPage(
+    const { paginatedPhotos, hasMore } = await this.getPaginatedPhotosByPage(
       embeddingScoredPhotos,
       pageSize,
       iteration
@@ -205,10 +212,10 @@ export default class SearchTextService {
 
   public async *searchTopological(query: any, options: SearchTopologicalOptions) {
     const { pageSize, iteration, searchMode } = options
-    const photos = await this.photoManager.getPhotosForSearch('1234', true)
+    const photoIds = await this.photoManager.getPhotosIdsByUser('1234')
 
     let embeddingScoredPhotos = await this.scoringService.getScoredPhotosByTopoAreas(
-      photos,
+      photoIds,
       {
         left: options.left,
         right: options.right,
@@ -217,7 +224,7 @@ export default class SearchTextService {
       searchMode
     )
 
-    const { paginatedPhotos, hasMore } = this.getPaginatedPhotosByPage(
+    const { paginatedPhotos, hasMore } = await this.getPaginatedPhotosByPage(
       embeddingScoredPhotos,
       pageSize,
       iteration
@@ -353,10 +360,33 @@ export default class SearchTextService {
 
   // AUXILIARES //
 
-  private getPaginatedPhotosByPage(embeddingScoredPhotos, pageSize, currentIteration) {
+  private async getPaginatedPhotosByPage(embeddingScoredPhotos, pageSize, currentIteration) {
     const offset = (currentIteration - 1) * pageSize
-    const paginatedPhotos = embeddingScoredPhotos.slice(offset, offset + pageSize)
+    const pageSlice = embeddingScoredPhotos.slice(offset, offset + pageSize)
     const hasMore = offset + pageSize < embeddingScoredPhotos.length
+
+    const pagePhotoModels = await Photo.query()
+      .whereIn(
+        'id',
+        pageSlice.map((p) => p.id)
+      )
+      .preload('tags', (q) => q.preload('tag'))
+    const photoMap = new Map(pagePhotoModels.map((p) => [p.id, p]))
+
+    const paginatedPhotos = pageSlice.map((scoredPhoto) => {
+      const photo = photoMap.get(scoredPhoto.id)
+      return {
+        photo: {
+          id: photo.id,
+          thumbnailName: photo.thumbnailName,
+          name: photo.name,
+          descriptions: photo?.descriptions,
+          tags: photo?.tags,
+          ...scoredPhoto,
+        },
+      }
+    })
+
     return { hasMore, paginatedPhotos }
   }
 
