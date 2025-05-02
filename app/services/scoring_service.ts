@@ -553,11 +553,12 @@ export default class ScoringService {
     )
 
     const photoTagMap = new Map<number, any[]>()
+
     for (const pt of matchingPhotoTags) {
-      if (!photoTagMap.has(pt.photo_id)) {
-        photoTagMap.set(pt.photo_id, [])
-      }
       if (!categories || categories.includes(pt.category)) {
+        if (!photoTagMap.has(pt.photo_id)) {
+          photoTagMap.set(pt.photo_id, [])
+        }
         photoTagMap.get(pt.photo_id).push({
           name: pt.name,
           proximity: pt.proximity,
@@ -571,7 +572,7 @@ export default class ScoringService {
       return {
         id: photoId,
         tagScore,
-        matchingTags, // ⬅ aquí conservamos la lista para el front
+        matchingTags,
       }
     })
 

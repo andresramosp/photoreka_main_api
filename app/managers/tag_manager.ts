@@ -1,6 +1,7 @@
 import Tag, { TagGroups } from '#models/tag'
 import EmbeddingsService from '#services/embeddings_service'
 import MeasureExecutionTime from '../decorators/measureExecutionTime.js'
+import { withCache } from '../decorators/withCache.js'
 import Logger from '../utils/logger.js'
 
 const logger = Logger.getInstance('AnalyzerService')
@@ -28,6 +29,11 @@ export default class TagManager {
   }
 
   // Obtiene todos los Tags
+  @withCache({
+    key: (userId) => `getTagsByUser_${userId}`,
+    provider: 'redis',
+    ttl: 60 * 30,
+  })
   public async getTagsByUser(userId: string): Promise<Tag[]> {
     const tags = await Tag.all()
     return tags
