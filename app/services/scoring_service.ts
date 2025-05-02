@@ -518,7 +518,6 @@ export default class ScoringService {
     areas: string[]
   ): Promise<{ id: number; tagScore: number; matchingTags: any[] }[]> {
     let userTags = await this.tagManager.getTagsByUser('1234')
-    userTags = userTags.filter((tag: Tag) => !areas || areas.includes(tag.area))
 
     const { matchingPhotoTags } = await this.findMatchingTagsForSegment(
       segment,
