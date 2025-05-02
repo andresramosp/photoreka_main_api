@@ -382,6 +382,8 @@ export default class SearchTextService {
           name: photo.name,
           descriptions: photo?.descriptions,
           tags: photo?.tags,
+          originalUrl: photo?.originalUrl,
+          thumbnailUrl: photo?.thumbnailUrl,
           ...scoredPhoto,
         },
       }
