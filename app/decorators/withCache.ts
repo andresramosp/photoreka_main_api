@@ -4,12 +4,12 @@ import redis from '@adonisjs/redis/services/main'
 const nodeCache = new NodeCache()
 
 interface CacheOptions {
-  key: ((...args: any[]) => string) | string
+  key?: ((...args: any[]) => string) | string
   provider?: 'nodecache' | 'redis'
   ttl?: number // en segundos
 }
 
-export function withCache(options: CacheOptions) {
+export function withCache(options: CacheOptions = {}) {
   const provider = options.provider || 'nodecache'
   const ttl = options.ttl || 60
 
@@ -17,7 +17,16 @@ export function withCache(options: CacheOptions) {
     const originalMethod = descriptor.value
 
     descriptor.value = async function (...args: any[]) {
-      const cacheKey = typeof options.key === 'function' ? options.key(...args) : options.key
+      let cacheKey: string
+
+      if (options.key) {
+        cacheKey = typeof options.key === 'function' ? options.key(...args) : options.key
+      } else {
+        const serializedArgs = JSON.stringify(args)
+        // const ctx = HttpContext.get()
+        // const userId = ctx?.auth?.user?.id
+        cacheKey = `${propertyKey}_${serializedArgs}`
+      }
 
       if (provider === 'nodecache') {
         const cached = nodeCache.get(cacheKey)

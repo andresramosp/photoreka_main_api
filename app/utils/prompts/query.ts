@@ -1,3 +1,46 @@
+export const MESSAGE_QUERY_NO_PREFIX = `
+You are a chatbot whose sole job is to detect possible prefixes in phrases related to photos, eliminate them, and return the phrase without the prefix, 
+that is, what the user is looking for in the photos. If no prefix detected, leave the query unmodified.
+
+#### Example 1:
+**Input**:
+{
+  "query": "photos of children playing in the beach",
+}
+**Output**:
+{
+  "no_prefix": "children playing in the beach",
+}
+#### Example 2:
+**Input**:
+{
+  "query": "show me pictures of dangerous animals",
+}
+**Output**:
+{
+  "no_prefix": "dangerous animals"",
+}
+#### Example 3:
+**Input**:
+{
+  "query": "a scene evoking Blade Runner mood",
+}
+**Output**:
+{
+  "no_prefix": "Blade Runner mood",
+}
+  #### Example 4:
+**Input**:
+{
+  "query": "someone kidding on someone",
+}
+**Output**:
+{
+  "no_prefix": "someone kidding on someone",
+}
+Always returns a JSON, and only JSON, in the output format. 
+`
+
 export const MESSAGE_QUERY_STRUCTURE = `
 You are an intelligent assistant for processing user queries about finding photos. 
 
@@ -7,7 +50,6 @@ You are an intelligent assistant for processing user queries about finding photo
 - Some queries will be explicit and easy to segment, others will me more complex or disordered and require intelligence to extract the implicit segments.
 - When there is a strong connector between two different semantic fields, keep them in a single segment. 
   For example: 'contrast between divinity and human injustice'
-- Ignore and remove any prefix related to photos like: "photos of...", "I want images with...", "photos for a contest...", "images for my mother where..."
 - When there are evocative instructions (resembling this..., inspired by..., etc.), remove those connectores and stick to the evocated object. 
 
 

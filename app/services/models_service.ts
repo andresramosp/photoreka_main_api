@@ -52,7 +52,7 @@ export default class ModelsService {
     this.remoteBaseUrlEmbeddings = process.env.REMOTE_API_BASE_URL_EMBEDDINGS
     this.localBaseUrl = process.env.LOCAL_API_BASE_URL
     this.runpodApiKey = process.env.RUNPOD_API_KEY
-    this.pingCooldownSeconds = 60
+    this.pingCooldownSeconds = 300
   }
 
   static lastPingTimestamps: Record<string, number> = {}
@@ -148,11 +148,10 @@ export default class ModelsService {
     }
   }
 
-  // @withCache({
-  //   key: (arg1) => `getEmbeddings_${JSON.stringify(arg1)}`,
-  //   provider: 'redis',
-  //   ttl: 50 * 5,
-  // })
+  @withCache({
+    provider: 'redis',
+    ttl: 50 * 5,
+  })
   // @MeasureExecutionTime
   async getEmbeddings(tags) {
     try {

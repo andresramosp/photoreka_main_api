@@ -101,7 +101,7 @@ export default class SearchTextService {
         data: {
           hasMore,
           results: {
-            [iteration]: paginatedPhotos, // ya viene con { ...photo, matchPercent }
+            [iteration]: paginatedPhotos,
           },
           cost: { expansionCost },
           iteration: iteration,

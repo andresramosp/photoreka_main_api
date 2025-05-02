@@ -445,7 +445,10 @@ export default class ScoringService {
     return updatedScores.filter((score) => matchingSegmentPhotoIds.has(score.id))
   }
 
-  // TODO: hay que penalizar un poco matcheos negativos
+  @withCache({
+    provider: 'redis',
+    ttl: 60 * 30,
+  })
   private async getScoredPhotoDescBySegment(
     photoIds: number[],
     segment: { name: string; index: number },
@@ -509,6 +512,10 @@ export default class ScoringService {
       .sort((a, b) => b.descScore - a.descScore)
   }
 
+  @withCache({
+    provider: 'redis',
+    ttl: 60 * 30,
+  })
   private async getScoredPhotoTagsBySegment(
     photoIds: number[],
     segment: { name: string; index: number },
@@ -586,12 +593,10 @@ export default class ScoringService {
     )
 
     // Combinar y filtrar duplicados
-    const allMatches = [...stringMatches, ...semanticMatches]
-    const uniqueMatches = allMatches.filter(
-      (match, index, self) => index === self.findIndex((t) => t.name === match.name)
-    )
+    // const allMatches = [...stringMatches, ...semanticMatches]
+    const allMatches = [...semanticMatches]
 
-    return { matchingPhotoTags: uniqueMatches, lematizedTerm }
+    return { matchingPhotoTags: allMatches, lematizedTerm }
   }
 
   private getStringMatches(segment: { name: string; index: number }, userTags) {

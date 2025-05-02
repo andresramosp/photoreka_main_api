@@ -1,8 +1,9 @@
 // @ts-nocheck
 
+import MeasureExecutionTime from '../decorators/measureExecutionTime.js'
 import { withCache } from '../decorators/withCache.js'
 import withCost from '../decorators/withCost.js'
-import { MESSAGE_QUERY_STRUCTURE } from '../utils/prompts/query.js'
+import { MESSAGE_QUERY_NO_PREFIX, MESSAGE_QUERY_STRUCTURE } from '../utils/prompts/query.js'
 import AnalyzerService from './analyzer_service.js'
 import EmbeddingsService from './embeddings_service.js'
 import ModelsService from './models_service.js'
@@ -20,7 +21,7 @@ export default class QueryService {
 
   public async structureQuery(query) {
     const numberOfWords = query.split(' ').length
-    if (numberOfWords > 3) {
+    if (numberOfWords > 0) {
       return this.structureQueryLLM(query)
     } else {
       return this.structureQueryNLP(query)
@@ -30,7 +31,6 @@ export default class QueryService {
   // withCost()
   // TODO: userid!!
   @withCache({
-    key: (arg1) => `structureQuery_${arg1}`,
     provider: 'redis',
     ttl: 60 * 10,
   })
@@ -50,22 +50,28 @@ export default class QueryService {
     }
   }
 
-  withCost()
+  @MeasureExecutionTime
   public async structureQueryLLM(query) {
     let expansionCost = 0
     let sourceResult = { requireSource: 'description' }
 
-    const noPrefixResult = await this.modelsService.getNoPrefixQuery(query)
+    // const noPrefixResult = await this.modelsService.getNoPrefixQuery(query)
 
-    const { result: modelResult, cost: modelCost } = await this.modelsService.getGPTResponse(
+    const { result: modelOneResult, cost: modelOneCost } = await this.modelsService.getGPTResponse(
+      MESSAGE_QUERY_NO_PREFIX,
+      JSON.stringify({ query }),
+      'gpt-4o-mini'
+    )
+
+    const { result: modelResult, cost: modelTwoCost } = await this.modelsService.getGPTResponse(
       MESSAGE_QUERY_STRUCTURE,
-      JSON.stringify({ noPrefixResult }),
+      JSON.stringify({ query: modelOneResult.no_prefix }),
       'gpt-4o-mini'
     )
 
     modelResult.original = query
     modelResult.positive_segments = [...new Set([...modelResult.positive_segments])]
-    modelResult.no_prefix = noPrefixResult
+    modelResult.no_prefix = modelOneResult.no_prefix
 
     // modelResult.positive_segments = [
     //   ...new Set([...modelResult.positive_segments, ...modelResult.named_entities]),
@@ -75,13 +81,14 @@ export default class QueryService {
     // ]
 
     console.log(
-      `[processQuery]: Result for ${query} -> ${JSON.stringify(modelResult.positive_segments)} | ${JSON.stringify(modelResult.nuances_segments)}`
+      `[processQuery]: Result for ${query} -> ${JSON.stringify(modelResult.positive_segments)}`
     )
 
     return {
       sourceResult,
       structuredResult: modelResult,
-      expansionCost: modelCost,
+      noPrefixCost: modelOneCost,
+      expansionCost: modelTwoCost,
     }
   }
 }
