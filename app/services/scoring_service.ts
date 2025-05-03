@@ -94,7 +94,6 @@ export default class ScoringService {
       totalScore: 0,
     }))
 
-    const strictInference = searchMode == 'logical'
     const performFullQuerySearch = structuredQuery.positive_segments.length > 1
 
     const fullQueryPromise: Promise<ScoredPhoto[]> = performFullQuerySearch
@@ -102,7 +101,7 @@ export default class ScoringService {
           photoIds,
           { name: structuredQuery.no_prefix, index: -1 },
           weights.semantic.embeddingsFullQueryThreshold,
-          strictInference,
+          searchMode,
           true,
           ['context', 'story', 'visual_accents']
         )
@@ -118,7 +117,7 @@ export default class ScoringService {
               { name: nuance_segment, index },
               aggregatedScores,
               weights.nuancesTags,
-              strictInference,
+              searchMode,
               ['context_story', 'visual_accents'],
               ['context', 'story', 'visual_accents']
             )
@@ -133,7 +132,7 @@ export default class ScoringService {
           { name: segment, index },
           scores,
           weights.semantic,
-          strictInference,
+          searchMode,
           ['context_story', 'visual_accents'],
           ['context', 'story']
         )
@@ -240,7 +239,7 @@ export default class ScoringService {
           { name: segment, index },
           scores,
           weights.tags,
-          searchMode == 'logical',
+          searchMode,
           ['context_story', 'visual_accents'],
           ['context', 'story']
         )
@@ -298,7 +297,7 @@ export default class ScoringService {
           { name: content, index },
           scores,
           weights.topological,
-          searchMode == 'logical',
+          searchMode,
           ['context_story', 'visual_accents'],
           [],
           areasToSearch
@@ -395,7 +394,7 @@ export default class ScoringService {
     segment: { name: string; index: number },
     aggregatedScores: ScoredPhoto[],
     weights: { tags: number; desc: number; fullQuery: number },
-    strictInference: boolean,
+    searchMode: SearchMode,
     tagsCategories: string[],
     descCategories: string[],
     areas: string[]
@@ -408,7 +407,7 @@ export default class ScoringService {
             photoIds,
             segment,
             weights.embeddingsTagsThreshold,
-            strictInference,
+            searchMode,
             tagsCategories,
             areas
           )
@@ -420,7 +419,7 @@ export default class ScoringService {
             photoIds,
             segment,
             weights.embeddingsDescsThreshold,
-            strictInference,
+            searchMode,
             false,
             descCategories,
             areas
@@ -452,7 +451,7 @@ export default class ScoringService {
     photoIds: number[],
     segment: { name: string; index: number },
     embeddingsProximityThreshold: number = 0.2,
-    strictInference: boolean,
+    searchMode: SearchMode,
     isFullQuery: boolean = false,
     categories: string[],
     areas: string[]
@@ -479,7 +478,7 @@ export default class ScoringService {
         photo_id: mc.photo_id, // asegurarte que viene incluido desde embeddingsService
       })),
       'desc',
-      strictInference
+      searchMode
     )
 
     const photoChunkMap = new Map<number, any[]>()
@@ -519,7 +518,7 @@ export default class ScoringService {
     photoIds: number[],
     segment: { name: string; index: number },
     embeddingsProximityThreshold: number = 0.15,
-    strictInference: boolean,
+    searchMode: SearchMode,
     categories?: string[],
     areas: string[]
   ): Promise<{ id: number; tagScore: number; matchingTags: any[] }[]> {
@@ -529,7 +528,7 @@ export default class ScoringService {
       segment,
       userTags,
       embeddingsProximityThreshold,
-      strictInference,
+      searchMode,
       photoIds,
       categories,
       areas
@@ -568,7 +567,7 @@ export default class ScoringService {
     segment: { name: string; index: number },
     userTags,
     embeddingsProximityThreshold: number,
-    strictInference: boolean,
+    searchMode: SearchMode,
     photoIds: number[],
     categories: string[],
     areas: string[]
@@ -588,7 +587,7 @@ export default class ScoringService {
       photoIds,
       categories,
       areas,
-      strictInference
+      searchMode
     )
 
     // Combinar y filtrar duplicados
@@ -637,7 +636,7 @@ export default class ScoringService {
     photoIds: number[],
     categories: string[],
     areas: string[],
-    strictInference: boolean
+    searchMode: SearchMode
   ) {
     const { embeddings } = await this.modelsService.getEmbeddings([lematizedTerm])
 
@@ -658,7 +657,7 @@ export default class ScoringService {
       originalSegmentName,
       similarTags,
       'tag',
-      strictInference
+      searchMode
     )
 
     return adjustedSimilarTags
@@ -678,38 +677,31 @@ export default class ScoringService {
     })
   }
 
-  public async adjustProximities(
-    term,
-    tags,
-    termsType = 'tag',
-    strictInference,
-    lowPrecision = false
-  ) {
+  public async adjustProximities(term, tags, termsType = 'tag', searchMode: SearchMode) {
     let result
 
-    if (lowPrecision) {
-      result = tags.map((tag) => ({
-        ...tag,
-        proximity: tag.embeddingsProximity,
-      }))
-      return result.filter((element) => element.proximity > 0)
+    // Low precision
+    if (searchMode == 'low_precision') {
+      console.log('low-precision')
+      return tags.filter((tag) => tag.proximity > 0)
     }
 
     const adjustedProximitiesByContext =
-      await this.modelsService.adjustProximitiesByContextInference(
-        term,
-        tags,
-        termsType,
-        strictInference
-      )
+      await this.modelsService.adjustProximitiesByContextInference(term, tags, termsType)
 
-    if (strictInference) {
+    // Logical
+    if (searchMode == 'logical') {
+      console.log('logical')
+
       result = adjustedProximitiesByContext.map((ap) => ({
         ...ap,
         proximity: ap.logicProximity,
       }))
       return result.filter((element) => element.proximity > 1)
+      // Creative
     } else {
+      console.log('creative')
+
       result = adjustedProximitiesByContext.map((ap) => {
         const logicBonus = Math.max(ap.logicProximity, 0)
         const scaledBonus = Math.log1p(logicBonus)
