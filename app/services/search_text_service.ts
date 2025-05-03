@@ -23,8 +23,9 @@ import Tag from '#models/tag'
 import { getUploadPath } from '../utils/dataPath.js'
 import PhotoImage from '#models/analyzer/photoImage'
 import PhotoImageService from './photo_image_service.js'
+import MeasureExecutionTime from '../decorators/measureExecutionTime.js'
 
-export type SearchMode = 'logical' | 'creative'
+export type SearchMode = 'logical' | 'creative' | 'low_precision'
 export type SearchType = 'semantic' | 'tags' | 'topological'
 
 export type SearchOptions = {
@@ -62,7 +63,6 @@ export default class SearchTextService {
 
   sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-  @withCostWS
   public async *searchSemantic(
     query: string,
     options: SearchOptions = {
@@ -359,7 +359,6 @@ export default class SearchTextService {
   }
 
   // AUXILIARES //
-
   private async getPaginatedPhotosByPage(embeddingScoredPhotos, pageSize, currentIteration) {
     const offset = (currentIteration - 1) * pageSize
     const pageSlice = embeddingScoredPhotos.slice(offset, offset + pageSize)

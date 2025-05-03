@@ -114,6 +114,10 @@ export default class ModelsService {
 
   @withWarmUp('logic')
   @MeasureExecutionTime
+  @withCache({
+    provider: 'redis',
+    ttl: 50 * 5,
+  })
   async adjustProximitiesByContextInference(term, texts, termsType = 'tag') {
     try {
       let payload = {
@@ -133,11 +137,6 @@ export default class ModelsService {
       data = data.output ? data.output : data
 
       return texts.map((text) => ({
-        // name: text.name,
-        // tag_photo_id: text.tag_photo_id,
-        // tag_id: text.tag_id,
-        // photo_id: text.photo_id,
-        // chunk_id: text.chunk_id,
         ...text,
         embeddingsProximity: text.proximity,
         logicProximity: data[text.name]?.adjusted_proximity,

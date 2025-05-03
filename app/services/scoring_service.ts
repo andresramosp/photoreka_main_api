@@ -76,7 +76,6 @@ export default class ScoringService {
   // @MeasureExecutionTime
   // TODO: userid!!
   @withCache({
-    key: (_, arg2, arg3) => `getScoredPhotosByTagsAndDesc_${arg2.original}_${arg3}`,
     provider: 'redis',
     ttl: 60 * 5,
   })
@@ -679,8 +678,22 @@ export default class ScoringService {
     })
   }
 
-  public async adjustProximities(term, tags, termsType = 'tag', strictInference) {
+  public async adjustProximities(
+    term,
+    tags,
+    termsType = 'tag',
+    strictInference,
+    lowPrecision = false
+  ) {
     let result
+
+    if (lowPrecision) {
+      result = tags.map((tag) => ({
+        ...tag,
+        proximity: tag.embeddingsProximity,
+      }))
+      return result.filter((element) => element.proximity > 0)
+    }
 
     const adjustedProximitiesByContext =
       await this.modelsService.adjustProximitiesByContextInference(
@@ -695,17 +708,17 @@ export default class ScoringService {
         ...ap,
         proximity: ap.logicProximity,
       }))
-      return result.filter((element) => element.proximity > 1) // logic + entailment
+      return result.filter((element) => element.proximity > 1)
     } else {
       result = adjustedProximitiesByContext.map((ap) => {
-        const logicBonus = Math.max(ap.logicProximity, 0) // Asegurar que no sea negativo
-        const scaledBonus = Math.log1p(logicBonus) // Aplica curva logarítmica
+        const logicBonus = Math.max(ap.logicProximity, 0)
+        const scaledBonus = Math.log1p(logicBonus)
         return {
           ...ap,
           proximity: ap.embeddingsProximity + scaledBonus,
         }
       })
-      return result.filter((element) => element.proximity > 0) // embeddings + bonus
+      return result.filter((element) => element.proximity > 0)
     }
   }
 

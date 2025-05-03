@@ -14,6 +14,7 @@ import server from '@adonisjs/core/services/server'
 import db from '@adonisjs/lucid/services/db'
 import app from '@adonisjs/core/services/app'
 import { MigrationRunner } from '@adonisjs/lucid/migration'
+import { invalidateCache } from '../app/decorators/withCache.js'
 
 /**
  * The error handler is used to convert an exception
@@ -58,3 +59,5 @@ try {
 } finally {
   await db.manager.closeAll()
 }
+
+invalidateCache()

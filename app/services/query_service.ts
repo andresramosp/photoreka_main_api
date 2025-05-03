@@ -21,10 +21,11 @@ export default class QueryService {
 
   public async structureQuery(query) {
     const numberOfWords = query.split(' ').length
-    if (numberOfWords > 0) {
+    if (numberOfWords > 2) {
       return this.structureQueryLLM(query)
     } else {
-      return this.structureQueryNLP(query)
+      return { structuredResult: { original: query, positive_segments: [query], no_prefix: query } }
+      // return this.structureQueryNLP(query)
     }
   }
 

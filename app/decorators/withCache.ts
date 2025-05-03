@@ -48,10 +48,18 @@ export function withCache(options: CacheOptions = {}) {
   }
 }
 
-export async function invalidateCache(key: string, provider: 'nodecache' | 'redis' = 'redis') {
+export async function invalidateCache(key?: string, provider: 'nodecache' | 'redis' = 'redis') {
   if (provider === 'nodecache') {
-    nodeCache.del(key)
+    if (key) {
+      nodeCache.del(key)
+    } else {
+      nodeCache.flushAll()
+    }
   } else {
-    await redis.del(key)
+    if (key) {
+      await redis.del(key)
+    } else {
+      await redis.flushall()
+    }
   }
 }
