@@ -38,8 +38,8 @@ const getWeights = (isCreative: boolean) => {
       embeddingsTagsThreshold: 0.15,
     },
     semantic: {
-      tags: isCreative ? 0.3 : 0.4,
-      desc: isCreative ? 0.7 : 0.6,
+      tags: isCreative ? 0 : 0.4,
+      desc: isCreative ? 1 : 0.6,
       fullQuery: 2,
       embeddingsTagsThreshold: 0.13,
       embeddingsDescsThreshold: 0.17,

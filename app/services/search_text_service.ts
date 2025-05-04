@@ -132,22 +132,21 @@ export default class SearchTextService {
 
         modelCosts.push(modelCost)
 
-        return batch
-          .map((scoredPhoto, idx) => {
-            const result = modelResult[idx]
-            const reasoning = result?.reasoning || ''
-            const isInsight = result?.isInsight === true || result?.isInsight === 'true'
+        return batch.map((scoredPhoto, idx) => {
+          const result = modelResult[idx]
+          const reasoning = result?.reasoning || ''
+          const isInsight = result?.isInsight === true || result?.isInsight === 'true'
 
-            return reasoning
-              ? {
-                  ...scoredPhoto,
-                  score: scoredPhoto.tagScore || scoredPhoto.score,
-                  isInsight,
-                  reasoning,
-                }
-              : { ...scoredPhoto, score: scoredPhoto.tagScore || scoredPhoto.score, isInsight }
-          })
-          .filter((_, idx) => modelResult[idx]?.reasoning)
+          return reasoning
+            ? {
+                ...scoredPhoto,
+                score: scoredPhoto.tagScore || scoredPhoto.score,
+                isInsight,
+                reasoning,
+              }
+            : { ...scoredPhoto, score: scoredPhoto.tagScore || scoredPhoto.score, isInsight }
+        })
+        //.filter((_, idx) => modelResult[idx]?.reasoning)
       })
 
       const batchResults = await Promise.all(batchPromises)

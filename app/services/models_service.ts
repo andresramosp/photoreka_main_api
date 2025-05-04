@@ -163,6 +163,7 @@ export default class ModelsService {
     provider: 'redis',
     ttl: 60 * 5,
   })
+  @MeasureExecutionTime
   async getEmbeddings(tags) {
     const isGPU = tags.length > 100
 
