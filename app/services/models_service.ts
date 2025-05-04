@@ -40,16 +40,18 @@ const PRICES = {
   },
 }
 
-export type EndpointType = 'embeddings' | 'logic' | 'image'
+export type EndpointType = 'embeddings_gpu' | 'embeddings_cpu' | 'logic_cpu' | 'logic_cpu' | 'image'
 
 const USD_TO_EUR = 0.92
 
 export default class ModelsService {
   constructor() {
     this.apiMode = process.env.API_MODELS
-    this.remoteBaseUrlLogic = process.env.REMOTE_API_BASE_URL_LOGIC
+    this.remoteBaseUrlLogicGPU = process.env.REMOTE_API_BASE_URL_LOGIC_GPU
+    this.remoteBaseUrlLogicCPU = process.env.REMOTE_API_BASE_URL_LOGIC_CPU
     this.remoteBaseUrlImage = process.env.REMOTE_API_BASE_URL_IMAGE
-    this.remoteBaseUrlEmbeddings = process.env.REMOTE_API_BASE_URL_EMBEDDINGS
+    this.remoteBaseUrlEmbeddingsGPU = process.env.REMOTE_API_BASE_URL_EMBEDDINGS_GPU
+    this.remoteBaseUrlEmbeddingsCPU = process.env.REMOTE_API_BASE_URL_EMBEDDINGS_CPU
     this.localBaseUrl = process.env.LOCAL_API_BASE_URL
     this.runpodApiKey = process.env.RUNPOD_API_KEY
     this.pingCooldownSeconds = 300
@@ -84,17 +86,23 @@ export default class ModelsService {
     const headers = { 'Content-Type': 'application/json' }
 
     if (this.apiMode === 'REMOTE') {
-      if (endpointType == 'embeddings') {
-        url = this.remoteBaseUrlEmbeddings
+      if (endpointType == 'embeddings_gpu') {
+        url = this.remoteBaseUrlEmbeddingsGPU
       }
-      if (endpointType == 'logic') {
-        url = this.remoteBaseUrlLogic
+      if (endpointType == 'embeddings_cpu') {
+        url = this.remoteBaseUrlEmbeddingsCPU
+      }
+      if (endpointType == 'logic_gpu') {
+        url = this.remoteBaseUrlLogicGPU
+      }
+      if (endpointType == 'logic_cpu') {
+        url = this.remoteBaseUrlLogicCPU
       }
       if (endpointType == 'image') {
         url = this.remoteBaseUrlImage
       }
       requestPayload =
-        endpointType == 'embeddings'
+        endpointType == 'embeddings_gpu'
           ? { input: { input: payload } }
           : {
               input: {
@@ -112,13 +120,9 @@ export default class ModelsService {
     return { url, requestPayload, headers }
   }
 
-  @withWarmUp('logic')
   @MeasureExecutionTime
-  @withCache({
-    provider: 'redis',
-    ttl: 50 * 5,
-  })
   async adjustProximitiesByContextInference(term, texts, termsType = 'tag') {
+    const isGPU = texts.length > 50
     try {
       let payload = {
         term,
@@ -130,7 +134,15 @@ export default class ModelsService {
           ? 'adjust_tags_proximities_by_context_inference'
           : 'adjust_descs_proximities_by_context_inference'
 
-      const { url, requestPayload, headers } = this.buildRequestConfig(operation, payload, 'logic')
+      const { url, requestPayload, headers } = this.buildRequestConfig(
+        operation,
+        payload,
+        isGPU ? 'logic_gpu' : 'logic_cpu'
+      )
+
+      console.log(
+        `[adjustProximitiesByContextInference] Mode: ${isGPU ? 'logic_gpu' : 'logic_cpu'}`
+      )
 
       let { data } = await axios.post(url, requestPayload, { headers })
 
@@ -149,17 +161,28 @@ export default class ModelsService {
 
   @withCache({
     provider: 'redis',
-    ttl: 50 * 5,
+    ttl: 60 * 5,
   })
-  // @MeasureExecutionTime
   async getEmbeddings(tags) {
+    const isGPU = tags.length > 100
+
     try {
-      const { url, requestPayload, headers } = this.buildRequestConfig('', tags, 'embeddings')
+      const { url, requestPayload, headers } = this.buildRequestConfig(
+        'get_embeddings',
+        isGPU
+          ? tags
+          : {
+              tags,
+            },
+        isGPU ? 'embeddings_gpu' : 'embeddings_cpu'
+      )
 
       const { data } = await axios.post(url, requestPayload, { headers })
 
       return data.output
-        ? { embeddings: data.output.data.map((d) => d.embedding) }
+        ? {
+            embeddings: isGPU ? data.output.data.map((d) => d.embedding) : data.output.embeddings,
+          }
         : { embeddings: [] }
     } catch (error) {
       console.error('Error en getEmbeddings:', error.message, JSON.stringify(tags))

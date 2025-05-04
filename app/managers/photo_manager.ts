@@ -40,7 +40,6 @@ export default class PhotoManager {
   }
 
   @withCache({
-    key: (userId) => `getPhotos_${userId}`,
     provider: 'redis',
     ttl: 60 * 30,
   })

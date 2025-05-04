@@ -209,8 +209,6 @@ export default class ScoringService {
 
   // TODO: userid!!
   @withCache({
-    key: (_, arg2, arg3, arg4) =>
-      `getScoredPhotosByTags_${JSON.stringify(arg2)}_${JSON.stringify(arg3)}_${arg4}`,
     provider: 'redis',
     ttl: 120,
   })
@@ -402,7 +400,7 @@ export default class ScoringService {
     const photoIds = aggregatedScores.map((s) => s.id)
 
     const tagPromise =
-      weights.tags > 0
+      weights.tags > 0 && photoIds.length
         ? this.getScoredPhotoTagsBySegment(
             photoIds,
             segment,
@@ -414,7 +412,7 @@ export default class ScoringService {
         : Promise.resolve([])
 
     const descPromise =
-      weights.desc > 0
+      weights.desc > 0 && photoIds.length
         ? this.getScoredPhotoDescBySegment(
             photoIds,
             segment,
@@ -682,7 +680,6 @@ export default class ScoringService {
 
     // Low precision
     if (searchMode == 'low_precision') {
-      console.log('low-precision')
       return tags.filter((tag) => tag.proximity > 0)
     }
 
@@ -691,8 +688,6 @@ export default class ScoringService {
 
     // Logical
     if (searchMode == 'logical') {
-      console.log('logical')
-
       result = adjustedProximitiesByContext.map((ap) => ({
         ...ap,
         proximity: ap.logicProximity,
@@ -700,8 +695,6 @@ export default class ScoringService {
       return result.filter((element) => element.proximity > 1)
       // Creative
     } else {
-      console.log('creative')
-
       result = adjustedProximitiesByContext.map((ap) => {
         const logicBonus = Math.max(ap.logicProximity, 0)
         const scaledBonus = Math.log1p(logicBonus)
