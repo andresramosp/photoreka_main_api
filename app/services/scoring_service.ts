@@ -92,8 +92,16 @@ export default class ScoringService {
       structuredQuery.positive_segments
     )
 
+    structuredQuery.nuances_segments = this.nlpService.normalizeTerms(
+      structuredQuery.nuances_segments
+    )
+
     await EmbeddingStoreService.calculateEmbeddings(
-      [...structuredQuery.positive_segments, structuredQuery.no_prefix],
+      [
+        ...structuredQuery.positive_segments,
+        ...structuredQuery.nuances_segments,
+        structuredQuery.no_prefix,
+      ].filter(Boolean),
       true
     )
 

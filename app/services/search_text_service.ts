@@ -77,7 +77,7 @@ export default class SearchTextService {
     const photoIds = await this.photoManager.getPhotosIdsByUser('1234')
 
     const { structuredResult, sourceResult, useImage, expansionCost } =
-      await this.queryService.structureQuery(query)
+      await this.queryService.structureQuery(query, searchMode)
 
     let photosResult = []
     let modelCosts = []
