@@ -73,8 +73,6 @@ export default class ScoringService {
     this.tagPhotoManager = new TagPhotoManager()
   }
 
-  // @MeasureExecutionTime
-  // TODO: userid!!
   @withCache({
     provider: 'redis',
     ttl: 60 * 5,

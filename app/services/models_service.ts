@@ -122,11 +122,22 @@ export default class ModelsService {
 
   @MeasureExecutionTime
   async adjustProximitiesByContextInference(term, texts, termsType = 'tag') {
-    const isGPU = texts.length > 50
+    const isGPU = true // texts.length > 50
     try {
+      // Filtrado único por name + group
+      const uniqueTexts = Object.values(
+        texts.reduce((acc, item) => {
+          const key = `${item.name}::${item.group}`
+          if (!acc[key]) acc[key] = item
+          return acc
+        }, {})
+      )
+
       let payload = {
         term,
-        tag_list: texts.map((tag) => ({ name: tag.name, group: tag.group })),
+        tag_list: uniqueTexts.map((tag) => ({ name: tag.name, group: tag.group })),
+        premise_wrapper: 'the photo has the following fragment in its description: {term}',
+        hypothesis_wrapper: 'the photo features {term}',
       }
 
       const operation =
@@ -138,10 +149,6 @@ export default class ModelsService {
         operation,
         payload,
         isGPU ? 'logic_gpu' : 'logic_cpu'
-      )
-
-      console.log(
-        `[adjustProximitiesByContextInference] Mode: ${isGPU ? 'logic_gpu' : 'logic_cpu'}`
       )
 
       let { data } = await axios.post(url, requestPayload, { headers })
