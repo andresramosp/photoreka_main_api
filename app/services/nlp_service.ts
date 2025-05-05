@@ -1,6 +1,9 @@
 // @ts-nocheck
 
 import nlp from 'compromise'
+import { createRequire } from 'module'
+const require = createRequire(import.meta.url)
+const pluralize = require('pluralize')
 
 export default class NLPService {
   public getSustantives(sintagma: string): string[] | null {
@@ -25,5 +28,14 @@ export default class NLPService {
       }
     })
     return mainNouns.length > 0 ? mainNouns : null
+  }
+
+  public normalizeTerms(terms) {
+    return terms.map((term) => {
+      const numberOfWords = term.trim().split(/\s+/).length
+      const normalized = numberOfWords < 2 ? pluralize.singular(term.toLowerCase()) : term
+      console.log(`[EmbeddingStoreService] Normalizado: '${term}' → '${normalized}'`)
+      return normalized
+    })
   }
 }

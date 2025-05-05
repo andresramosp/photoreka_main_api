@@ -12,6 +12,8 @@ import type { SearchMode, SearchType } from './search_text_service.js'
 import TagPhotoManager from '../managers/tag_photo_manager.js'
 import TagManager from '../managers/tag_manager.js'
 import TagPhoto from '#models/tag_photo'
+import { EmbeddingStoreService } from './embeddings_store_service.js'
+import NLPService from './nlp_service.js'
 const require = createRequire(import.meta.url)
 const pluralize = require('pluralize')
 
@@ -65,12 +67,14 @@ export default class ScoringService {
   public embeddingsService: EmbeddingsService = null
   public tagManager: TagManager = null
   public tagPhotoManager: TagPhotoManager = null
+  public nlpService: NLPService = null
 
   constructor() {
     this.modelsService = new ModelsService()
     this.embeddingsService = new EmbeddingsService()
     this.tagManager = new TagManager()
     this.tagPhotoManager = new TagPhotoManager()
+    this.nlpService = new NLPService()
   }
 
   @withCache({
@@ -83,6 +87,15 @@ export default class ScoringService {
     searchMode: SearchMode
   ): Promise<ScoredPhoto[] | undefined> {
     let weights = getWeights(searchMode == 'creative')
+
+    structuredQuery.positive_segments = this.nlpService.normalizeTerms(
+      structuredQuery.positive_segments
+    )
+
+    await EmbeddingStoreService.calculateEmbeddings(
+      [...structuredQuery.positive_segments, structuredQuery.no_prefix],
+      true
+    )
 
     // Inicializamos solo IDs, no objetos completos
     let aggregatedScores: ScoredPhoto[] = photoIds.map((id) => ({
@@ -218,6 +231,11 @@ export default class ScoringService {
   ): Promise<ScoredPhoto[] | undefined> {
     const weights = getWeights(searchMode == 'creative')
 
+    included = this.nlpService.normalizeTerms(included)
+    excluded = this.nlpService.normalizeTerms(excluded)
+
+    await EmbeddingStoreService.calculateEmbeddings([...included, ...excluded])
+
     // Aplicar exclusión directamente a nivel de IDs
     const filteredPhotoIds = await this.filterExcludedPhotoIdsByTags(photoIds, excluded)
 
@@ -266,6 +284,20 @@ export default class ScoringService {
     searchMode: SearchMode
   ): Promise<ScoredPhoto[] | undefined> {
     const weights = getWeights(searchMode == 'creative')
+
+    queryByAreas.left = !!queryByAreas.left
+      ? this.nlpService.normalizeTerms([queryByAreas.left])[0]
+      : null
+    queryByAreas.right = !!queryByAreas.right
+      ? this.nlpService.normalizeTerms([queryByAreas.right])[0]
+      : null
+    queryByAreas.middle = !!queryByAreas.middle
+      ? this.nlpService.normalizeTerms([queryByAreas.middle])[0]
+      : null
+
+    await EmbeddingStoreService.calculateEmbeddings(
+      [queryByAreas.left, queryByAreas.right, queryByAreas.middle].filter(Boolean)
+    )
 
     let aggregatedScores: ScoredPhoto[] = photoIds.map((id) => ({
       id,
@@ -452,11 +484,10 @@ export default class ScoringService {
     categories: string[],
     areas: string[]
   ): Promise<{ id: number; descScore: number; matchingChunks: any[] }[]> {
-    const numberOfWords = segment.name.split(' ').length
-    const term = numberOfWords < 2 ? pluralize.singular(segment.name.toLowerCase()) : segment.name
+    const embedding = EmbeddingStoreService.getEmbedding(segment.name)
 
-    const matchingChunks = await this.embeddingsService.findSimilarChunksToText(
-      term,
+    const matchingChunks = await this.embeddingsService.findSimilarChunkToEmbedding(
+      embedding,
       embeddingsProximityThreshold,
       MAX_SIMILAR_CHUNKS,
       'cosine_similarity',
@@ -571,12 +602,10 @@ export default class ScoringService {
     // 1) Comparación por cadenas
 
     // TODO: rehacer para que funcione con tag_photo y solo si no hay areas!!
-    let { lematizedTerm, stringMatches, remainingTags } = this.getStringMatches(segment, userTags)
-    stringMatches = [] // seguimos desactivando como antes
+    // let { lematizedTerm, stringMatches, remainingTags } = this.getStringMatches(segment, userTags)
 
     // 2) Comparación y ajuste semántico/lógico
     const semanticMatches = await this.getSemanticMatches(
-      lematizedTerm,
       segment.name,
       userTags,
       embeddingsProximityThreshold,
@@ -590,7 +619,7 @@ export default class ScoringService {
     // const allMatches = [...stringMatches, ...semanticMatches]
     const allMatches = [...semanticMatches]
 
-    return { matchingPhotoTags: allMatches, lematizedTerm }
+    return { matchingPhotoTags: allMatches }
   }
 
   private getStringMatches(segment: { name: string; index: number }, userTags) {
@@ -625,8 +654,7 @@ export default class ScoringService {
   }
 
   private async getSemanticMatches(
-    lematizedTerm: string,
-    originalSegmentName: string,
+    term: string,
     userTags,
     embeddingsProximityThreshold: number,
     photoIds: number[],
@@ -634,11 +662,11 @@ export default class ScoringService {
     areas: string[],
     searchMode: SearchMode
   ) {
-    const { embeddings } = await this.modelsService.getEmbeddings([lematizedTerm])
+    const embedding = EmbeddingStoreService.getEmbedding(term)
 
     // Buscar similitud
     const similarTags = await this.embeddingsService.findSimilarTagToEmbedding(
-      embeddings[0],
+      embedding,
       embeddingsProximityThreshold,
       MAX_SIMILAR_TAGS,
       'cosine_similarity',
@@ -649,28 +677,9 @@ export default class ScoringService {
     )
 
     // Ajustar proximidades según inferencia lógica
-    const adjustedSimilarTags = await this.adjustProximities(
-      originalSegmentName,
-      similarTags,
-      'tag',
-      searchMode
-    )
+    const adjustedSimilarTags = await this.adjustProximities(term, similarTags, 'tag', searchMode)
 
     return adjustedSimilarTags
-  }
-
-  public async getNearChunksFromDesc(photo: Photo, query: string, threshold: number = 0.1) {
-    const similarChunks = await this.embeddingsService.findSimilarChunksToText(
-      query,
-      threshold,
-      5,
-      'cosine_similarity',
-      [photo.id],
-      ['story', 'context']
-    )
-    return similarChunks.map((ch) => {
-      return { proximity: ch.proximity, text_chunk: ch.chunk }
-    })
   }
 
   public async adjustProximities(term, tags, termsType = 'tag', searchMode: SearchMode) {

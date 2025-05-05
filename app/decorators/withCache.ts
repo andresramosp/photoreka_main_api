@@ -28,13 +28,13 @@ export function withCache(options: CacheOptions = {}) {
         cacheKey = `${propertyKey}_${serializedArgs}`
       }
 
-      // if (provider === 'nodecache') {
-      //   const cached = nodeCache.get(cacheKey)
-      //   if (cached !== undefined) return cached
-      // } else {
-      //   const cached = await redis.get(cacheKey)
-      //   if (cached) return JSON.parse(cached)
-      // }
+      if (provider === 'nodecache') {
+        const cached = nodeCache.get(cacheKey)
+        if (cached !== undefined) return cached
+      } else {
+        const cached = await redis.get(cacheKey)
+        if (cached) return JSON.parse(cached)
+      }
 
       const result = await originalMethod.apply(this, args)
 
