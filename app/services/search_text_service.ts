@@ -25,12 +25,11 @@ import PhotoImage from '#models/analyzer/photoImage'
 import PhotoImageService from './photo_image_service.js'
 import MeasureExecutionTime from '../decorators/measureExecutionTime.js'
 
-export type SearchMode = 'logical' | 'creative' | 'low_precision'
+export type SearchMode = 'logical' | 'flexible' | 'low_precision' | 'curation'
 export type SearchType = 'semantic' | 'tags' | 'topological'
 
 export type SearchOptions = {
   searchMode: SearchMode
-  withInsights?: boolean
   iteration: number
   pageSize: number
 }
@@ -67,17 +66,18 @@ export default class SearchTextService {
     query: string,
     options: SearchOptions = {
       searchMode: 'logical',
-      withInsights: false,
       pageSize: 18,
       iteration: 1,
     }
   ) {
-    let { searchMode, withInsights, pageSize, iteration } = options
+    let { searchMode, pageSize, iteration } = options
 
     const photoIds = await this.photoManager.getPhotosIdsByUser('1234')
 
-    const { structuredResult, sourceResult, useImage, expansionCost } =
-      await this.queryService.structureQuery(query, searchMode)
+    const { structuredResult, useImage, expansionCost } = await this.queryService.structureQuery(
+      query,
+      searchMode
+    )
 
     let photosResult = []
     let modelCosts = []
@@ -109,7 +109,7 @@ export default class SearchTextService {
         },
       }
 
-      if (!withInsights) {
+      if (searchMode !== 'curation') {
         return
       }
 
@@ -163,7 +163,7 @@ export default class SearchTextService {
           cost: { expansionCost, modelCosts },
           iteration: iteration - 1,
           structuredResult,
-          requireSource: { source: sourceResult.requireSource, useImage },
+          requireSource: { useImage },
         },
       }
 
@@ -247,7 +247,7 @@ export default class SearchTextService {
     searchMode: SearchMode
   ) {
     const searchModelMessage =
-      searchMode == 'creative' ? MESSAGE_SEARCH_MODEL_CREATIVE(true) : MESSAGE_SEARCH_MODEL_STRICT()
+      searchMode == 'curation' ? MESSAGE_SEARCH_MODEL_CREATIVE(true) : MESSAGE_SEARCH_MODEL_STRICT()
     const photosWithChunks = []
     const defaultResultsMap: { [key: string]: any } = {}
 

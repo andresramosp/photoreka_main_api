@@ -26,10 +26,17 @@ export default class QueryService {
 
   public async structureQuery(query: string, searchMode: SearchMode) {
     const numberOfWords = query.split(' ').length
-    if (numberOfWords > 2 || searchMode == 'creative') {
+    if (numberOfWords > 2 || searchMode == 'curation') {
       return this.structureQueryLLM(query, searchMode)
     } else {
-      return { structuredResult: { original: query, positive_segments: [query], no_prefix: query } }
+      return {
+        structuredResult: {
+          original: query,
+          positive_segments: [query],
+          nuances_segments: [],
+          no_prefix: query,
+        },
+      }
     }
   }
 
@@ -42,14 +49,12 @@ export default class QueryService {
   public async structureQueryNLP(query) {
     let expansionCost = 0
     let structuredResult = await this.modelsService.getStructuredQuery(query)
-    let sourceResult = { requireSource: 'description' }
 
     console.log(
       `[processQuery]: Result for ${query} -> ${JSON.stringify(structuredResult.positive_segments)}`
     )
 
     return {
-      sourceResult,
       structuredResult,
       expansionCost,
     }
@@ -58,10 +63,9 @@ export default class QueryService {
   @MeasureExecutionTime
   public async structureQueryLLM(query, searchMode: SearchMode) {
     let expansionCost = 0
-    let sourceResult = { requireSource: 'description' }
 
     const queryStuctureMessage =
-      searchMode == 'creative' ? MESSAGE_QUERY_STRUCTURE_CURATION : MESSAGE_QUERY_STRUCTURE
+      searchMode == 'curation' ? MESSAGE_QUERY_STRUCTURE_CURATION : MESSAGE_QUERY_STRUCTURE
     const { result: modelOneResult, cost: modelOneCost } = await this.modelsService.getGPTResponse(
       MESSAGE_QUERY_NO_PREFIX,
       JSON.stringify({ query }),
@@ -77,7 +81,7 @@ export default class QueryService {
     modelResult.original = query
     modelResult.positive_segments = [...new Set([...modelResult.positive_segments])]
     modelResult.nuances_segments =
-      searchMode == 'creative'
+      searchMode == 'curation'
         ? [...new Set(Object.values(modelResult.nuances_segments).flat())]
         : []
     modelResult.no_prefix = modelOneResult.no_prefix
@@ -87,7 +91,6 @@ export default class QueryService {
     )
 
     return {
-      sourceResult,
       structuredResult: modelResult,
       noPrefixCost: modelOneCost,
       expansionCost: modelTwoCost,

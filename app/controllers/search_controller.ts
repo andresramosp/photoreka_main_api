@@ -16,7 +16,6 @@ export default class SearchController {
 
       const stream = searchService.searchSemantic(query.description, {
         searchMode: query.options.searchMode,
-        withInsights: query.options.withInsights,
         pageSize: query.options.pageSize,
         iteration: query.options.iteration,
       })

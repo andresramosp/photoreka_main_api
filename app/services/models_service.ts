@@ -166,13 +166,13 @@ export default class ModelsService {
     }
   }
 
-  @withCache({
-    provider: 'redis',
-    ttl: 60 * 5,
-  })
+  // @withCache({
+  //   provider: 'redis',
+  //   ttl: 60 * 5,
+  // })
   @MeasureExecutionTime
   async getEmbeddings(tags) {
-    const isGPU = tags.length > 100
+    const isGPU = tags.length > 0
 
     try {
       const { url, requestPayload, headers } = this.buildRequestConfig(

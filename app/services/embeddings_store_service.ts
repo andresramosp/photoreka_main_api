@@ -45,7 +45,7 @@ export class EmbeddingStoreService {
   }
 
   public static async calculateEmbeddings(terms: string[]): Promise<void> {
-    const newTerms = terms.filter((term) => !this.embeddingsMap[term])
+    const newTerms = [...new Set(terms.filter((term) => !this.embeddingsMap[term]))]
 
     if (newTerms.length === 0) {
       console.log(

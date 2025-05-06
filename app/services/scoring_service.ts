@@ -31,7 +31,7 @@ interface ScoredPhoto {
 const MAX_SIMILAR_TAGS = 1250
 const MAX_SIMILAR_CHUNKS = 850
 
-const getWeights = (isCreative: boolean) => {
+const getWeights = (isCuration: boolean) => {
   return {
     tags: {
       tags: 1,
@@ -40,8 +40,8 @@ const getWeights = (isCreative: boolean) => {
       embeddingsTagsThreshold: 0.15,
     },
     semantic: {
-      tags: isCreative ? 0 : 0.4,
-      desc: isCreative ? 1 : 0.6,
+      tags: isCuration ? 0 : 0.4,
+      desc: isCuration ? 1 : 0.6,
       fullQuery: 2,
       embeddingsTagsThreshold: 0.13,
       embeddingsDescsThreshold: 0.17,
@@ -86,15 +86,16 @@ export default class ScoringService {
     structuredQuery: any,
     searchMode: SearchMode
   ): Promise<ScoredPhoto[] | undefined> {
-    let weights = getWeights(searchMode == 'creative')
+    let weights = getWeights(searchMode == 'curation')
 
     structuredQuery.positive_segments = this.nlpService.normalizeTerms(
       structuredQuery.positive_segments
     )
 
-    structuredQuery.nuances_segments = this.nlpService.normalizeTerms(
-      structuredQuery.nuances_segments
-    )
+    if (structuredQuery.nuances_segments.length)
+      structuredQuery.nuances_segments = this.nlpService.normalizeTerms(
+        structuredQuery.nuances_segments
+      )
 
     await EmbeddingStoreService.calculateEmbeddings(
       [
@@ -127,7 +128,7 @@ export default class ScoringService {
       : Promise.resolve([])
 
     const performNuancesQuerySearch =
-      structuredQuery.nuances_segments?.length > 0 && searchMode == 'creative'
+      structuredQuery.nuances_segments?.length > 0 && searchMode == 'curation'
 
     const nuancesQuery: Promise<ScoredPhoto[]> = performNuancesQuerySearch
       ? Promise.all(
@@ -237,7 +238,7 @@ export default class ScoringService {
     excluded: string[],
     searchMode: SearchMode
   ): Promise<ScoredPhoto[] | undefined> {
-    const weights = getWeights(searchMode == 'creative')
+    const weights = getWeights(searchMode == 'curation')
 
     included = this.nlpService.normalizeTerms(included)
     excluded = this.nlpService.normalizeTerms(excluded)
@@ -291,7 +292,7 @@ export default class ScoringService {
     queryByAreas: { left: string; right: string; middle: string },
     searchMode: SearchMode
   ): Promise<ScoredPhoto[] | undefined> {
-    const weights = getWeights(searchMode == 'creative')
+    const weights = getWeights(searchMode == 'curation')
 
     queryByAreas.left = !!queryByAreas.left
       ? this.nlpService.normalizeTerms([queryByAreas.left])[0]
@@ -708,7 +709,7 @@ export default class ScoringService {
         proximity: ap.logicProximity,
       }))
       return result.filter((element) => element.proximity > 1)
-      // Creative
+      // Flexible
     } else {
       result = adjustedProximitiesByContext.map((ap) => {
         const logicBonus = Math.max(ap.logicProximity, 0)

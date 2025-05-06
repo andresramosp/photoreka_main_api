@@ -25,7 +25,6 @@ export type SearchByPhotoOptions = {
   tagIds: number[] // para criteria 'tags'
   boxesIds: number[] // para criteria 'composition'
   descriptionCategories: string[] // para criteria 'semantic
-  withInsights?: boolean
   opposite: boolean
   inverted: boolean
   resultLength: number
