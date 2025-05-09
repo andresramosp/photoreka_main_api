@@ -166,32 +166,34 @@ export default class ModelsService {
     }
   }
 
-  // @withCache({
-  //   provider: 'redis',
-  //   ttl: 60 * 5,
-  // })
   @MeasureExecutionTime
   async getEmbeddings(tags) {
-    const isGPU = tags.length > 0
+    const isRemoteGPU = tags.length > 100 && this.apiMode === 'REMOTE'
 
     try {
       const { url, requestPayload, headers } = this.buildRequestConfig(
         'get_embeddings',
-        isGPU
+        isRemoteGPU // endpoint serverless-embedding preconfigurado
           ? tags
           : {
               tags,
             },
-        isGPU ? 'embeddings_gpu' : 'embeddings_cpu'
+        isRemoteGPU ? 'embeddings_gpu' : 'embeddings_cpu'
       )
 
       const { data } = await axios.post(url, requestPayload, { headers })
 
-      return data.output
-        ? {
-            embeddings: isGPU ? data.output.data.map((d) => d.embedding) : data.output.embeddings,
-          }
-        : { embeddings: [] }
+      if (this.apiMode === 'LOCAL') {
+        return data
+      } else {
+        return data.output
+          ? {
+              embeddings: isRemoteGPU
+                ? data.output.data.map((d) => d.embedding)
+                : data.output.embeddings,
+            }
+          : { embeddings: [] }
+      }
     } catch (error) {
       console.error('Error en getEmbeddings:', error.message, JSON.stringify(tags))
       return { embeddings: [] }

@@ -15,6 +15,7 @@ import PhotoManager from '../managers/photo_manager.js'
 import {
   MESSAGE_SEARCH_MODEL_CREATIVE,
   MESSAGE_SEARCH_MODEL_CREATIVE_ONLY_IMAGE,
+  MESSAGE_SEARCH_MODEL_CREATIVE_SCORED_IMAGE,
   MESSAGE_SEARCH_MODEL_STRICT,
 } from '../utils/prompts/insights.js'
 import DescriptionChunk from '#models/descriptionChunk'
@@ -113,7 +114,7 @@ export default class SearchTextService {
         return
       }
 
-      const batchSize = 4
+      const batchSize = 3
       const maxPageAttempts = 1
 
       let photoBatches = []
@@ -135,18 +136,15 @@ export default class SearchTextService {
         return batch.map((scoredPhoto, idx) => {
           const result = modelResult[idx]
           const reasoning = result?.reasoning || ''
-          const isInsight = result?.isInsight === true || result?.isInsight === 'true'
+          const matchScore = result?.matchScore
 
-          return reasoning
-            ? {
-                ...scoredPhoto,
-                score: scoredPhoto.tagScore || scoredPhoto.score,
-                isInsight,
-                reasoning,
-              }
-            : { ...scoredPhoto, score: scoredPhoto.tagScore || scoredPhoto.score, isInsight }
+          return {
+            ...scoredPhoto,
+            score: scoredPhoto.tagScore || scoredPhoto.score,
+            matchScore,
+            reasoning,
+          }
         })
-        //.filter((_, idx) => modelResult[idx]?.reasoning)
       })
 
       const batchResults = await Promise.all(batchPromises)
@@ -314,12 +312,12 @@ export default class SearchTextService {
     structuredResult: any,
     searchMode: SearchMode
   ) {
-    const searchModelMessage = MESSAGE_SEARCH_MODEL_CREATIVE_ONLY_IMAGE
+    const searchModelMessage = MESSAGE_SEARCH_MODEL_CREATIVE_SCORED_IMAGE
 
     const imagesPayload = await this.generateImagesPayload(batch.map((cp) => cp.photo))
 
     const defaultResults = batch.map(() => ({
-      isInsight: false,
+      matchScore: null,
       reasoning: null,
     }))
 
