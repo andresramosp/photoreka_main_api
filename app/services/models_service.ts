@@ -168,7 +168,7 @@ export default class ModelsService {
 
   @MeasureExecutionTime
   async getEmbeddings(tags) {
-    const isRemoteGPU = tags.length > 100 && this.apiMode === 'REMOTE'
+    const isRemoteGPU = true // tags.length > 100 && this.apiMode === 'REMOTE'
 
     try {
       const { url, requestPayload, headers } = this.buildRequestConfig(
