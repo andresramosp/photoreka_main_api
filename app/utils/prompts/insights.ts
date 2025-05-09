@@ -197,7 +197,7 @@ user query in 'query' field, and a list of images.
 Output format:
 [
   {
-    "matchScore": 0 | 1 | 2 | 3,
+    "matchScore": 1 | 2 | 3,
     "reasoning": "string" | null
   },
   ...
@@ -208,11 +208,10 @@ Output format:
   2. Use creative associations. For example, for "phallic symbol" you might pick a space rocket or tall monument.
   3. Be strict and selective, though. Only score high when the photo resonates strongly.
   4. Match Score meaning:
-     - 0 = does not fit.
      - 1 = weak match, minor overlap.
      - 2 = good match, notable alignment.
      - 3 = perfect match, fully resonates.
-  5. For scores 0 or 1, keep the reasoning short (1-2 sentences, max 20 words). For scores 2 or 3, write a more detailed reasoning (25–30 words).
+  5. For score 1, keep the reasoning short (1-2 sentences, max 20 words). For scores 2 or 3, write a more detailed reasoning (25–30 words).
 
 ### Examples:
 
@@ -230,7 +229,7 @@ Input:
 Output:
 [
   { "matchScore": 3, "reasoning": "The empty bench by the lake under misty light perfectly embodies solitude and introspection." },
-  { "matchScore": 0, "reasoning": "Crowded, bright, and busy — no alignment with solitude or introspection." },
+  { "matchScore": 1, "reasoning": "The street shows some lively activity — no total alignment with solitude or introspection." },
   { "matchScore": 2, "reasoning": "The single tree in a foggy field evokes a strong sense of isolation and reflection." }
 ]
 
