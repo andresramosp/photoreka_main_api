@@ -147,7 +147,7 @@ export default class EmbeddingsService {
     return result.rows
   }
 
-  // @MeasureExecutionTime
+  @MeasureExecutionTime
   public async findSimilarChunkToEmbedding(
     embedding: number[],
     threshold: Threshold = 0.3,

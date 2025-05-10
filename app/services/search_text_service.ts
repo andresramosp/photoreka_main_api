@@ -33,6 +33,7 @@ export type SearchOptions = {
   searchMode: SearchMode
   iteration: number
   pageSize: number
+  minMatchScore: number
 }
 
 export type SearchTagsOptions = SearchOptions & {
@@ -71,7 +72,7 @@ export default class SearchTextService {
       iteration: 1,
     }
   ) {
-    let { searchMode, pageSize, iteration } = options
+    let { searchMode, pageSize, iteration, minMatchScore } = options
 
     const photoIds = await this.photoManager.getPhotosIdsByUser('1234')
 
@@ -115,7 +116,7 @@ export default class SearchTextService {
       }
 
       const batchSize = 3
-      const maxPageAttempts = 1
+      const maxPageAttempts = 4
 
       let photoBatches = []
       for (let i = 0; i < paginatedPhotos.length; i += batchSize) {
@@ -173,7 +174,7 @@ export default class SearchTextService {
       }
 
       await this.sleep(750)
-    } while (!photosResult.some((p) => p.isInsight))
+    } while (!photosResult.some((p) => p.matchScore >= minMatchScore))
   }
 
   //   @withCostWS

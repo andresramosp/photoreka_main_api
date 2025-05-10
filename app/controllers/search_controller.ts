@@ -18,6 +18,7 @@ export default class SearchController {
         searchMode: query.options.searchMode,
         pageSize: query.options.pageSize,
         iteration: query.options.iteration,
+        minMatchScore: query.options.minMatchScore,
       })
 
       for await (const result of stream) {
