@@ -19,12 +19,21 @@ export function withCache(options: CacheOptions = {}) {
     descriptor.value = async function (...args: any[]) {
       let cacheKey: string
 
+      // const ctx = HttpContext.get()
+      // const userId = ctx?.auth?.user?.id
       if (options.key) {
-        cacheKey = typeof options.key === 'function' ? options.key(...args) : options.key
+        let rawKey = typeof options.key === 'function' ? options.key(...args) : options.key
+
+        // Normalización automática si la key generada contiene arrays
+        if (Array.isArray(rawKey)) {
+          cacheKey = `${propertyKey}_${JSON.stringify([...rawKey].sort())}`
+        } else {
+          cacheKey = rawKey
+        }
       } else {
-        const serializedArgs = JSON.stringify(args)
-        // const ctx = HttpContext.get()
-        // const userId = ctx?.auth?.user?.id
+        const serializedArgs = JSON.stringify(
+          args.map((arg) => (Array.isArray(arg) ? [...arg].sort() : arg))
+        )
         cacheKey = `${propertyKey}_${serializedArgs}`
       }
 

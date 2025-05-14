@@ -28,6 +28,11 @@ export default class PhotoManager {
     return photo
   }
 
+  @withCache({
+    provider: 'redis',
+    ttl: 60 * 30,
+    key: (photoIds) => `getPhotos_${photoIds}`,
+  })
   public async getPhotosByIds(photoIds: string[]) {
     const photos = await Photo.query()
       .whereIn('id', photoIds)
@@ -42,6 +47,7 @@ export default class PhotoManager {
   @withCache({
     provider: 'redis',
     ttl: 60 * 30,
+    key: (userId) => `getPhotos_${userId}`,
   })
   public async getPhotos(userId: string) {
     const query = Photo.query()
@@ -58,6 +64,7 @@ export default class PhotoManager {
   @withCache({
     provider: 'redis',
     ttl: 60 * 30,
+    key: (userId) => `getPhotosIdsByUser_${userId}`,
   })
   public async getPhotosIdsByUser(userId: string): Promise<number[]> {
     const photos = await Photo.query()
@@ -125,6 +132,7 @@ export default class PhotoManager {
     return photo
   }
 
+  @MeasureExecutionTime
   public async updateTagsPhoto(
     photoId: string,
     newTags: Partial<TagPhoto>[],
@@ -146,37 +154,41 @@ export default class PhotoManager {
     }
 
     await photo.load('tags', (tagPhoto) => tagPhoto.preload('tag'))
-
-    const nlpService = new NLPService()
     const tagPhotosToProcess = photo.tags
 
-    // Cálculo de sustantivos y embeddings si no se pasaron
+    /* ---------- Sustantivos y embeddings si faltan ---------- */
     if (!tagToSustantivesMap || !embeddingsMap) {
-      const tagToSust = new Map<TagPhoto, string[]>()
+      const tagToSust = new Map<string, string[]>()
       const allSustSet = new Set<string>()
+      const nlpService = new NLPService()
 
       for (const tp of tagPhotosToProcess) {
         const sust = nlpService.getSustantives(tp.tag.name) ?? []
-        tagToSust.set(tp, sust)
+        tagToSust.set(tp.tag.name, sust)
         sust.forEach((s) => allSustSet.add(s))
       }
 
-      const allSustantives = Array.from(allSustSet)
-      const modelsService = new ModelsService()
-      const { embeddings } = await modelsService.getEmbeddings(allSustantives)
-      const embeddingMap = new Map<string, number[]>()
-      allSustantives.forEach((s, i) => embeddingMap.set(s, embeddings[i]))
+      const allSustantives = [...allSustSet]
+      const { embeddings } = await new ModelsService().getEmbeddings(allSustantives)
 
       tagToSustantivesMap = tagToSust
-      embeddingsMap = embeddingMap
+      embeddingsMap = new Map(allSustantives.map((s, i) => [s, embeddings[i]]))
     }
+    /* -------------------------------------------------------- */
 
     const tagPhotoManager = new TagPhotoManager()
 
-    for (const tp of tagPhotosToProcess) {
-      const sustantives = tagToSustantivesMap.get(tp.tag.name) ?? []
-      await tagPhotoManager.addSustantives(tp, sustantives, embeddingsMap)
-    }
+    /* ----------- Paralelización de addSustantives ----------- */
+    await Promise.allSettled(
+      tagPhotosToProcess.flatMap((tp) => {
+        const sustantives = tagToSustantivesMap!.get(tp.tag.name) ?? []
+        return sustantives.length > 0
+          ? [tagPhotoManager.addSustantives(tp, sustantives, embeddingsMap!)]
+          : []
+      })
+    )
+
+    /* -------------------------------------------------------- */
 
     return photo
   }

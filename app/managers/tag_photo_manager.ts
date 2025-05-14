@@ -1,6 +1,8 @@
 import Tag from '#models/tag'
 import TagPhoto from '#models/tag_photo'
 import NLPService from '#services/nlp_service'
+import db from '@adonisjs/lucid/services/db'
+import MeasureExecutionTime from '../decorators/measureExecutionTime.js'
 import TagManager from './tag_manager.js'
 
 export default class TagPhotoManager {
@@ -83,7 +85,20 @@ export default class TagPhotoManager {
     }
 
     try {
-      await TagPhoto.createMany(tagPhotoArray)
+      const knex = db.connection().getWriteClient()
+
+      await knex('tags_photos')
+        .insert(
+          tagPhotoArray.map((t) => ({
+            photo_id: t.photoId,
+            tag_id: t.tagId,
+            category: t.category,
+            area: t.area,
+            parent_id: t.parentId,
+          }))
+        )
+        .onConflict(['photo_id', 'tag_id', 'category'])
+        .ignore()
     } catch (err) {
       if (err.code !== '23505') {
         console.error('[TagPhotoManager] Error inesperado en insert masivo:', err)
