@@ -214,7 +214,7 @@ export default class ModelsService {
 
       return { embeddings: data.output ? data.output : data || [] }
     } catch (error) {
-      console.error('Error en getEmbeddings:', error.message)
+      console.error('Error en getEmbeddingsImages:', error.message)
       return { embeddings: [] }
     }
   }
@@ -278,7 +278,7 @@ export default class ModelsService {
     }
   }
 
-  @withWarmUp('logic')
+  @withWarmUp('logic_gpu')
   @MeasureExecutionTime
   async generateGroupsForTags(tags) {
     try {
@@ -286,20 +286,20 @@ export default class ModelsService {
       const { url, requestPayload, headers } = this.buildRequestConfig(
         'generate_groups_for_tags',
         payload,
-        'logic'
+        'logic_gpu'
       )
 
       const { data } = await axios.post(url, requestPayload, { headers })
 
       return data.output ? data.output : data || []
     } catch (error) {
-      console.error('Error en getEmbeddings:', error.message)
+      console.error('Error en generateGroupsForTags:', error.message)
       return []
     }
   }
 
   // @MeasureExecutionTime
-  @withWarmUp('logic')
+  @withWarmUp('logic_gpu')
   async cleanDescriptions(texts, extract_ratio = 0.9) {
     try {
       const payload = {
@@ -310,19 +310,19 @@ export default class ModelsService {
       const { url, requestPayload, headers } = this.buildRequestConfig(
         'clean_texts',
         payload,
-        'logic'
+        'logic_gpu'
       )
 
       const { data } = await axios.post(url, requestPayload, { headers })
 
       return data.output ? data.output : data || []
     } catch (error) {
-      console.error('Error en getEmbeddings:', error.message)
+      console.error('Error en cleanDescriptions:', error.message)
       return []
     }
   }
 
-  @withWarmUp('logic')
+  @withWarmUp('logic_gpu')
   @MeasureExecutionTime
   async getStructuredQuery(query) {
     try {
@@ -330,7 +330,7 @@ export default class ModelsService {
       const { url, requestPayload, headers } = this.buildRequestConfig(
         'query_segment',
         payload,
-        'logic'
+        'logic_gpu'
       )
 
       const { data } = await axios.post(url, requestPayload, { headers })
@@ -342,7 +342,7 @@ export default class ModelsService {
     }
   }
 
-  @withWarmUp('logic')
+  @withWarmUp('logic_gpu')
   @MeasureExecutionTime
   async getNoPrefixQuery(query) {
     try {
@@ -350,7 +350,7 @@ export default class ModelsService {
       const { url, requestPayload, headers } = this.buildRequestConfig(
         'query_no_prefix',
         payload,
-        'logic'
+        'logic_gpu'
       )
 
       const { data } = await axios.post(url, requestPayload, { headers })
