@@ -33,7 +33,7 @@ export type SearchOptions = {
   searchMode: SearchMode
   iteration: number
   pageSize: number
-  minMatchScore: number
+  minMatchScore?: number
 }
 
 export type SearchTagsOptions = SearchOptions & {

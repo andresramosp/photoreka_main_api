@@ -14,6 +14,7 @@ import NLPService from '../../services/nlp_service.js'
 import AnalyzerProcess from './analyzerProcess.js'
 import Logger, { LogLevel } from '../../utils/logger.js'
 import pLimit from 'p-limit'
+import EmbeddingsService from '#services/embeddings_service'
 
 const logger = Logger.getInstance('AnalyzerProcess', 'TagTask')
 logger.setLevel(LogLevel.DEBUG)
@@ -82,7 +83,7 @@ export class TagTask extends AnalyzerTask {
       .select('name', 'embedding')
 
     for (const tag of existingTags) {
-      const embedding = tag.getParsedEmbedding()
+      const embedding = EmbeddingsService.getParsedEmbedding(tag.embedding)
       if (embedding) this.embeddingsMap.set(tag.name, embedding)
     }
 

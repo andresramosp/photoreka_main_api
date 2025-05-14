@@ -28,11 +28,11 @@ export default class PhotoManager {
     return photo
   }
 
-  @withCache({
-    provider: 'redis',
-    ttl: 60 * 30,
-    key: (photoIds) => `getPhotos_${photoIds}`,
-  })
+  // @withCache({
+  //   provider: 'redis',
+  //   ttl: 60 * 30,
+  //   key: (photoIds) => `getPhotos_${photoIds}`,
+  // })
   public async getPhotosByIds(photoIds: string[]) {
     const photos = await Photo.query()
       .whereIn('id', photoIds)
@@ -132,7 +132,6 @@ export default class PhotoManager {
     return photo
   }
 
-  @MeasureExecutionTime
   public async updateTagsPhoto(
     photoId: string,
     newTags: Partial<TagPhoto>[],

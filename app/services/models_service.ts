@@ -166,7 +166,7 @@ export default class ModelsService {
     }
   }
 
-  @MeasureExecutionTime
+  // @MeasureExecutionTime
   async getEmbeddings(tags) {
     const isRemoteGPU = this.apiMode === 'REMOTE'
 

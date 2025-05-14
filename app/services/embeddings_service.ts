@@ -540,4 +540,8 @@ export default class EmbeddingsService {
     const { embeddings } = await modelsService.getEmbeddings([name])
     return embeddings[0] || null
   }
+
+  static getParsedEmbedding(embedding): number[] | null {
+    return embedding ? JSON.parse(embedding as string) : null
+  }
 }
