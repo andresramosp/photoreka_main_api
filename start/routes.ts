@@ -58,6 +58,7 @@ router.post('/api/catalog/uploadLocal', [CatalogController, 'uploadLocal'])
 router.post('/api/catalog/uploadGooglePhotos', [CatalogController, 'uploadGooglePhotos'])
 
 router.post('/api/analyzer/', [AnalyzerController, 'analyze'])
+router.get('/api/analyzer/health', [AnalyzerController, 'health'])
 
 router.post('/api/search/semantic', [SearchController, 'searchSemantic'])
 router.post('/api/search/tags', [SearchController, 'searchByTags'])

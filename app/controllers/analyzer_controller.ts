@@ -7,6 +7,7 @@ import Photo from '#models/photo'
 import PhotoManager from '../managers/photo_manager.js'
 import Logger from '../utils/logger.js'
 import { invalidateCache } from '../decorators/withCache.js'
+import AnalyzerProcessRunner from '#services/analyzer_service'
 
 const analysisProcesses = new Map<string, AsyncGenerator>()
 const logger = Logger.getInstance('AnalyzerProcess')
@@ -41,6 +42,26 @@ export default class AnalyzerController {
       return response.ok({ message: 'Nothing to analyze', userId })
     } catch (error) {
       logger.error('Error en el proceso de análisis:', error)
+      return response.internalServerError({ message: 'Something went wrong', error: error.message })
+    }
+  }
+
+  public async health({ request, response }: HttpContext) {
+    const userId = Number(request.qs().userId)
+    if (!userId) return response.badRequest({ message: 'Missing userId' })
+
+    try {
+      const runner = new AnalyzerProcessRunner()
+
+      const reports = await runner.healthForUser(userId)
+
+      return response.ok({
+        userId,
+        ok: reports.every((r) => r.ok),
+        reports,
+      })
+    } catch (error) {
+      logger.error('Error obteniendo health:', error)
       return response.internalServerError({ message: 'Something went wrong', error: error.message })
     }
   }
