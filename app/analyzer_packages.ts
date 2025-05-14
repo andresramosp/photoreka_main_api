@@ -100,6 +100,18 @@ export const packages = [
           },
         ],
       },
+      {
+        name: 'topological_tags',
+        type: 'VisionTopologicalTask',
+        model: 'GPT',
+        needsImage: true,
+        sequential: false,
+        resolution: 'high',
+        prompts: [MESSAGE_ANALYZER_GPT_TOPOLOGIC_TAGS],
+        imagesPerBatch: 4,
+        useGuideLines: true,
+        promptDependentField: null,
+      },
     ],
   },
   {
