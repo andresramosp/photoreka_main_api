@@ -43,7 +43,7 @@ export default class EmbeddingsService {
     if (existingTag) {
       result = this.findSimilarTagsToTag(existingTag, threshold, limit, metric)
     } else {
-      let { embeddings } = await modelsService.getEmbeddings([term])
+      let { embeddings } = await modelsService.getEmbeddings([term], true)
       result = this.findSimilarTagToEmbedding(embeddings[0], threshold, limit, metric)
     }
 
@@ -61,7 +61,7 @@ export default class EmbeddingsService {
     areas: string[] = null
   ) {
     const modelsService = new ModelsService()
-    let { embeddings } = await modelsService.getEmbeddings([term])
+    let { embeddings } = await modelsService.getEmbeddings([term], true)
     return this.findSimilarChunkToEmbedding(
       embeddings[0],
       threshold,
@@ -537,7 +537,7 @@ export default class EmbeddingsService {
     }
 
     // Otherwise, fetch dynamically
-    const { embeddings } = await modelsService.getEmbeddings([name])
+    const { embeddings } = await modelsService.getEmbeddings([name], true)
     return embeddings[0] || null
   }
 

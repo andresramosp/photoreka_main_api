@@ -155,9 +155,16 @@ export default class AnalyzerProcessRunner {
     const mark = (ok: boolean) => (ok ? '✅' : '❌')
 
     const photos = await this.photoManager.getPhotos(userId)
+
     const reports = await Promise.all(
-      photos.map(async (p) => ({ photoId: p.id, ...(await this.photoHealth(p.id)) }))
+      photos.map(async (p) => ({
+        photoId: p.id,
+        ...(await this.photoHealth(p.id)),
+      }))
     )
+
+    // Ordenar por ID
+    reports.sort((a, b) => a.photoId - b.photoId)
 
     // salida por consola
     reports.forEach((r) => {

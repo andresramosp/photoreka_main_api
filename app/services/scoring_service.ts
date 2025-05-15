@@ -700,7 +700,7 @@ export default class ScoringService {
     }
 
     const adjustedProximitiesByContext =
-      await this.modelsService.adjustProximitiesByContextInference(term, tags, termsType)
+      await this.modelsService.adjustProximitiesByContextInference(term, tags, termsType, true)
 
     // Logical
     if (searchMode == 'logical') {

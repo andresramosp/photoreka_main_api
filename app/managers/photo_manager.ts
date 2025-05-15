@@ -168,7 +168,7 @@ export default class PhotoManager {
       }
 
       const allSustantives = [...allSustSet]
-      const { embeddings } = await new ModelsService().getEmbeddings(allSustantives)
+      const { embeddings } = await new ModelsService().getEmbeddings(allSustantives, true)
 
       tagToSustantivesMap = tagToSust
       embeddingsMap = new Map(allSustantives.map((s, i) => [s, embeddings[i]]))

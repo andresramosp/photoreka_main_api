@@ -92,7 +92,7 @@ export class TagTask extends AnalyzerTask {
     for (let i = 0; i < termsWithoutEmbeddings.length; i += batchEmbeddingsSize) {
       const batch = termsWithoutEmbeddings.slice(i, i + batchEmbeddingsSize)
       logger.debug(`Obteniendo embeddings para batch de ${batch.length} tags`)
-      const { embeddings } = await this.modelsService.getEmbeddings(batch)
+      const { embeddings } = await this.modelsService.getEmbeddings(batch, true)
       batch.forEach((name, idx) => {
         this.embeddingsMap.set(name, embeddings[idx])
       })
@@ -161,7 +161,7 @@ export class TagTask extends AnalyzerTask {
           return text
         })
 
-        const cleanResult = await this.modelsService.cleanDescriptions(sourceTexts, 0.9)
+        const cleanResult = await this.modelsService.cleanDescriptions(sourceTexts, 0.9, true)
 
         if (!cleanResult || !Array.isArray(cleanResult)) {
           logger.error(`Resultado inesperado de cleanDescriptions: ${JSON.stringify(cleanResult)}`)

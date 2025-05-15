@@ -121,8 +121,13 @@ export default class ModelsService {
   }
 
   @MeasureExecutionTime
-  async adjustProximitiesByContextInference(term, texts, termsType = 'tag') {
-    const isGPU = true // texts.length > 50
+  async adjustProximitiesByContextInference(
+    term,
+    texts,
+    termsType = 'tag',
+    forceCPU: boolean = false
+  ) {
+    const isGPU = !forceCPU
     try {
       // Filtrado único por name + group
       const uniqueTexts = Object.values(
@@ -166,9 +171,11 @@ export default class ModelsService {
     }
   }
 
-  // @MeasureExecutionTime
-  async getEmbeddings(tags) {
-    const isRemoteGPU = this.apiMode === 'REMOTE'
+  async getEmbeddings(tags, forceCPU: boolean = false) {
+    const useGPU = !forceCPU && tags.length > 10
+    const isRemoteGPU = this.apiMode === 'REMOTE' && useGPU
+
+    await this.ensureRunPodWarm(useGPU ? 'embeddings_gpu' : 'embeddings_cpu')
 
     try {
       const { url, requestPayload, headers } = this.buildRequestConfig(
@@ -178,7 +185,7 @@ export default class ModelsService {
           : {
               tags,
             },
-        isRemoteGPU ? 'embeddings_gpu' : 'embeddings_cpu'
+        useGPU ? 'embeddings_gpu' : 'embeddings_cpu'
       )
 
       const { data } = await axios.post(url, requestPayload, { headers })
@@ -278,29 +285,29 @@ export default class ModelsService {
     }
   }
 
-  @withWarmUp('logic_gpu')
-  @MeasureExecutionTime
-  async generateGroupsForTags(tags) {
-    try {
-      const payload = { tags }
-      const { url, requestPayload, headers } = this.buildRequestConfig(
-        'generate_groups_for_tags',
-        payload,
-        'logic_gpu'
-      )
+  // @withWarmUp('logic_gpu')
+  // @MeasureExecutionTime
+  // async generateGroupsForTags(tags) {
+  //   try {
+  //     const payload = { tags }
+  //     const { url, requestPayload, headers } = this.buildRequestConfig(
+  //       'generate_groups_for_tags',
+  //       payload,
+  //       'logic_gpu'
+  //     )
 
-      const { data } = await axios.post(url, requestPayload, { headers })
+  //     const { data } = await axios.post(url, requestPayload, { headers })
 
-      return data.output ? data.output : data || []
-    } catch (error) {
-      console.error('Error en generateGroupsForTags:', error.message)
-      return []
-    }
-  }
+  //     return data.output ? data.output : data || []
+  //   } catch (error) {
+  //     console.error('Error en generateGroupsForTags:', error.message)
+  //     return []
+  //   }
+  // }
 
   // @MeasureExecutionTime
-  @withWarmUp('logic_gpu')
-  async cleanDescriptions(texts, extract_ratio = 0.9) {
+  @withWarmUp((texts, extract_ratio, forceCPU) => (forceCPU ? 'logic_cpu' : 'logic_gpu'))
+  async cleanDescriptions(texts, extract_ratio = 0.9, forceCPU: boolean = false) {
     try {
       const payload = {
         texts,
@@ -310,7 +317,7 @@ export default class ModelsService {
       const { url, requestPayload, headers } = this.buildRequestConfig(
         'clean_texts',
         payload,
-        'logic_gpu'
+        forceCPU ? 'logic_cpu' : 'logic_gpu'
       )
 
       const { data } = await axios.post(url, requestPayload, { headers })
@@ -322,45 +329,45 @@ export default class ModelsService {
     }
   }
 
-  @withWarmUp('logic_gpu')
-  @MeasureExecutionTime
-  async getStructuredQuery(query) {
-    try {
-      const payload = { query }
-      const { url, requestPayload, headers } = this.buildRequestConfig(
-        'query_segment',
-        payload,
-        'logic_gpu'
-      )
+  // @withWarmUp('logic_gpu')
+  // @MeasureExecutionTime
+  // async getStructuredQuery(query) {
+  //   try {
+  //     const payload = { query }
+  //     const { url, requestPayload, headers } = this.buildRequestConfig(
+  //       'query_segment',
+  //       payload,
+  //       'logic_gpu'
+  //     )
 
-      const { data } = await axios.post(url, requestPayload, { headers })
+  //     const { data } = await axios.post(url, requestPayload, { headers })
 
-      return data.output ? data.output : data || {}
-    } catch (error) {
-      console.error('Error en getStructuredQuery:', error.message)
-      return {}
-    }
-  }
+  //     return data.output ? data.output : data || {}
+  //   } catch (error) {
+  //     console.error('Error en getStructuredQuery:', error.message)
+  //     return {}
+  //   }
+  // }
 
-  @withWarmUp('logic_gpu')
-  @MeasureExecutionTime
-  async getNoPrefixQuery(query) {
-    try {
-      const payload = { query }
-      const { url, requestPayload, headers } = this.buildRequestConfig(
-        'query_no_prefix',
-        payload,
-        'logic_gpu'
-      )
+  // @withWarmUp('logic_gpu')
+  // @MeasureExecutionTime
+  // async getNoPrefixQuery(query) {
+  //   try {
+  //     const payload = { query }
+  //     const { url, requestPayload, headers } = this.buildRequestConfig(
+  //       'query_no_prefix',
+  //       payload,
+  //       'logic_gpu'
+  //     )
 
-      const { data } = await axios.post(url, requestPayload, { headers })
+  //     const { data } = await axios.post(url, requestPayload, { headers })
 
-      return data.output ? data.output : data || {}
-    } catch (error) {
-      console.error('Error en getStructuredQuery:', error.message)
-      return {}
-    }
-  }
+  //     return data.output ? data.output : data || {}
+  //   } catch (error) {
+  //     console.error('Error en getStructuredQuery:', error.message)
+  //     return {}
+  //   }
+  // }
 
   @MeasureExecutionTime
   public async getMolmoResponse(imagesItems, prompts, promptsPerImage): Promise<any> {
