@@ -30,7 +30,7 @@ export default class PhotoManager {
     return photo
   }
 
-  public async getPhotosByIds(photoIds: string[]) {
+  public async getPhotosByIds(photoIds: number[]) {
     const photos = await Photo.query()
       .whereIn('id', photoIds)
       .preload('detections')

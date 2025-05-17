@@ -723,7 +723,7 @@ export default class ScoringService {
     }
   }
 
-  private calculateProximitiesScores(proximities) {
+  public calculateProximitiesScores(proximities) {
     const minProximity = Math.min(...proximities)
     const maxProximity = Math.max(...proximities)
     const totalProximities = proximities.reduce((sum, p) => sum + p, 0)
