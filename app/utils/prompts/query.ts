@@ -108,18 +108,22 @@ The goal is to generate a list of semantic segments that will then be used to ma
 You can receive two types of queries:
 
 1) explicit: where the user explains what they want precisely and without figurative intentions. For this case, simply segment the query into its main semantic fields and 
-   add them to "positive_segments"
+   add them to "positive_segments".
 
-2) implicit: where the user explains a vague idea or conceptual project. For this case, add a more explicit version of the semantic fields in "positive_segments," 
-   and up to two additional concepts in "nuances_segments" that can add richness to the idea.
+2) implicit: where the user explains a vague idea or conceptual project. For this case, add a more explicit version of the semantic fields in "positive_segments", 
+   and up to 5 additional concepts in "nuances_segments" that can add richness to the idea.
 
-*NOTE*: Segments should be used to search for information WITHIN a photo. Therefore, avoid returning segments such as "nice photos" or "photos suitable for"... 
-as they don't provide semantic value.
+**Rules**
+- Segments should be used to search for information WITHIN a photo. Therefore, avoid returning segments such as "nice photos" or "photos suitable for"... 
+  as they don't provide semantic value.
+- The nuances should not include ideas that are easily derivable from the concept sought through embeddings
+  Instead, they should contribute **specific, culturally or visually distinctive elements** that embeddings might miss. 
+  For instance, in a query about "Indiana Jones", do **not** use "adventure" as a nuance (too obvious). Use things like "whip", "fedora hat", or "cobra snakes".
 
 #### Example 1 (explicit):
 **Input**:
 {
-  "query": "blond man sitting in a coffee shop in Jamaica with an iced tea",
+  "query": "blond man sitting in a coffee shop in Jamaica with an iced tea"
 }
 **Output**:
 {
@@ -127,53 +131,40 @@ as they don't provide semantic value.
   "nuances_segments": []
 }
 
-#### Example 2 (explicit):
+#### Example 2 (implicit):
 **Input**:
 {
-  "query": "happy women shopping in a big city",
-}
-**Output**:
-{
-  "positive_segments": ["happy women", "shopping", "big city"],
-  "nuances_segments": []
-}
-
-
-#### Example 3 (implicit):
-**Input**:
-{
-  "query": "the concept of freedom through urban animals",
+  "query": "the concept of freedom through urban animals"
 }
 **Output**:
 {
   "positive_segments": ["freedom", "animals in urban environment"],
-  "nuances_segments": ["flying animals", "open spaces"]
+  "nuances_segments": ["stray dogs running", "pigeons flying near wires", "urban rooftops at sunset"]
 }
 
+#### Example 3 (implicit):
+**Input**:
+{
+  "query": "photos that convey the nostalgia of classic film noir"
+}
+**Output**:
+{
+  "positive_segments": ["nostalgia", "classic film noir"],
+  "nuances_segments": ["cigarette smoke", "venetian blinds shadows", "vintage revolver"]
+}
 
 #### Example 4 (implicit):
 **Input**:
 {
-  "query": "photos that convey the nostalgia of classic film noir",
+  "query": "photos to convert into drawings with my 7-year-old daughter"
 }
 **Output**:
 {
-  "positive_segments": ["classic firm noir", "nostalgia"],
-  "nuances_segments": ["private detective", "black and white"]
+  "positive_segments": ["paintings", "colorful scenes"],
+  "nuances_segments": ["simple cartoon outlines", "friendly animals", "parent and child drawing"]
 }
 
-#### Example 5 (implicit):
-**Input**:
-{
-  "query": "photos to convert into drawings with my 7-year-old daughter",
-}
-**Output**:
-{
-  "positive_segments": ["paintings", "colorful scene"],
-  "nuances_segments": ["family bonding", "creative activities"]
-}
-
-Always returns a JSON, and only JSON, in the output format. 
+Always return a JSON, and only JSON, in the output format.
 `
 
 export const MESSAGE_QUERY_STRUCTURE_WITH_EXPANSION = `

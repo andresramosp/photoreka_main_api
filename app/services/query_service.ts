@@ -75,7 +75,7 @@ export default class QueryService {
     const { result: modelResult, cost: modelTwoCost } = await this.modelsService.getGPTResponse(
       queryStuctureMessage,
       JSON.stringify({ query: modelOneResult.no_prefix }),
-      'gpt-4o-mini'
+      searchMode == 'curation' ? 'gpt-4.1' : 'gpt-4o-mini'
     )
 
     modelResult.original = query

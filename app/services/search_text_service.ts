@@ -240,74 +240,6 @@ export default class SearchTextService {
     }
   }
 
-  public async processBatchInsightsDesc(
-    batch: any[],
-    structuredResult: any,
-    searchMode: SearchMode
-  ) {
-    const searchModelMessage =
-      searchMode == 'curation' ? MESSAGE_SEARCH_MODEL_CREATIVE(true) : MESSAGE_SEARCH_MODEL_STRICT()
-    const photosWithChunks = []
-    const defaultResultsMap: { [key: string]: any } = {}
-
-    // Prellenamos defaultResultsMap para todas las fotos
-    for (const batchedPhoto of batch) {
-      defaultResultsMap[batchedPhoto.photo.tempID] = {
-        id: batchedPhoto.photo.tempID,
-        isInsight: false,
-        reasoning: null,
-      }
-    }
-
-    // Procesamos cada foto: si se obtienen chunks se añaden a la colección para el modelo
-    for (const batchedPhoto of batch) {
-      const descChunks = await this.scoringService.getNearChunksFromDesc(
-        batchedPhoto.photo,
-        structuredResult.no_prefix,
-        0.1
-      )
-      const chunkedDesc = descChunks.map((dc) => dc.text_chunk).join(' ... ')
-      if (chunkedDesc) {
-        photosWithChunks.push({
-          id: batchedPhoto.photo.tempID,
-          description: chunkedDesc,
-          visual_accents: batchedPhoto.photo.descriptions.visual_accents,
-        })
-      }
-    }
-
-    // Llamamos al modelo con las fotos que tienen chunks
-    let modelResponse
-    if (photosWithChunks.length) {
-      modelResponse = await this.modelsService.getGPTResponse(
-        searchModelMessage,
-        JSON.stringify({
-          query: structuredResult.original,
-          collection: photosWithChunks,
-        }),
-        'gpt-4o', //deepseek-chat
-        null,
-        1.1,
-        false
-      )
-    }
-
-    // Sobreescribimos defaultResultsMap con los resultados que devuelve el modelo
-    const modelResults = modelResponse ? modelResponse.result : []
-    for (const result of modelResults) {
-      defaultResultsMap[result.id] = result
-    }
-
-    const combinedResults = batch.map(
-      (batchedPhoto) => defaultResultsMap[batchedPhoto.photo.tempID]
-    )
-
-    return {
-      modelResult: combinedResults,
-      modelCost: modelResponse ? modelResponse.cost : 0,
-    }
-  }
-
   public async processBatchInsightsImage(
     batch: any[],
     structuredResult: any,
@@ -356,7 +288,76 @@ export default class SearchTextService {
     }
   }
 
+  //   public async processBatchInsightsDesc(
+  //   batch: any[],
+  //   structuredResult: any,
+  //   searchMode: SearchMode
+  // ) {
+  //   const searchModelMessage =
+  //     searchMode == 'curation' ? MESSAGE_SEARCH_MODEL_CREATIVE(true) : MESSAGE_SEARCH_MODEL_STRICT()
+  //   const photosWithChunks = []
+  //   const defaultResultsMap: { [key: string]: any } = {}
+
+  //   // Prellenamos defaultResultsMap para todas las fotos
+  //   for (const batchedPhoto of batch) {
+  //     defaultResultsMap[batchedPhoto.photo.tempID] = {
+  //       id: batchedPhoto.photo.tempID,
+  //       isInsight: false,
+  //       reasoning: null,
+  //     }
+  //   }
+
+  //   // Procesamos cada foto: si se obtienen chunks se añaden a la colección para el modelo
+  //   for (const batchedPhoto of batch) {
+  //     const descChunks = await this.scoringService.getNearChunksFromDesc(
+  //       batchedPhoto.photo,
+  //       structuredResult.no_prefix,
+  //       0.1
+  //     )
+  //     const chunkedDesc = descChunks.map((dc) => dc.text_chunk).join(' ... ')
+  //     if (chunkedDesc) {
+  //       photosWithChunks.push({
+  //         id: batchedPhoto.photo.tempID,
+  //         description: chunkedDesc,
+  //         visual_accents: batchedPhoto.photo.descriptions.visual_accents,
+  //       })
+  //     }
+  //   }
+
+  //   // Llamamos al modelo con las fotos que tienen chunks
+  //   let modelResponse
+  //   if (photosWithChunks.length) {
+  //     modelResponse = await this.modelsService.getGPTResponse(
+  //       searchModelMessage,
+  //       JSON.stringify({
+  //         query: structuredResult.original,
+  //         collection: photosWithChunks,
+  //       }),
+  //       'gpt-4o', //deepseek-chat
+  //       null,
+  //       1.1,
+  //       false
+  //     )
+  //   }
+
+  //   // Sobreescribimos defaultResultsMap con los resultados que devuelve el modelo
+  //   const modelResults = modelResponse ? modelResponse.result : []
+  //   for (const result of modelResults) {
+  //     defaultResultsMap[result.id] = result
+  //   }
+
+  //   const combinedResults = batch.map(
+  //     (batchedPhoto) => defaultResultsMap[batchedPhoto.photo.tempID]
+  //   )
+
+  //   return {
+  //     modelResult: combinedResults,
+  //     modelCost: modelResponse ? modelResponse.cost : 0,
+  //   }
+  // }
+
   // AUXILIARES //
+
   private async getPaginatedPhotosByPage(embeddingScoredPhotos, pageSize, currentIteration) {
     const offset = (currentIteration - 1) * pageSize
     const pageSlice = embeddingScoredPhotos.slice(offset, offset + pageSize)

@@ -175,7 +175,8 @@ export default class ModelsService {
     const useGPU = !forceCPU && tags.length > 10
     const isRemoteGPU = this.apiMode === 'REMOTE' && useGPU
 
-    await this.ensureRunPodWarm(useGPU ? 'embeddings_gpu' : 'embeddings_cpu')
+    if (this.apiMode === 'REMOTE')
+      await this.ensureRunPodWarm(useGPU ? 'embeddings_gpu' : 'embeddings_cpu')
 
     try {
       const { url, requestPayload, headers } = this.buildRequestConfig(

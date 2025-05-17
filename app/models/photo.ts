@@ -28,8 +28,8 @@ export default class Photo extends BaseModel {
   @column()
   declare thumbnailName: string
 
-  @column()
-  declare url: string
+  // @column()
+  // declare url: string
 
   @column({ serializeAs: null })
   declare embedding: string | number[]
@@ -128,10 +128,5 @@ export default class Photo extends BaseModel {
   @computed()
   public get originalUrl(): string {
     return `https://pub-${process.env.R2_PUBLIC_ID}.r2.dev/${this.name}`
-  }
-
-  @computed()
-  public get tempID(): string {
-    return Math.random().toString(36).substr(2, 4)
   }
 }

@@ -18,9 +18,11 @@ export default class PhotoManager {
   public async getPhoto(id: string) {
     const photo = await Photo.query()
       .where('id', id)
-      .preload('analyzerProcess')
+      .preload('tags', (q) => q.preload('tag'))
+      .preload('detections')
       .preload('descriptionChunks')
-      .preload('tags')
+      .preload('analyzerProcess')
+      .firstOrFail()
     if (!photo) {
       throw new Error('Photo not found')
     }
@@ -28,11 +30,6 @@ export default class PhotoManager {
     return photo
   }
 
-  // @withCache({
-  //   provider: 'redis',
-  //   ttl: 60 * 30,
-  //   key: (photoIds) => `getPhotos_${photoIds}`,
-  // })
   public async getPhotosByIds(photoIds: string[]) {
     const photos = await Photo.query()
       .whereIn('id', photoIds)
@@ -59,6 +56,15 @@ export default class PhotoManager {
       .orderBy('created_at', 'desc')
 
     return await query
+  }
+
+  public async getPhotosPreview(userId: string) {
+    const photos = await Photo.query().orderBy('created_at', 'desc')
+    return photos.map((p) => ({
+      id: p.id,
+      originalUrl: p.originalUrl,
+      thumbnailUrl: p.thumbnailUrl,
+    }))
   }
 
   @withCache({

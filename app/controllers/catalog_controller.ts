@@ -137,10 +137,22 @@ export default class CatalogController {
     }
   }
 
+  public async getPhoto({ response, request, params }: HttpContext) {
+    const photoManager = new PhotoManager()
+    const id = params.id
+    try {
+      const photo = await photoManager.getPhoto(id)
+      return response.ok(photo)
+    } catch (error) {
+      console.error('Error fetching photos:', error)
+      return response.internalServerError({ message: 'Error fetching photos' })
+    }
+  }
+
   public async getPhotos({ response }: HttpContext) {
     const photoManager = new PhotoManager()
     try {
-      const photos = await photoManager.getPhotos('1234')
+      const photos = await photoManager.getPhotosPreview('1234')
       return response.ok({ photos })
     } catch (error) {
       console.error('Error fetching photos:', error)
