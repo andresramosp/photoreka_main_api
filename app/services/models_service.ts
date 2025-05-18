@@ -40,7 +40,7 @@ const PRICES = {
   },
 }
 
-export type EndpointType = 'embeddings_gpu' | 'embeddings_cpu' | 'logic_cpu' | 'logic_cpu' | 'image'
+export type EndpointType = 'embeddings_gpu' | 'embeddings_cpu' | 'logic_cpu' | 'logic_gpu' | 'image'
 
 const USD_TO_EUR = 0.92
 
@@ -59,7 +59,7 @@ export default class ModelsService {
 
   static lastPingTimestamps: Record<string, number> = {}
 
-  async ensureRunPodWarm(endpointType: EndpointType) {
+  public async ensureRunPodWarm(endpointType: EndpointType) {
     const now = Date.now()
     const last = ModelsService.lastPingTimestamps[endpointType] || 0
     const secondsSinceLastPing = (now - last) / 1000

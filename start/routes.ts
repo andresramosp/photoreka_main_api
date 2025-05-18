@@ -65,5 +65,6 @@ router.post('/api/search/semantic', [SearchController, 'searchSemantic'])
 router.post('/api/search/tags', [SearchController, 'searchByTags'])
 router.post('/api/search/topological', [SearchController, 'searchTopological'])
 router.post('/api/search/byPhotos', [SearchController, 'searchByPhotos'])
+router.get('/api/search/warmUp', [SearchController, 'warmUp'])
 
 router.get('/api/tags/search', [TagsController, 'search'])
