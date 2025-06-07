@@ -252,8 +252,8 @@ export default class CatalogController {
 
         const similarPhotos = await embeddingService.findSimilarPhotoToEmbedding(
           EmbeddingsService.getParsedEmbedding(newPhoto.embedding)!!,
-          0.95,
-          20,
+          0.89,
+          5,
           'cosine_similarity'
         )
 
