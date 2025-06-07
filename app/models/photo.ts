@@ -28,9 +28,6 @@ export default class Photo extends BaseModel {
   @column()
   declare thumbnailName: string
 
-  // @column()
-  // declare url: string
-
   @column({ serializeAs: null })
   declare embedding: string | number[]
 

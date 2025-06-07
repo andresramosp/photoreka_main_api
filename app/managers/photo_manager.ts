@@ -1,15 +1,23 @@
-// @ts-nocheck
-
 import DetectionPhoto from '#models/detection_photo'
-import Photo, { PhotoDescriptions, PhotoDetections } from '#models/photo'
+import Photo, { PhotoDescriptions } from '#models/photo'
 import TagPhoto from '#models/tag_photo'
 import ModelsService from '#services/models_service'
 import NLPService from '#services/nlp_service'
 import { Logger } from '@adonisjs/core/logger'
 
-import { withCache } from '../decorators/withCache.js'
+import { invalidateCache, withCache } from '../decorators/withCache.js'
 import TagPhotoManager from './tag_photo_manager.js'
 import MeasureExecutionTime from '../decorators/measureExecutionTime.js'
+import { DeleteObjectsCommand, S3Client } from '@aws-sdk/client-s3'
+
+const s3 = new S3Client({
+  region: 'auto',
+  endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+  credentials: {
+    accessKeyId: process.env.R2_ACCESS_KEY!,
+    secretAccessKey: process.env.R2_SECRET_KEY!,
+  },
+})
 
 export default class PhotoManager {
   constructor() {}
@@ -198,13 +206,31 @@ export default class PhotoManager {
     return photo
   }
 
-  // Eliminar una foto por ID
-  public async deletePhoto(id: string) {
+  public async deletePhoto(id: number) {
     const photo = await Photo.find(id)
-    if (!photo) {
-      throw new Error('Photo not found')
+    if (!photo) throw new Error('Photo not found')
+
+    const objectsToDelete = [photo.name]
+    if (photo.thumbnailName) objectsToDelete.push(photo.thumbnailName)
+
+    try {
+      await s3.send(
+        new DeleteObjectsCommand({
+          Bucket: process.env.R2_BUCKET,
+          Delete: {
+            Objects: objectsToDelete.map((Key) => ({ Key })),
+            Quiet: true,
+          },
+        })
+      )
+    } catch (err) {
+      console.warn('⚠️ Fallo al eliminar archivos en R2:', err)
     }
+
     await photo.delete()
-    return { message: 'Photo deleted successfully' }
+    await invalidateCache(`getPhotos_${1234}`)
+    await invalidateCache(`getPhotosIdsByUser_${1234}`)
+
+    return { message: 'Photo deleted successfully', id }
   }
 }

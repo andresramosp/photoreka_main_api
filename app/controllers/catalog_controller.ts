@@ -1,15 +1,16 @@
-// @ts-nocheck
-
 import type { HttpContext } from '@adonisjs/core/http'
-import sharp from 'sharp'
-import { promises as fs } from 'fs'
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
+
+import { S3Client, PutObjectCommand, DeleteObjectsCommand } from '@aws-sdk/client-s3'
 import crypto from 'crypto'
 import Photo from '#models/photo'
 import { GoogleAuthService } from '#services/google_photos_service'
 import PhotoManager from '../managers/photo_manager.js'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { invalidateCache } from '../decorators/withCache.js'
+import ModelsService from '#services/models_service'
+import PhotoImageService from '#services/photo_image_service'
+import EmbeddingsService from '#services/embeddings_service'
+import AnalyzerProcessRunner from '#services/analyzer_service'
 
 const s3 = new S3Client({
   region: 'auto',
@@ -19,17 +20,6 @@ const s3 = new S3Client({
     secretAccessKey: process.env.R2_SECRET_KEY!,
   },
 })
-async function uploadToR2(buffer, key, contentType) {
-  await s3.send(
-    new PutObjectCommand({
-      Bucket: process.env.R2_BUCKET,
-      Key: key,
-      Body: buffer,
-      ContentType: contentType,
-    })
-  )
-  return `https://${process.env.R2_BUCKET}.r2.cloudflarestorage.com/${key}`
-}
 
 export default class CatalogController {
   public async uploadLocal({ request, response }: HttpContext) {
@@ -101,41 +91,41 @@ export default class CatalogController {
   //   }
   // }
 
-  public async uploadGooglePhotos({ request, response }: HttpContext) {
-    try {
-      const photos = request.input('photos')
-      if (!photos || photos.length === 0) {
-        return response.badRequest({ message: 'No se recibieron fotos de Google Photos' })
-      }
+  // public async uploadGooglePhotos({ request, response }: HttpContext) {
+  //   try {
+  //     const photos = request.input('photos')
+  //     if (!photos || photos.length === 0) {
+  //       return response.badRequest({ message: 'No se recibieron fotos de Google Photos' })
+  //     }
 
-      const photosData = await Promise.all(
-        photos.map(async (photo) => {
-          const res = await fetch(`${photo.baseUrl}=w2000-h2000-no`) // 🔹 Obtiene la mejor calidad disponible
-          const buffer = await res.arrayBuffer()
-          return {
-            buffer: Buffer.from(buffer),
-            filename: photo.filename,
-            url: photo.baseUrl,
-          }
-        })
-      )
+  //     const photosData = await Promise.all(
+  //       photos.map(async (photo: Photo) => {
+  //         const res = await fetch(`${photo.baseUrl}=w2000-h2000-no`) // 🔹 Obtiene la mejor calidad disponible
+  //         const buffer = await res.arrayBuffer()
+  //         return {
+  //           buffer: Buffer.from(buffer),
+  //           filename: photo.name,
+  //           url: photo.baseUrl,
+  //         }
+  //       })
+  //     )
 
-      const savedPhotos = await this.savePhotos(photosData)
+  //     const savedPhotos = await this.savePhotos(photosData)
 
-      invalidateCache(`getPhotos_${1234}`)
-      invalidateCache(`getPhotosIdsByUser_${1234}`)
+  //     invalidateCache(`getPhotos_${1234}`)
+  //     invalidateCache(`getPhotosIdsByUser_${1234}`)
 
-      return response.ok({
-        message: 'Fotos de Google Photos guardadas exitosamente',
-        savedPhotos,
-      })
-    } catch (error) {
-      console.error('Error guardando fotos de Google Photos:', error)
-      return response.internalServerError({
-        message: 'Error procesando las imágenes de Google Photos',
-      })
-    }
-  }
+  //     return response.ok({
+  //       message: 'Fotos de Google Photos guardadas exitosamente',
+  //       savedPhotos,
+  //     })
+  //   } catch (error) {
+  //     console.error('Error guardando fotos de Google Photos:', error)
+  //     return response.internalServerError({
+  //       message: 'Error procesando las imágenes de Google Photos',
+  //     })
+  //   }
+  // }
 
   public async getPhoto({ response, request, params }: HttpContext) {
     const photoManager = new PhotoManager()
@@ -194,6 +184,124 @@ export default class CatalogController {
     } catch (error) {
       console.error('Error en el callback de Google:', error)
       return response.internalServerError({ message: 'Error en la autenticación de Google Photos' })
+    }
+  }
+
+  public async deletePhoto({ params, response }: HttpContext) {
+    try {
+      const photoManager = new PhotoManager()
+      const result = await photoManager.deletePhoto(params.id)
+      return response.ok(result)
+    } catch (error) {
+      console.error('Error al eliminar foto:', error)
+      return response.internalServerError({ message: 'Error eliminando la foto' })
+    }
+  }
+
+  public async checkDuplicates({ request, response }: HttpContext) {
+    const { newPhotoIds } = request.only(['newPhotoIds'])
+
+    const modelsService = new ModelsService()
+    const embeddingService = new EmbeddingsService()
+
+    const allPhotos = await Photo.all()
+    const photosWithoutEmbedding = allPhotos.filter((p) => !p.embedding)
+
+    // 1. Generar embeddings para las fotos que no lo tengan
+    if (photosWithoutEmbedding.length > 0) {
+      const payload = await Promise.all(
+        photosWithoutEmbedding.map(async (p) => {
+          const buffer = await PhotoImageService.getInstance().getImageBufferFromR2(p.name)
+          const base64 = buffer.toString('base64')
+          return { id: p.id, base64 }
+        })
+      )
+
+      const { embeddings } = await modelsService.getEmbeddingsImages(payload)
+
+      await Promise.all(
+        embeddings.map(async (item: { id: number; embedding: number[] }) => {
+          const photo = allPhotos.find((p) => p.id === item.id)
+          if (photo) {
+            photo.embedding = item.embedding
+            await photo.save()
+          }
+        })
+      )
+    }
+
+    // 2. Selección de fotos nuevas
+    const newPhotos =
+      !newPhotoIds || newPhotoIds.length === 0
+        ? allPhotos
+        : allPhotos.filter((p) => newPhotoIds.includes(p.id))
+
+    const results: Record<string, string[]> = {}
+
+    // 3. Buscar duplicados usando similitud de embeddings
+    for (const newPhoto of newPhotos) {
+      if (!newPhoto.embedding) continue
+
+      const similarPhotos = await embeddingService.findSimilarPhotoToEmbedding(
+        EmbeddingsService.getParsedEmbedding(newPhoto.embedding)!!,
+        0.95,
+        20,
+        'cosine_similarity'
+      )
+
+      const matches = similarPhotos
+        .filter((match: any) => match.id !== newPhoto.id)
+        .map((match: any) => match.id)
+
+      if (matches.length > 0) {
+        results[newPhoto.id] = matches
+      }
+    }
+
+    return response.ok(results)
+  }
+
+  public async deleteDuplicates({ request, response }: HttpContext) {
+    try {
+      const photoManager = new PhotoManager()
+      const analyzerService = new AnalyzerProcessRunner()
+
+      const { duplicates }: { duplicates: number[] } = request.only(['duplicates'])
+      if (!duplicates || duplicates.length < 2) {
+        return response.badRequest({
+          message: 'Se necesitan al menos dos fotos para comparar duplicados',
+        })
+      }
+
+      const healthReports = await Promise.all(
+        duplicates.map(async (id) => ({
+          id,
+          ...(await analyzerService.photoHealth(id)),
+        }))
+      )
+
+      // Ordenar: primero por `ok` (false antes que true), luego por longitud de `missing`
+      const sorted = healthReports.sort((a, b) => {
+        if (a.ok !== b.ok) return a.ok ? 1 : -1
+        return b.missing.length - a.missing.length
+      })
+
+      // Mantener la más sana (última), borrar el resto
+      const toDelete = sorted.slice(0, -1)
+      const deleted: number[] = []
+      for (const photo of toDelete) {
+        await photoManager.deletePhoto(photo.id)
+        deleted.push(photo.id)
+      }
+
+      return response.ok({
+        message: 'Duplicados eliminados',
+        kept: sorted.at(-1)!.id,
+        deleted,
+      })
+    } catch (error) {
+      console.error('Error eliminando duplicados:', error)
+      return response.internalServerError({ message: 'Error eliminando duplicados' })
     }
   }
 }
