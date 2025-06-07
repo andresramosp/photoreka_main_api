@@ -64,11 +64,11 @@ export const packages = [
           visual_accents: { type: 'split_by_size', maxLength: 15 },
         },
       },
-      {
-        name: 'visual_embedding_task',
-        type: 'VisualEmbeddingTask',
-        needsImage: true,
-      },
+      // {
+      //   name: 'visual_embedding_task',
+      //   type: 'VisualEmbeddingTask',
+      //   needsImage: true,
+      // },
       {
         name: 'visual_detections_task',
         type: 'VisualDetectionTask',
