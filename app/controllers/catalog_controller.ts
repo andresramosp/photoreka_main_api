@@ -211,23 +211,30 @@ export default class CatalogController {
     if (photosWithoutEmbedding.length > 0) {
       const payload = await Promise.all(
         photosWithoutEmbedding.map(async (p) => {
-          const buffer = await PhotoImageService.getInstance().getImageBufferFromR2(p.name)
-          const base64 = buffer.toString('base64')
-          return { id: p.id, base64 }
-        })
-      )
-
-      const { embeddings } = await modelsService.getEmbeddingsImages(payload)
-
-      await Promise.all(
-        embeddings.map(async (item: { id: number; embedding: number[] }) => {
-          const photo = allPhotos.find((p) => p.id === item.id)
-          if (photo) {
-            photo.embedding = item.embedding
-            await photo.save()
+          try {
+            const buffer = await PhotoImageService.getInstance().getImageBufferFromR2(p.name)
+            const base64 = buffer.toString('base64')
+            return { id: p.id, base64 }
+          } catch (err) {
+            console.warn(`⚠️ No se pudo obtener imagen para la foto ${p.id}: ${err.message}`)
+            return null
           }
         })
-      )
+      ).then((arr) => arr.filter(Boolean))
+
+      if (payload.length > 0) {
+        const { embeddings } = await modelsService.getEmbeddingsImages(payload)
+
+        await Promise.all(
+          embeddings.map(async (item: { id: number; embedding: number[] }) => {
+            const photo = allPhotos.find((p) => p.id === item.id)
+            if (photo) {
+              photo.embedding = item.embedding
+              await photo.save()
+            }
+          })
+        )
+      }
     }
 
     // 2. Selección de fotos nuevas
@@ -236,27 +243,29 @@ export default class CatalogController {
         ? allPhotos
         : allPhotos.filter((p) => newPhotoIds.includes(p.id))
 
-    const results: Record<string, string[]> = {}
+    // 3. Buscar duplicados usando similitud de embeddings (paralelizado)
+    const results: Record<number, number[]> = {}
 
-    // 3. Buscar duplicados usando similitud de embeddings
-    for (const newPhoto of newPhotos) {
-      if (!newPhoto.embedding) continue
+    await Promise.all(
+      newPhotos.map(async (newPhoto) => {
+        if (!newPhoto.embedding) return
 
-      const similarPhotos = await embeddingService.findSimilarPhotoToEmbedding(
-        EmbeddingsService.getParsedEmbedding(newPhoto.embedding)!!,
-        0.95,
-        20,
-        'cosine_similarity'
-      )
+        const similarPhotos = await embeddingService.findSimilarPhotoToEmbedding(
+          EmbeddingsService.getParsedEmbedding(newPhoto.embedding)!!,
+          0.95,
+          20,
+          'cosine_similarity'
+        )
 
-      const matches = similarPhotos
-        .filter((match: any) => match.id !== newPhoto.id)
-        .map((match: any) => match.id)
+        const matches = similarPhotos
+          .filter((match: any) => match.id !== newPhoto.id)
+          .map((match: any) => match.id)
 
-      if (matches.length > 0) {
-        results[newPhoto.id] = matches
-      }
-    }
+        if (matches.length > 0) {
+          results[newPhoto.id] = matches
+        }
+      })
+    )
 
     return response.ok(results)
   }
