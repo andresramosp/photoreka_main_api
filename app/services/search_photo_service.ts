@@ -28,7 +28,7 @@ export default class SearchPhotoService {
   private scoringService = new ScoringService()
   private embeddingsService = new EmbeddingsService()
 
-  public async searchByPhotos(query: SearchByPhotoOptions): Promise<Photo[]> {
+  public async searchByPhotos(query: SearchByPhotoOptions): Promise<(Photo & { score: number })[]> {
     if (!query.anchorIds?.length) return []
 
     const userPhotoIds = await this.photoManager.getPhotosIdsByUser('1234')
@@ -64,12 +64,32 @@ export default class SearchPhotoService {
 
     if (!scored.length) return []
 
-    const topIds = scored
-      .sort((a, b) => (query.opposite ? a.score - b.score : b.score - a.score))
-      .slice(0, query.resultLength)
-      .map((s) => s.id)
+    // Ordenamos todos los candidatos
+    const scoredSorted = scored.sort((a, b) =>
+      query.opposite ? a.score - b.score : b.score - a.score
+    )
 
-    return this.photoManager.getPhotosByIds(topIds.map(String))
+    // Aplicamos slice antes de pedir a DB
+    const topScored = scoredSorted.slice(0, query.resultLength)
+    const topIds = topScored.map(({ id }) => id)
+    const scoreMap = Object.fromEntries(topScored.map(({ id, score }) => [id, score]))
+
+    // Obtenemos solo las fotos necesarias
+    const photos = await this.photoManager.getPhotosByIds(topIds.map(String))
+    const photoMap = new Map(photos.map((p) => [p.id, p.serialize()]))
+
+    // Añadimos el score y devolvemos
+    const sortedPhotosWithScore = topIds
+      .map((id) => {
+        const serialized = photoMap.get(id)
+        if (serialized) {
+          serialized.score = scoreMap[id]
+        }
+        return serialized
+      })
+      .filter(Boolean)
+
+    return sortedPhotosWithScore
   }
 
   /* ───────────────────── Strategy helpers ───────────────────── */
