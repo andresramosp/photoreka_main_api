@@ -118,7 +118,7 @@ export default class SearchPhotoService {
 
     const similar = await this.embeddingsService.findSimilarChunkToEmbedding(
       combined,
-      query.opposite ? 0 : 0.5,
+      query.opposite ? 1 : 0.5,
       200,
       'cosine_similarity',
       candidateIds,
@@ -151,7 +151,7 @@ export default class SearchPhotoService {
 
     const similar = await this.embeddingsService.findSimilarPhotoToEmbedding(
       combinedEmbedding,
-      query.opposite ? 0 : 0.4,
+      query.opposite ? 1 : 0.4,
       200,
       'cosine_similarity',
       query.opposite
@@ -170,7 +170,7 @@ export default class SearchPhotoService {
         const tagEmb = EmbeddingsService.getParsedEmbedding(tagPhoto.tag.embedding)
         const similar = await this.embeddingsService.findSimilarTagToEmbedding(
           tagEmb,
-          query.opposite ? 0 : 0.5,
+          query.opposite ? 1 : 0.5,
           200,
           'cosine_similarity',
           null,
