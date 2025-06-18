@@ -271,7 +271,8 @@ export default class EmbeddingsService {
     categories?: string[], // garantizamos que pertenece a esa categorías, pero aún no sabemos para qué foto
     areas?: string[],
     photoIds?: number[],
-    userId?: number // 🔥 Se deja opcional para el futuro
+    userId?: number, // 🔥 Se deja opcional para el futuro
+    opposite: boolean = false
   ) {
     if (!embedding || embedding.length === 0) {
       throw new Error('Embedding no proporcionado o vacío')
@@ -295,8 +296,13 @@ export default class EmbeddingsService {
         orderBy = 'proximity DESC'
       } else if (metric === 'cosine_similarity') {
         metricQuery = '1 - (tags.embedding <=> :embedding) AS proximity'
-        thresholdCondition = '1 - (tags.embedding <=> :embedding) >= :threshold'
-        orderBy = 'proximity DESC'
+        if (opposite) {
+          thresholdCondition = '1 - (tags.embedding <=> :embedding) <= :threshold'
+          orderBy = 'proximity ASC'
+        } else {
+          thresholdCondition = '1 - (tags.embedding <=> :embedding) >= :threshold'
+          orderBy = 'proximity DESC'
+        }
       }
       additionalParams.threshold = threshold
     } else {

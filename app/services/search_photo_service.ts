@@ -13,7 +13,7 @@ import MeasureExecutionTime from '../decorators/measureExecutionTime.js'
 export type SearchByPhotoOptions = {
   anchorIds: number[]
   currentPhotosIds: number[]
-  criteria: 'semantic' | 'embedding' | 'chromatic' | 'composition' | 'geometrical' | 'tags'
+  criteria: 'semantic' | 'embedding' | 'chromatic' | 'composition' | 'tags'
   tagIds: number[]
   boxesIds: number[]
   descriptionCategories: string[]
@@ -55,20 +55,27 @@ export default class SearchPhotoService {
       case 'composition':
         scored = await this.scoreComposition(query, candidateIds, anchors[0])
         break
-      case 'geometrical':
-        scored = await this.scoreGeometrical(query, candidateIds, anchors)
-        break
+
       default:
         return []
     }
 
     if (!scored.length) return []
 
-    // Ordenamos todos los candidatos
-    const scoredSorted = scored.sort((a, b) =>
+    let scoredSorted = scored.sort((a, b) =>
       query.opposite ? a.score - b.score : b.score - a.score
     )
 
+    // Normalizamos los scores entre 0 y 1
+    const scores = scoredSorted.map((s) => s.score)
+    const min = Math.min(...scores)
+    const max = Math.max(...scores)
+    const range = max - min || 1 // evitamos división por cero
+
+    scoredSorted = scoredSorted.map(({ id, score }) => ({
+      id,
+      score: (score - min) / range,
+    }))
     // Aplicamos slice antes de pedir a DB
     const topScored = scoredSorted.slice(0, query.resultLength)
     const topIds = topScored.map(({ id }) => id)
@@ -170,13 +177,15 @@ export default class SearchPhotoService {
         const tagEmb = EmbeddingsService.getParsedEmbedding(tagPhoto.tag.embedding)
         const similar = await this.embeddingsService.findSimilarTagToEmbedding(
           tagEmb,
-          query.opposite ? 1 : 0.5,
+          query.opposite ? 1 : 0.3,
           200,
           'cosine_similarity',
           null,
           null,
           [],
-          candidateIds
+          candidateIds,
+          null,
+          query.opposite
         )
         similar.forEach((t) => {
           if (!tagScoreMap[t.photo_id]) tagScoreMap[t.photo_id] = []
@@ -184,12 +193,11 @@ export default class SearchPhotoService {
         })
       }
     }
-    return Object.entries(tagScoreMap)
-      .map(([id, prox]) => ({
-        id: +id,
-        score: this.scoringService.calculateProximitiesScores(prox),
-      }))
-      .filter((o) => o.score > 0)
+    return Object.entries(tagScoreMap).map(([id, prox]) => ({
+      id: +id,
+      score: this.scoringService.calculateProximitiesScores(prox),
+    }))
+    // .filter((o) => o.score > 0)
   }
 
   private async scoreComposition(
@@ -210,9 +218,5 @@ export default class SearchPhotoService {
     return hits
       .filter((h) => candidateIds.includes(h.id))
       .map((h) => ({ id: h.id, score: h.score }))
-  }
-
-  private async scoreGeometrical(..._args: any[]) {
-    return []
   }
 }
