@@ -55,7 +55,6 @@ export default class SearchPhotoService {
       case 'composition':
         scored = await this.scoreComposition(query, candidateIds, anchors[0])
         break
-
       default:
         return []
     }
@@ -70,29 +69,26 @@ export default class SearchPhotoService {
     const scores = scoredSorted.map((s) => s.score)
     const min = Math.min(...scores)
     const max = Math.max(...scores)
-    const range = max - min || 1 // evitamos división por cero
+    const range = max - min || 1
 
-    scoredSorted = scoredSorted.map(({ id, score }) => ({
-      id,
-      score: (score - min) / range,
+    scoredSorted = scoredSorted.map((entry) => ({
+      ...entry,
+      score: (entry.score - min) / range,
     }))
-    // Aplicamos slice antes de pedir a DB
+
     const topScored = scoredSorted.slice(0, query.resultLength)
     const topIds = topScored.map(({ id }) => id)
-    const scoreMap = Object.fromEntries(topScored.map(({ id, score }) => [id, score]))
 
-    // Obtenemos solo las fotos necesarias
     const photos = await this.photoManager.getPhotosByIds(topIds.map(String))
     const photoMap = new Map(photos.map((p) => [p.id, p.serialize()]))
 
-    // Añadimos el score y devolvemos
-    const sortedPhotosWithScore = topIds
-      .map((id) => {
-        const serialized = photoMap.get(id)
+    const sortedPhotosWithScore = topScored
+      .map((entry) => {
+        const serialized = photoMap.get(entry.id)
         if (serialized) {
-          serialized.score = scoreMap[id]
+          return { ...serialized, ...entry }
         }
-        return serialized
+        return null
       })
       .filter(Boolean)
 
@@ -193,11 +189,11 @@ export default class SearchPhotoService {
         })
       }
     }
-    return Object.entries(tagScoreMap).map(([id, prox]) => ({
+    return Object.entries(tagScorMap).map(([id, prox]) => ({
       id: +id,
       score: this.scoringService.calculateProximitiesScores(prox),
     }))
-    // .filter((o) => o.score > 0)
+    // .filter((o) => o.score > 0)e
   }
 
   private async scoreComposition(
