@@ -62,7 +62,7 @@ export default class SearchPhotoService {
     if (!scored.length) return []
 
     let scoredSorted = scored.sort((a, b) =>
-      query.opposite ? a.score - b.score : b.score - a.score
+      query.opposite && query.criteria !== 'composition' ? a.score - b.score : b.score - a.score
     )
 
     // Normalizamos los scores entre 0 y 1
@@ -185,15 +185,15 @@ export default class SearchPhotoService {
         )
         similar.forEach((t) => {
           if (!tagScoreMap[t.photo_id]) tagScoreMap[t.photo_id] = []
-          tagScoreMap[t.photo_id].push(t.proximity)
+          tagScoreMap[t.photo_id].push({ name: t.name, proximity: t.proximity })
         })
       }
     }
-    return Object.entries(tagScorMap).map(([id, prox]) => ({
+    return Object.entries(tagScoreMap).map(([id, prox]) => ({
       id: +id,
-      score: this.scoringService.calculateProximitiesScores(prox),
+      score: this.scoringService.calculateProximitiesScores(prox.map((p) => p.proximity)),
+      matchingTags: prox.map((p) => p.name),
     }))
-    // .filter((o) => o.score > 0)e
   }
 
   private async scoreComposition(
