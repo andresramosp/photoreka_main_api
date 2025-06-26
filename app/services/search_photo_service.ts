@@ -13,7 +13,7 @@ import MeasureExecutionTime from '../decorators/measureExecutionTime.js'
 export type SearchByPhotoOptions = {
   anchorIds: number[]
   currentPhotosIds: number[]
-  criteria: 'semantic' | 'embedding' | 'chromatic' | 'composition' | 'tags'
+  criteria: 'embedding' | 'story' | 'context' | 'chromatic' | 'composition' | 'tags'
   tagIds: number[]
   boxesIds: number[]
   descriptionCategories: string[]
@@ -43,8 +43,11 @@ export default class SearchPhotoService {
 
     let scored: { id: number; score: number }[] = []
     switch (query.criteria) {
-      case 'semantic':
-        scored = await this.scoreSemantic(query, candidateIds, anchors)
+      case 'story':
+        scored = await this.scoreSemantic(query, candidateIds, anchors, ['story'])
+        break
+      case 'context':
+        scored = await this.scoreSemantic(query, candidateIds, anchors, ['context'])
         break
       case 'embedding':
         scored = await this.scoreEmbedding(query, candidateIds, anchors)
@@ -100,14 +103,15 @@ export default class SearchPhotoService {
   private async scoreSemantic(
     query: SearchByPhotoOptions,
     candidateIds: number[],
-    anchors: Photo[]
+    anchors: Photo[],
+    descriptionCategories: string[]
   ) {
     for (const p of anchors) if (!p.descriptionChunks) await p.load('descriptionChunks')
 
     const baseChunks: DescriptionChunk[] = []
     anchors.forEach((p) => {
       baseChunks.push(
-        ...p.descriptionChunks.filter((dc) => query.descriptionCategories.includes(dc.category))
+        ...p.descriptionChunks.filter((dc) => descriptionCategories.includes(dc.category))
       )
     })
     if (!baseChunks.length) return []
@@ -125,7 +129,7 @@ export default class SearchPhotoService {
       200,
       'cosine_similarity',
       candidateIds,
-      query.descriptionCategories,
+      descriptionCategories,
       undefined,
       query.opposite
     )

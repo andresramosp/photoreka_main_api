@@ -10,9 +10,9 @@ const WEIGHTS = (coverageRatio: number = 0) => {
   }
 }
 
-const MAX_DIFF_BOXES = 1
+const MAX_DIFF_BOXES = 0
 const CATEGORY_GROUPS = [
-  ['animal', 'person', 'prominent object'],
+  ['animal', 'person'],
   ['prominent object', 'architectural feature'],
 ]
 const CROSS_GROUP_PENALTY = 0 // unificarlo
@@ -85,19 +85,27 @@ export default class VisualFeaturesService {
   }
 
   private computeScore(refBoxes: DetectionPhoto[], candBoxes: DetectionPhoto[], coverage: number) {
-    const individual = this.matchScoreIndividual(refBoxes, candBoxes)
+    if (!this.hasAnyCompatibleGroup(refBoxes, candBoxes)) {
+      return 0
+    }
+
+    // const individual = this.matchScoreIndividual(refBoxes, candBoxes)
     const global = this.matchScoreGlobal(refBoxes, candBoxes)
-    const numBoxesSim = this.matchScoreNumBoxes(refBoxes, candBoxes)
+    // const numBoxesSim = this.matchScoreNumBoxes(refBoxes, candBoxes)
 
     const weightedSum =
-      WEIGHTS(coverage).individual * individual +
-      WEIGHTS(coverage).global * global +
-      WEIGHTS(coverage).numBoxes * numBoxesSim
+      // WEIGHTS(coverage).individual * individual +
+      WEIGHTS(coverage).global * global
+    // WEIGHTS(coverage).numBoxes * numBoxesSim
 
     const totalWeights =
       WEIGHTS(coverage).individual + WEIGHTS(coverage).global + WEIGHTS(coverage).numBoxes
 
     return totalWeights > 0 ? weightedSum / totalWeights : 0
+  }
+
+  private hasAnyCompatibleGroup(a: DetectionPhoto[], b: DetectionPhoto[]) {
+    return a.some((boxA) => b.some((boxB) => this.isSameGroup(boxA.category, boxB.category)))
   }
 
   private matchScoreIndividual(
@@ -119,9 +127,10 @@ export default class VisualFeaturesService {
         const sim = detRef.similarity(detCand)
 
         let adjustedSim = sim
-        if (!this.isSameGroup(detRef.category, detCand.category)) {
-          adjustedSim *= CROSS_GROUP_PENALTY
-        }
+        // if (!this.isSameGroup(detRef.category, detCand.category)) {
+        //   adjustedSim *= CROSS_GROUP_PENALTY
+        // }
+        if (!this.isSameGroup(detRef.category, detCand.category)) continue
 
         if (adjustedSim > bestScore) {
           bestScore = adjustedSim

@@ -67,7 +67,7 @@ export default class PhotoManager {
   }
 
   public async getPhotosPreview(userId: string) {
-    const photos = await Photo.query().orderBy('created_at', 'desc')
+    const photos = await Photo.query().orderBy('created_at', 'desc').limit(50)
     return photos.map((p) => ({
       id: p.id,
       originalUrl: p.originalUrl,
