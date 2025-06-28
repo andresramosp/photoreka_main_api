@@ -383,6 +383,7 @@ export default class SearchTextService {
           originalUrl: photo?.originalUrl,
           thumbnailUrl: photo?.thumbnailUrl,
           ...scoredPhoto,
+          matchingTags: scoredPhoto?.matchingTags.map((t) => t.name),
         },
       }
     })
