@@ -239,6 +239,25 @@ export default class ModelsService {
   }
 
   @withWarmUp('image')
+  async getColorEmbeddingsImages(images: { id: number; base64: string }[]) {
+    try {
+      const payload = { images }
+      const { url, requestPayload, headers } = this.buildRequestConfig(
+        'get_color_embeddings_image',
+        payload,
+        'image'
+      )
+
+      const { data } = await axios.post(url, requestPayload, { headers })
+
+      return { embeddings: data.output ? data.output : data || [] }
+    } catch (error) {
+      console.error('Error en getEmbeddingsImages:', error.message)
+      return { embeddings: [] }
+    }
+  }
+
+  @withWarmUp('image')
   async getPresenceMaps(images: { id: string; base64: string }) {
     try {
       const payload = { images }

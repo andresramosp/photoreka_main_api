@@ -31,6 +31,12 @@ export default class Photo extends BaseModel {
   @column({ serializeAs: null })
   declare embedding: string | number[]
 
+  @column({ serializeAs: null })
+  declare colorPalette: string | number[]
+
+  @column({ serializeAs: null })
+  declare colorArray: number[]
+
   @column.dateTime({ autoCreate: true })
   declare createdAt: DateTime
 
@@ -68,6 +74,10 @@ export default class Photo extends BaseModel {
     if (photo.embedding && Array.isArray(photo.embedding)) {
       // Convierte el array en formato pgvector: '[value1,value2,...]'
       photo.embedding = `[${(photo.embedding as any[]).join(',')}]`
+    }
+    if (photo.colorPalette && Array.isArray(photo.colorPalette)) {
+      // Convierte el array en formato pgvector: '[value1,value2,...]'
+      photo.colorPalette = `[${(photo.colorPalette as any[]).join(',')}]`
     }
   }
 
@@ -111,10 +121,6 @@ export default class Photo extends BaseModel {
     }
 
     return finalDetections
-  }
-
-  public getParsedEmbedding(): number[] | null {
-    return this.embedding ? JSON.parse(this.embedding as string) : null
   }
 
   @computed()

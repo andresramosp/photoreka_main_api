@@ -52,6 +52,9 @@ export default class SearchPhotoService {
       case 'embedding':
         scored = await this.scoreEmbedding(query, candidateIds, anchors)
         break
+      case 'chromatic':
+        scored = await this.scoreChromatic(query, candidateIds, anchors)
+        break
       case 'tags':
         scored = await this.scoreTags(query, candidateIds, anchors)
         break
@@ -163,6 +166,52 @@ export default class SearchPhotoService {
       'cosine_similarity',
       query.opposite
     )
+
+    return similar
+      .filter((s) => candidateIds.includes(s.id))
+      .map((s) => ({ id: s.id, score: s.proximity }))
+  }
+
+  @MeasureExecutionTime
+  private async scoreChromatic(
+    query: SearchByPhotoOptions,
+    candidateIds: number[],
+    anchors: Photo[],
+    useDominants: boolean = false // Nuevo parámetro
+  ) {
+    const anchorEmbeddings = anchors
+      .filter((p) => (useDominants ? p.colorArray : p.colorPalette))
+      .map((p) =>
+        useDominants
+          ? p.colorArray // ya es number[]
+          : VectorService.getParsedEmbedding(p.colorPalette)
+      )
+
+    if (!anchorEmbeddings.length) return []
+
+    const combinedEmbedding = anchorEmbeddings
+      .reduce((acc, e, i) => (i === 0 ? e.slice() : acc.map((v, idx) => v + e[idx])), [])
+      .map((v) => v / anchorEmbeddings.length)
+
+    let similar
+
+    if (useDominants) {
+      // Nuevo flujo usando saturación
+      similar = await this.vectorService.findSimilarPhotoToDominantColors(
+        combinedEmbedding,
+        query.opposite ? 1 : 0.4,
+        200,
+        query.opposite
+      )
+    } else {
+      similar = await this.vectorService.findSimilarPhotoToColorPalette(
+        combinedEmbedding,
+        query.opposite ? 1 : 0.4,
+        200,
+        'cosine_similarity',
+        query.opposite
+      )
+    }
 
     return similar
       .filter((s) => candidateIds.includes(s.id))

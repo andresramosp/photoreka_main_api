@@ -7,6 +7,8 @@ import Photo, { DescriptionType } from '#models/photo'
 import NodeCache from 'node-cache'
 import MeasureExecutionTime from '../decorators/measureExecutionTime.js'
 import { createRequire } from 'module'
+import colorsys from 'colorsys'
+
 const require = createRequire(import.meta.url)
 const pluralize = require('pluralize')
 
@@ -456,6 +458,252 @@ export default class VectorService {
         limit,
         ...additionalParams,
       }
+    )
+
+    return result.rows
+  }
+
+  public async findSimilarPhotoToColorPalette(
+    embedding: number[],
+    threshold: Threshold = 0.3,
+    limit: number = 10,
+    metric: 'distance' | 'inner_product' | 'cosine_similarity' = 'cosine_similarity',
+    opposite: boolean = false
+  ) {
+    if (!embedding || embedding.length === 0) {
+      throw new Error('Color palette embedding no proporcionado o vacío')
+    }
+
+    let metricQuery: string = ''
+    let thresholdCondition: string = ''
+    let orderBy: string = ''
+    let additionalParams: any = {}
+
+    if (typeof threshold === 'number') {
+      if (metric === 'distance') {
+        metricQuery = 'photos.color_palette <-> :embedding AS proximity'
+        if (opposite) {
+          thresholdCondition = 'photos.color_palette <-> :embedding >= :threshold'
+          orderBy = 'proximity DESC'
+        } else {
+          thresholdCondition = 'photos.color_palette <-> :embedding <= :threshold'
+          orderBy = 'proximity ASC'
+        }
+      } else if (metric === 'inner_product') {
+        metricQuery = '(photos.color_palette <#> :embedding) * -1 AS proximity'
+        if (opposite) {
+          thresholdCondition = '(photos.color_palette <#> :embedding) * -1 <= :threshold'
+          orderBy = 'proximity ASC'
+        } else {
+          thresholdCondition = '(photos.color_palette <#> :embedding) * -1 >= :threshold'
+          orderBy = 'proximity DESC'
+        }
+      } else if (metric === 'cosine_similarity') {
+        metricQuery = '1 - (photos.color_palette <=> :embedding) AS proximity'
+        if (opposite) {
+          thresholdCondition = '1 - (photos.color_palette <=> :embedding) <= :threshold'
+          orderBy = 'proximity ASC'
+        } else {
+          thresholdCondition = '1 - (photos.color_palette <=> :embedding) >= :threshold'
+          orderBy = 'proximity DESC'
+        }
+      }
+      additionalParams.threshold = threshold
+    } else {
+      // threshold con propiedades min y max
+      if (metric === 'distance') {
+        metricQuery = 'photos.color_palette <-> :embedding AS proximity'
+        thresholdCondition =
+          'photos.color_palette <-> :embedding BETWEEN :minThreshold AND :maxThreshold'
+        orderBy = opposite ? 'proximity DESC' : 'proximity ASC'
+      } else if (metric === 'inner_product') {
+        metricQuery = '(photos.color_palette <#> :embedding) * -1 AS proximity'
+        thresholdCondition =
+          '(photos.color_palette <#> :embedding) * -1 BETWEEN :minThreshold AND :maxThreshold'
+        orderBy = opposite ? 'proximity ASC' : 'proximity DESC'
+      } else if (metric === 'cosine_similarity') {
+        metricQuery = '1 - (photos.color_palette <=> :embedding) AS proximity'
+        thresholdCondition =
+          '1 - (photos.color_palette <=> :embedding) BETWEEN :minThreshold AND :maxThreshold'
+        orderBy = opposite ? 'proximity ASC' : 'proximity DESC'
+      }
+      additionalParams.minThreshold = threshold.min
+      additionalParams.maxThreshold = threshold.max
+    }
+
+    const embeddingString = `[${embedding.join(',')}]`
+
+    const result = await db.rawQuery(
+      `
+      SELECT photos.id, photos.name, ${metricQuery}
+      FROM photos
+      WHERE ${thresholdCondition}
+      ORDER BY ${orderBy}
+      LIMIT :limit
+    `,
+      {
+        embedding: embeddingString,
+        limit,
+        ...additionalParams,
+      }
+    )
+
+    return result.rows
+  }
+
+  // public async findSimilarPhotoToColorDominants(
+  //   embedding: number[], // Paleta de la foto ancla
+  //   candidateIds: number[], // IDs de las fotos candidatas
+  //   limit: number = 10,
+  //   topN: number = 3 // Número de colores dominantes a comparar
+  // ) {
+  //   if (!embedding || embedding.length === 0) {
+  //     throw new Error('Color palette embedding no proporcionado o vacío')
+  //   }
+
+  //   // 1. Extraemos los N colores más relevantes de la foto ancla
+  //   const anchorTopColors = this.getTopIntenseColorsFromEmbedding(embedding, topN)
+
+  //   // 2. Recuperamos las paletas de las fotos candidatas
+  //   const candidatePhotos = await db
+  //     .from('photos')
+  //     .select('id', 'color_array')
+  //     .whereIn('id', candidateIds)
+
+  //   const results = candidatePhotos.map((photo) => {
+  //     // Extraemos los N colores más relevantes de la foto candidata
+  //     const candidateTopColors = this.getTopIntenseColorsFromEmbedding(photo.color_array, topN)
+
+  //     // Calculamos la distancia mínima entre cada color del ancla y cada color del candidato
+  //     let totalMinDistance = 0
+
+  //     anchorTopColors.forEach((anchorColor) => {
+  //       const minDistance = Math.min(
+  //         ...candidateTopColors.map((candidateColor) =>
+  //           this.getColorDistance(anchorColor, candidateColor)
+  //         )
+  //       )
+  //       totalMinDistance += minDistance
+  //     })
+
+  //     // Proximidad final → media de las distancias mínimas
+  //     const proximity = totalMinDistance / anchorTopColors.length
+
+  //     return { id: photo.id, proximity }
+  //   })
+
+  //   // Ordenamos por proximidad (más cercanos primero)
+  //   return results.sort((a, b) => a.proximity - b.proximity).slice(0, limit)
+  // }
+
+  // private getTopIntenseColorsFromEmbedding(embedding: number[], topN: number = 3) {
+  //   if (!embedding || embedding.length === 0) return []
+
+  //   const weights = [0.5, 0.3, 0.1, 0.07, 0.03] // Pesos por frecuencia
+
+  //   const colorScores = []
+
+  //   for (let i = 0; i < embedding.length; i += 3) {
+  //     const colorIndex = i / 3
+  //     const weight = weights[colorIndex] || 0
+
+  //     const r = embedding[i] * 255
+  //     const g = embedding[i + 1] * 255
+  //     const b = embedding[i + 2] * 255
+
+  //     // Intensidad perceptual (brillo)
+  //     const intensity = 0.299 * r + 0.587 * g + 0.114 * b
+
+  //     colorScores.push({
+  //       index: colorIndex,
+  //       color: [embedding[i], embedding[i + 1], embedding[i + 2]],
+  //       score: intensity * weight,
+  //     })
+  //   }
+
+  //   // Ordenamos por score (frecuencia × intensidad)
+  //   colorScores.sort((a, b) => b.score - a.score)
+
+  //   // Nos quedamos con los N colores más relevantes
+  //   return colorScores.slice(0, topN).map((c) => c.color)
+  // }
+
+  // private getColorDistance(colorA: number[], colorB: number[]): number {
+  //   return Math.sqrt(
+  //     Math.pow(colorA[0] - colorB[0], 2) +
+  //       Math.pow(colorA[1] - colorB[1], 2) +
+  //       Math.pow(colorA[2] - colorB[2], 2)
+  //   )
+  // }
+
+  // private getWeightedIntensityFromEmbedding(embedding: number[]): number {
+  //   if (!embedding || embedding.length === 0) return 0
+
+  //   // Pesos decrecientes (igual que en la saturación ponderada)
+  //   const weights = [0.5, 0.3, 0.1, 0.07, 0.03] // Ajustables
+
+  //   let weightedIntensity = 0
+
+  //   for (let i = 0; i < embedding.length; i += 3) {
+  //     const colorIndex = i / 3
+  //     const weight = weights[colorIndex] || 0
+
+  //     const r = embedding[i] * 255
+  //     const g = embedding[i + 1] * 255
+  //     const b = embedding[i + 2] * 255
+
+  //     // Intensidad perceptual (brillo)
+  //     const intensity = 0.299 * r + 0.587 * g + 0.114 * b
+
+  //     weightedIntensity += intensity * weight
+  //   }
+
+  //   return weightedIntensity
+  // }
+
+  public async findSimilarPhotoToDominantColors(
+    embedding: number[],
+    threshold: number = 0.3,
+    limit: number = 10,
+    opposite: boolean = false
+  ) {
+    if (!embedding || embedding.length === 0) {
+      throw new Error('Color palette embedding no proporcionado o vacío')
+    }
+
+    // Pesos decrecientes por posición (tú puedes ajustarlos)
+    // const weights = [0.4, 0.4, 0.4, 0.3, 0.3, 0.3, 0.2, 0.2, 0.2, 0.1, 0.1, 0.1, 0.05, 0.05, 0.05]
+    const weights = [0.7, 0.7, 0.7, 0.3, 0.3, 0.3] // Solo los dos primeros colores (R, G, B x 2)
+
+    // Preparamos la suma ponderada como string SQL
+    const weightedDistanceSql = weights
+      .map(
+        (weight, index) =>
+          `${weight} * ABS(photos.color_array[${index + 1}] - :embedding${index + 1})`
+      )
+      .join(' + ')
+
+    const thresholdCondition = opposite
+      ? `(${weightedDistanceSql}) >= :threshold`
+      : `(${weightedDistanceSql}) <= :threshold`
+
+    const orderBy = opposite ? 'proximity DESC' : 'proximity ASC'
+
+    // Preparamos los parámetros de la query
+    const queryParams: any = { threshold, limit }
+    embedding.forEach((value, index) => {
+      queryParams[`embedding${index + 1}`] = value
+    })
+
+    const result = await db.rawQuery(
+      `
+    SELECT photos.id, photos.name, (${weightedDistanceSql}) AS proximity
+    FROM photos
+    WHERE ${thresholdCondition}
+    ORDER BY ${orderBy}
+    LIMIT :limit
+    `,
+      queryParams
     )
 
     return result.rows
