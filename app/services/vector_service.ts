@@ -547,7 +547,7 @@ export default class VectorService {
   //   return embeddings[0] || null
   // }
 
-  // static getParsedEmbedding(embedding): number[] | null {
-  //   return embedding ? JSON.parse(embedding as string) : null
-  // }
+  static getParsedEmbedding(embedding): number[] | null {
+    return embedding ? JSON.parse(embedding as string) : null
+  }
 }
