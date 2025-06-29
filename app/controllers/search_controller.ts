@@ -106,7 +106,7 @@ export default class SearchController {
 
       if (process.env.API_MODELS == 'REMOTE') {
         await Promise.all([
-          modelService.ensureRunPodWarm('embeddings_cpu'),
+          // modelService.ensureRunPodWarm('embeddings_cpu'),
           modelService.ensureRunPodWarm('logic_gpu'),
         ])
       }
