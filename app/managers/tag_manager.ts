@@ -1,5 +1,5 @@
 import Tag, { TagGroups } from '#models/tag'
-import EmbeddingsService from '#services/embeddings_service'
+import VectorService from '#services/vector_service'
 import MeasureExecutionTime from '../decorators/measureExecutionTime.js'
 import { withCache } from '../decorators/withCache.js'
 import Logger from '../utils/logger.js'
@@ -66,7 +66,7 @@ export default class TagManager {
     embedding: number[]
   ): Promise<Tag> {
     // logger.debug(`Buscando tag: ${tag.name} (${tag.group})`)
-    const embeddingsService = new EmbeddingsService()
+    const vectorService = new VectorService()
 
     // 1. Buscar tag exacto
     const existingTag = await this.getTagByNameAndGroup(tag.name, tag.group)
@@ -79,8 +79,7 @@ export default class TagManager {
     let similarTagsResult: any[] = []
     try {
       logger.debug(`Buscando tags similares para: ${tag.name}`)
-      similarTagsResult =
-        (await embeddingsService.findSimilarTagToEmbedding(embedding, 0.89, 5)) || []
+      similarTagsResult = (await vectorService.findSimilarTagToEmbedding(embedding, 0.89, 5)) || []
       // logger.debug(`Resultados de búsqueda similar:`, similarTagsResult)
     } catch (error) {
       logger.error(`Error al buscar tags similares:`, error)

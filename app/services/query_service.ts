@@ -9,18 +9,18 @@ import {
   MESSAGE_QUERY_STRUCTURE_CURATION,
 } from '../utils/prompts/query.js'
 import AnalyzerService from './analyzer_service.js'
-import EmbeddingsService from './embeddings_service.js'
+import VectorService from './vector_service.js'
 import ModelsService from './models_service.js'
 import type { SearchMode } from './search_text_service.js'
 
 export default class QueryService {
   public modelsService: ModelsService = null
-  public embeddingsService: EmbeddingsService = null
+  public vectorService: VectorService = null
   public analyzerService: AnalyzerService = null
 
   constructor() {
     this.modelsService = new ModelsService()
-    this.embeddingsService = new EmbeddingsService()
+    this.vectorService = new VectorService()
     this.analyzerService = new AnalyzerService()
   }
 

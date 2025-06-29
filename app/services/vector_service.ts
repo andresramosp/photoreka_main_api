@@ -22,7 +22,7 @@ interface ScoredPhoto {
 // Definición para threshold que puede ser número o intervalo
 type Threshold = number | { min: number; max: number }
 
-export default class EmbeddingsService {
+export default class VectorService {
   public modelsService: ModelsService = null
 
   constructor() {
@@ -43,7 +43,7 @@ export default class EmbeddingsService {
     if (existingTag) {
       result = this.findSimilarTagsToTag(existingTag, threshold, limit, metric)
     } else {
-      let { embeddings } = await modelsService.getEmbeddings([term], true)
+      let { embeddings } = await modelsService.getEmbeddingsRailway([term], true)
       result = this.findSimilarTagToEmbedding(embeddings[0], threshold, limit, metric)
     }
 
@@ -61,7 +61,7 @@ export default class EmbeddingsService {
     areas: string[] = null
   ) {
     const modelsService = new ModelsService()
-    let { embeddings } = await modelsService.getEmbeddings([term], true)
+    let { embeddings } = await modelsService.getEmbeddingsRailway([term])
     return this.findSimilarChunkToEmbedding(
       embeddings[0],
       threshold,
@@ -534,20 +534,20 @@ export default class EmbeddingsService {
     return result.rows
   }
 
-  private async getEmbedding(name: string): Promise<number[] | string | null> {
-    const modelsService = new ModelsService()
+  // private async getEmbedding(name: string): Promise<number[] | string | null> {
+  //   const modelsService = new ModelsService()
 
-    const tag = await Tag.query().where('name', name).first()
-    if (tag) {
-      return JSON.parse(tag.embedding)
-    }
+  //   const tag = await Tag.query().where('name', name).first()
+  //   if (tag) {
+  //     return JSON.parse(tag.embedding)
+  //   }
 
-    // Otherwise, fetch dynamically
-    const { embeddings } = await modelsService.getEmbeddings([name], true)
-    return embeddings[0] || null
-  }
+  //   // Otherwise, fetch dynamically
+  //   const { embeddings } = await modelsService.getEmbeddings([name], true)
+  //   return embeddings[0] || null
+  // }
 
-  static getParsedEmbedding(embedding): number[] | null {
-    return embedding ? JSON.parse(embedding as string) : null
-  }
+  // static getParsedEmbedding(embedding): number[] | null {
+  //   return embedding ? JSON.parse(embedding as string) : null
+  // }
 }

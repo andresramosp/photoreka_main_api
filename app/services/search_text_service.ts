@@ -19,7 +19,7 @@ import {
   MESSAGE_SEARCH_MODEL_STRICT,
 } from '../utils/prompts/insights.js'
 import DescriptionChunk from '#models/descriptionChunk'
-import EmbeddingsService from './embeddings_service.js'
+import VectorService from './vector_service.js'
 import Tag from '#models/tag'
 import { getUploadPath } from '../utils/dataPath.js'
 import PhotoImage from '#models/analyzer/photoImage'
@@ -52,14 +52,14 @@ export default class SearchTextService {
   public photoManager: PhotoManager = null
   public queryService: QueryService = null
   public scoringService: ScoringService = null
-  public embeddingsService: EmbeddingsService = null
+  public vectorService: VectorService = null
 
   constructor() {
     this.modelsService = new ModelsService()
     this.photoManager = new PhotoManager()
     this.queryService = new QueryService()
     this.scoringService = new ScoringService()
-    this.embeddingsService = new EmbeddingsService()
+    this.vectorService = new VectorService()
   }
 
   sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -383,7 +383,7 @@ export default class SearchTextService {
           originalUrl: photo?.originalUrl,
           thumbnailUrl: photo?.thumbnailUrl,
           ...scoredPhoto,
-          matchingTags: scoredPhoto?.matchingTags.map((t) => t.name),
+          matchingTags: scoredPhoto.matchingTags ? scoredPhoto.matchingTags.map((t) => t.name) : [],
         },
       }
     })

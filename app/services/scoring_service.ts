@@ -6,7 +6,7 @@ import Photo from '#models/photo'
 import NodeCache from 'node-cache'
 import MeasureExecutionTime from '../decorators/measureExecutionTime.js'
 import { createRequire } from 'module'
-import EmbeddingsService from './embeddings_service.js'
+import VectorService from './vector_service.js'
 import { withCache } from '../decorators/withCache.js'
 import type { SearchMode, SearchType } from './search_text_service.js'
 import TagPhotoManager from '../managers/tag_photo_manager.js'
@@ -64,14 +64,14 @@ const getWeights = (isCuration: boolean) => {
 
 export default class ScoringService {
   public modelsService: ModelsService = null
-  public embeddingsService: EmbeddingsService = null
+  public vectorService: VectorService = null
   public tagManager: TagManager = null
   public tagPhotoManager: TagPhotoManager = null
   public nlpService: NLPService = null
 
   constructor() {
     this.modelsService = new ModelsService()
-    this.embeddingsService = new EmbeddingsService()
+    this.vectorService = new VectorService()
     this.tagManager = new TagManager()
     this.tagPhotoManager = new TagPhotoManager()
     this.nlpService = new NLPService()
@@ -495,7 +495,7 @@ export default class ScoringService {
   ): Promise<{ id: number; descScore: number; matchingChunks: any[] }[]> {
     const embedding = EmbeddingStoreService.getEmbedding(segment.name)
 
-    const matchingChunks = await this.embeddingsService.findSimilarChunkToEmbedding(
+    const matchingChunks = await this.vectorService.findSimilarChunkToEmbedding(
       embedding,
       embeddingsProximityThreshold,
       MAX_SIMILAR_CHUNKS,
@@ -511,7 +511,7 @@ export default class ScoringService {
         name: mc.chunk.replace(/\.$/, ''),
         proximity: mc.proximity,
         chunk_id: mc.id,
-        photo_id: mc.photo_id, // asegurarte que viene incluido desde embeddingsService
+        photo_id: mc.photo_id, // asegurarte que viene incluido desde vectorService
       })),
       'desc',
       searchMode
@@ -674,7 +674,7 @@ export default class ScoringService {
     const embedding = EmbeddingStoreService.getEmbedding(term)
 
     // Buscar similitud
-    const similarTags = await this.embeddingsService.findSimilarTagToEmbedding(
+    const similarTags = await this.vectorService.findSimilarTagToEmbedding(
       embedding,
       embeddingsProximityThreshold,
       MAX_SIMILAR_TAGS,

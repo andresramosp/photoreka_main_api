@@ -7,7 +7,7 @@ import ModelsService from './models_service.js'
 import PhotoManager from '../managers/photo_manager.js'
 import VisualFeaturesService from './visual_features_service.js'
 import ScoringService from './scoring_service.js'
-import EmbeddingsService from './embeddings_service.js'
+import VectorService from './vector_service.js'
 import MeasureExecutionTime from '../decorators/measureExecutionTime.js'
 
 export type SearchByPhotoOptions = {
@@ -26,7 +26,7 @@ export default class SearchPhotoService {
   private photoManager = new PhotoManager()
   private visualFeaturesService = new VisualFeaturesService()
   private scoringService = new ScoringService()
-  private embeddingsService = new EmbeddingsService()
+  private vectorService = new VectorService()
 
   public async searchByPhotos(query: SearchByPhotoOptions): Promise<(Photo & { score: number })[]> {
     if (!query.anchorIds?.length) return []
@@ -118,12 +118,12 @@ export default class SearchPhotoService {
 
     const combined = baseChunks
       .reduce((acc: number[], dc, idx) => {
-        const e = EmbeddingsService.getParsedEmbedding(dc.embedding)
+        const e = VectorService.getParsedEmbedding(dc.embedding)
         return idx === 0 ? e.slice() : acc.map((v, i) => v + e[i])
       }, [])
       .map((v) => v / baseChunks.length)
 
-    const similar = await this.embeddingsService.findSimilarChunkToEmbedding(
+    const similar = await this.vectorService.findSimilarChunkToEmbedding(
       combined,
       query.opposite ? 1 : 0.5,
       200,
@@ -149,14 +149,14 @@ export default class SearchPhotoService {
   ) {
     const anchorEmbeddings = anchors
       .filter((p) => p.embedding)
-      .map((p) => EmbeddingsService.getParsedEmbedding(p.embedding))
+      .map((p) => VectorService.getParsedEmbedding(p.embedding))
     if (!anchorEmbeddings.length) return []
 
     const combinedEmbedding = anchorEmbeddings
       .reduce((acc, e, i) => (i === 0 ? e.slice() : acc.map((v, idx) => v + e[idx])), [])
       .map((v) => v / anchorEmbeddings.length)
 
-    const similar = await this.embeddingsService.findSimilarPhotoToEmbedding(
+    const similar = await this.vectorService.findSimilarPhotoToEmbedding(
       combinedEmbedding,
       query.opposite ? 1 : 0.4,
       200,
@@ -174,8 +174,8 @@ export default class SearchPhotoService {
     for (const anchor of anchors) {
       for (const tagPhoto of anchor.tags) {
         if (query.tagIds.length && !query.tagIds.includes(tagPhoto.tag.id)) continue
-        const tagEmb = EmbeddingsService.getParsedEmbedding(tagPhoto.tag.embedding)
-        const similar = await this.embeddingsService.findSimilarTagToEmbedding(
+        const tagEmb = VectorService.getParsedEmbedding(tagPhoto.tag.embedding)
+        const similar = await this.vectorService.findSimilarTagToEmbedding(
           tagEmb,
           query.opposite ? 1 : 0.3,
           200,

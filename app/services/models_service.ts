@@ -140,7 +140,7 @@ export default class ModelsService {
 
       let payload = {
         term,
-        tag_list: uniqueTexts.map((tag) => ({ name: tag.name, group: tag.group })),
+        tag_list: uniqueTexts.map((tag) => ({ name: tag.name, group: tag.group })), //.slice(0, 5),
         premise_wrapper: 'the photo has the following fragment in its description: {term}',
         hypothesis_wrapper: 'the photo features {term}',
       }
@@ -168,6 +168,17 @@ export default class ModelsService {
     } catch (error) {
       console.error('Error en adjustProximitiesByContextInference:', error.message)
       return []
+    }
+  }
+
+  async getEmbeddingsRailway(tags) {
+    try {
+      const { data } = await axios.post(process.env.RAILWAY_API_EMBEDDINGS, { tags })
+
+      return data
+    } catch (error) {
+      console.error('Error en getEmbeddings:', error.message, JSON.stringify(tags))
+      return { embeddings: [] }
     }
   }
 

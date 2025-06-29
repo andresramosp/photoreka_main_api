@@ -9,7 +9,7 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { invalidateCache } from '../decorators/withCache.js'
 import ModelsService from '#services/models_service'
 import PhotoImageService from '#services/photo_image_service'
-import EmbeddingsService from '#services/embeddings_service'
+import VectorService from '#services/vector_service'
 import AnalyzerProcessRunner from '#services/analyzer_service'
 
 const s3 = new S3Client({
@@ -202,7 +202,7 @@ export default class CatalogController {
     const { newPhotoIds } = request.only(['newPhotoIds'])
 
     const modelsService = new ModelsService()
-    const embeddingService = new EmbeddingsService()
+    const vectorService = new VectorService()
 
     const allPhotos = await Photo.all()
     const photosWithoutEmbedding = allPhotos.filter((p) => !p.embedding)
@@ -250,8 +250,8 @@ export default class CatalogController {
       newPhotos.map(async (newPhoto) => {
         if (!newPhoto.embedding) return
 
-        const similarPhotos = await embeddingService.findSimilarPhotoToEmbedding(
-          EmbeddingsService.getParsedEmbedding(newPhoto.embedding)!!,
+        const similarPhotos = await vectorService.findSimilarPhotoToEmbedding(
+          VectorService.getParsedEmbedding(newPhoto.embedding)!!,
           0.92,
           5,
           'cosine_similarity'

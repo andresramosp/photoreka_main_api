@@ -59,7 +59,7 @@ export class EmbeddingStoreService {
     )
 
     const modelsService = new ModelsService()
-    const { embeddings } = await modelsService.getEmbeddings(newTerms, true)
+    const { embeddings } = await modelsService.getEmbeddingsRailway(newTerms)
 
     if (!embeddings || embeddings.length !== newTerms.length) {
       throw new Error(

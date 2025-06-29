@@ -49,6 +49,7 @@ const AnalyzerController = () => import('#controllers/analyzer_controller')
 const CatalogController = () => import('#controllers/catalog_controller')
 const SearchController = () => import('#controllers/search_controller')
 const TagsController = () => import('#controllers/tags_controller')
+const EmbeddingController = () => import('#controllers/embeddings_controller')
 
 router.get('/api/catalog', [CatalogController, 'getPhotos'])
 router.get('/api/catalog/:id', [CatalogController, 'getPhoto'])
@@ -63,6 +64,7 @@ router.post('/api/catalog/deleteDuplicates', [CatalogController, 'deleteDuplicat
 
 router.post('/api/analyzer/', [AnalyzerController, 'analyze'])
 router.get('/api/analyzer/health', [AnalyzerController, 'health'])
+router.post('/api/embeddings/', [EmbeddingController, 'getEmbeddings'])
 
 router.post('/api/search/semantic', [SearchController, 'searchSemantic'])
 router.post('/api/search/tags', [SearchController, 'searchByTags'])
