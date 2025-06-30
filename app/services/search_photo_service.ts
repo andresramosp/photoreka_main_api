@@ -13,7 +13,14 @@ import MeasureExecutionTime from '../decorators/measureExecutionTime.js'
 export type SearchByPhotoOptions = {
   anchorIds: number[]
   currentPhotosIds: number[]
-  criteria: 'embedding' | 'story' | 'context' | 'chromatic' | 'composition' | 'tags'
+  criteria:
+    | 'embedding'
+    | 'story'
+    | 'context'
+    | 'chromatic'
+    | 'chromatic_dominant'
+    | 'composition'
+    | 'tags'
   tagIds: number[]
   boxesIds: number[]
   descriptionCategories: string[]
@@ -53,7 +60,10 @@ export default class SearchPhotoService {
         scored = await this.scoreEmbedding(query, candidateIds, anchors)
         break
       case 'chromatic':
-        scored = await this.scoreChromatic(query, candidateIds, anchors)
+        scored = await this.scoreChromatic(query, candidateIds, anchors, false)
+        break
+      case 'chromatic_dominant':
+        scored = await this.scoreChromatic(query, candidateIds, anchors, true)
         break
       case 'tags':
         scored = await this.scoreTags(query, candidateIds, anchors)
@@ -177,14 +187,14 @@ export default class SearchPhotoService {
     query: SearchByPhotoOptions,
     candidateIds: number[],
     anchors: Photo[],
-    useDominants: boolean = false // Nuevo parámetro
+    useDominants: boolean = true
   ) {
     const anchorEmbeddings = anchors
-      .filter((p) => (useDominants ? p.colorArray : p.colorPalette))
+      .filter((p) => (useDominants ? p.colorHistogramDominant : p.colorHistogram))
       .map((p) =>
         useDominants
-          ? p.colorArray // ya es number[]
-          : VectorService.getParsedEmbedding(p.colorPalette)
+          ? VectorService.getParsedEmbedding(p.colorHistogramDominant)
+          : VectorService.getParsedEmbedding(p.colorHistogram)
       )
 
     if (!anchorEmbeddings.length) return []
@@ -195,23 +205,14 @@ export default class SearchPhotoService {
 
     let similar
 
-    if (useDominants) {
-      // Nuevo flujo usando saturación
-      similar = await this.vectorService.findSimilarPhotoToDominantColors(
-        combinedEmbedding,
-        query.opposite ? 1 : 0.4,
-        200,
-        query.opposite
-      )
-    } else {
-      similar = await this.vectorService.findSimilarPhotoToColorPalette(
-        combinedEmbedding,
-        query.opposite ? 1 : 0.4,
-        200,
-        'cosine_similarity',
-        query.opposite
-      )
-    }
+    similar = await this.vectorService.findSimilarPhotoToColorPalette(
+      combinedEmbedding,
+      query.opposite ? 1 : 0.1,
+      200,
+      'cosine_similarity',
+      query.opposite,
+      useDominants
+    )
 
     return similar
       .filter((s) => candidateIds.includes(s.id))

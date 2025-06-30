@@ -32,10 +32,10 @@ export default class Photo extends BaseModel {
   declare embedding: string | number[]
 
   @column({ serializeAs: null })
-  declare colorPalette: string | number[]
+  declare colorHistogram: string | number[]
 
   @column({ serializeAs: null })
-  declare colorArray: number[]
+  declare colorHistogramDominant: string | number[]
 
   @column.dateTime({ autoCreate: true })
   declare createdAt: DateTime
@@ -75,9 +75,10 @@ export default class Photo extends BaseModel {
       // Convierte el array en formato pgvector: '[value1,value2,...]'
       photo.embedding = `[${(photo.embedding as any[]).join(',')}]`
     }
-    if (photo.colorPalette && Array.isArray(photo.colorPalette)) {
+    if (photo.colorHistogram && Array.isArray(photo.colorHistogram)) {
       // Convierte el array en formato pgvector: '[value1,value2,...]'
-      photo.colorPalette = `[${(photo.colorPalette as any[]).join(',')}]`
+      photo.colorHistogram = `[${(photo.colorHistogram as any[]).join(',')}]`
+      photo.colorHistogramDominant = `[${(photo.colorHistogramDominant as any[]).join(',')}]`
     }
   }
 

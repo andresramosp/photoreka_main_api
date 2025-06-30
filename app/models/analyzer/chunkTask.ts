@@ -76,7 +76,7 @@ export class ChunkTask extends AnalyzerTask {
       logger.info(
         `Obteniendo embeddings para batch de ${texts.length} chunks (${i + 1}-${i + texts.length} de ${allChunks.length})`
       )
-      const { embeddings } = await this.modelsService.getEmbeddings(texts, true)
+      const { embeddings } = await this.modelsService.getEmbeddingsCPU(texts)
 
       // Asignar embeddings a los chunks
       batch.forEach((chunk, index) => {

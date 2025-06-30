@@ -171,53 +171,40 @@ export default class ModelsService {
     }
   }
 
-  async getEmbeddingsRailway(tags) {
-    try {
-      const { data } = await axios.post(process.env.RAILWAY_API_EMBEDDINGS, { tags })
+  // async getEmbeddingsGPU(tags) {
+  //   const isRemoteGPU = this.apiMode === 'REMOTE'
 
-      return data
-    } catch (error) {
-      console.error('Error en getEmbeddings:', error.message, JSON.stringify(tags))
-      return { embeddings: [] }
-    }
-  }
+  //   if (this.apiMode === 'REMOTE') await this.ensureRunPodWarm('embeddings_gpu')
 
-  async getEmbeddings(tags, forceCPU: boolean = false) {
-    const useGPU = !forceCPU && tags.length > 10
-    const isRemoteGPU = this.apiMode === 'REMOTE' && useGPU
+  //   try {
+  //     const { url, requestPayload, headers } = this.buildRequestConfig(
+  //       'get_embeddings',
+  //       isRemoteGPU
+  //         ? tags
+  //         : {
+  //             tags,
+  //           },
+  //       'embeddings_gpu'
+  //     )
 
-    if (this.apiMode === 'REMOTE')
-      await this.ensureRunPodWarm(useGPU ? 'embeddings_gpu' : 'embeddings_cpu')
+  //     const { data } = await axios.post(url, requestPayload, { headers })
 
-    try {
-      const { url, requestPayload, headers } = this.buildRequestConfig(
-        'get_embeddings',
-        isRemoteGPU // endpoint serverless-embedding preconfigurado
-          ? tags
-          : {
-              tags,
-            },
-        useGPU ? 'embeddings_gpu' : 'embeddings_cpu'
-      )
-
-      const { data } = await axios.post(url, requestPayload, { headers })
-
-      if (this.apiMode === 'LOCAL') {
-        return data
-      } else {
-        return data.output
-          ? {
-              embeddings: isRemoteGPU
-                ? data.output.data.map((d) => d.embedding)
-                : data.output.embeddings,
-            }
-          : { embeddings: [] }
-      }
-    } catch (error) {
-      console.error('Error en getEmbeddings:', error.message, JSON.stringify(tags))
-      return { embeddings: [] }
-    }
-  }
+  //     if (this.apiMode === 'LOCAL') {
+  //       return data
+  //     } else {
+  //       return data.output
+  //         ? {
+  //             embeddings: isRemoteGPU
+  //               ? data.output.data.map((d) => d.embedding)
+  //               : data.output.embeddings,
+  //           }
+  //         : { embeddings: [] }
+  //     }
+  //   } catch (error) {
+  //     console.error('Error en getEmbeddings:', error.message, JSON.stringify(tags))
+  //     return { embeddings: [] }
+  //   }
+  // }
 
   @withWarmUp('image')
   async getEmbeddingsImages(images: { id: number; base64: string }[]) {
@@ -238,25 +225,29 @@ export default class ModelsService {
     }
   }
 
-  @withWarmUp('image')
-  async getColorEmbeddingsImages(images: { id: number; base64: string }[]) {
+  async getEmbeddingsCPU(tags) {
     try {
-      const payload = { images }
-      const { url, requestPayload, headers } = this.buildRequestConfig(
-        'get_color_embeddings_image',
-        payload,
-        'image'
-      )
+      const { data } = await axios.post(process.env.PYTHON_API_CPU + '/embeddings', { tags })
 
-      const { data } = await axios.post(url, requestPayload, { headers })
-
-      return { embeddings: data.output ? data.output : data || [] }
+      return data
     } catch (error) {
-      console.error('Error en getEmbeddingsImages:', error.message)
+      console.error('Error en getEmbeddings:', error.message, JSON.stringify(tags))
       return { embeddings: [] }
     }
   }
 
+  async getHistogramColor(images) {
+    try {
+      const { data } = await axios.post(process.env.PYTHON_API_CPU + '/color-histograms', {
+        images,
+      })
+
+      return data
+    } catch (error) {
+      console.error('Error en getEmbeddings:', error.message, JSON.stringify(images))
+      return { embeddings: [] }
+    }
+  }
   @withWarmUp('image')
   async getPresenceMaps(images: { id: string; base64: string }) {
     try {

@@ -92,7 +92,7 @@ export class TagTask extends AnalyzerTask {
     for (let i = 0; i < termsWithoutEmbeddings.length; i += batchEmbeddingsSize) {
       const batch = termsWithoutEmbeddings.slice(i, i + batchEmbeddingsSize)
       logger.debug(`Obteniendo embeddings para batch de ${batch.length} tags`)
-      const { embeddings } = await this.modelsService.getEmbeddings(batch, true)
+      const { embeddings } = await this.modelsService.getEmbeddingsCPU(batch)
       batch.forEach((name, idx) => {
         this.embeddingsMap.set(name, embeddings[idx])
       })
