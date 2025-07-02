@@ -161,14 +161,7 @@ export class TagTask extends AnalyzerTask {
           return text
         })
 
-        const cleanResult = await this.modelsService.cleanDescriptions(sourceTexts, 0.9, true)
-
-        if (!cleanResult || !Array.isArray(cleanResult)) {
-          logger.error(`Resultado inesperado de cleanDescriptions: ${JSON.stringify(cleanResult)}`)
-          throw new Error('Resultado inválido de cleanDescriptions')
-        }
-
-        results.push(...cleanResult)
+        results.push(...sourceTexts)
 
         if (i + batchSize < photos.length) {
           await this.sleep(delayMs)

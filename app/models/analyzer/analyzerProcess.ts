@@ -20,6 +20,7 @@ export type StageType =
   | 'chunks_tasks'
   | 'embeddings_chunks'
   | 'finished'
+  | 'failed'
 export type ProcessSheet = {
   [taskName: string]: {
     pendingPhotoIds: number[]

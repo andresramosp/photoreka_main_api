@@ -67,11 +67,12 @@ export default class PhotoManager {
   }
 
   public async getPhotosPreview(userId: string) {
-    const photos = await Photo.query().orderBy('created_at', 'desc')
+    const photos = await Photo.query().preload('analyzerProcess').orderBy('created_at', 'desc')
     return photos.map((p) => ({
       id: p.id,
       originalUrl: p.originalUrl,
       thumbnailUrl: p.thumbnailUrl,
+      status: p.status,
     }))
   }
 
