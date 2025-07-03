@@ -4,8 +4,6 @@ import TagPhotoManager from '../../managers/tag_photo_manager.js'
 import { AnalyzerTask } from './analyzerTask.js'
 import PhotoImage from './photoImage.js'
 import Logger, { LogLevel } from '../../utils/logger.js'
-import AnalyzerProcess from './analyzerProcess.js'
-import ModelsService from '../../services/models_service.js'
 
 const logger = Logger.getInstance('AnalyzerProcess', 'VisionTopologicalTask')
 logger.setLevel(LogLevel.DEBUG)
@@ -68,6 +66,10 @@ export class VisionTopologicalTask extends AnalyzerTask {
       })
 
       await this.commit()
+
+      for (const photoImage of batch) {
+        delete this.data[photoImage.photo.id]
+      }
       logger.debug(`Completada tarea ${this.model} para ${batch.length} imágenes`)
     }
 
