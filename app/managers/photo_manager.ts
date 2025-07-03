@@ -73,6 +73,7 @@ export default class PhotoManager {
       originalUrl: p.originalUrl,
       thumbnailUrl: p.thumbnailUrl,
       status: p.status,
+      originalFileName: p.originalFileName,
     }))
   }
 

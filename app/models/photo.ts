@@ -27,6 +27,9 @@ export default class Photo extends BaseModel {
   declare name: string
 
   @column()
+  declare originalFileName: string
+
+  @column()
   declare thumbnailName: string
 
   @column({ serializeAs: null })

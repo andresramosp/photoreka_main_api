@@ -10,6 +10,7 @@ export default class extends BaseSchema {
       table.integer('analyzer_process_id').references('id').inTable('analyzer_processes')
       table.string('title')
       table.string('name')
+      table.string('original_file_name')
       table.string('thumbnail_name')
       table.string('model')
       table.text('url')

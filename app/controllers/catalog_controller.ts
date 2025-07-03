@@ -24,9 +24,12 @@ const s3 = new S3Client({
 export default class CatalogController {
   public async uploadLocal({ request, response }: HttpContext) {
     try {
-      const { fileType } = request.only(['fileType'])
-      if (!fileType) {
-        return response.badRequest({ message: 'Falta fileType' })
+      const { fileType, originalName: originalFileName } = request.only([
+        'fileType',
+        'originalName',
+      ])
+      if (!fileType || !originalFileName) {
+        return response.badRequest({ message: 'Faltan datos' })
       }
 
       const id = crypto.randomUUID()
@@ -57,6 +60,7 @@ export default class CatalogController {
       const photo = await Photo.create({
         name: key,
         thumbnailName: thumbnailKey,
+        originalFileName,
       })
 
       await invalidateCache(`getPhotos_${1234}`)
