@@ -206,7 +206,7 @@ export default class ModelsService {
   //   }
   // }
 
-  @withWarmUp('image')
+  // @withWarmUp('image')
   async getEmbeddingsImages(images: { id: number; base64: string }[]) {
     const maxRetries = 5
     const baseDelay = 5000 // ms
