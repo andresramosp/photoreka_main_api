@@ -42,7 +42,7 @@ export default class AnalyzerProcessRunner {
     await invalidateCache(`getPhotos_${1234}`)
     await invalidateCache(`getPhotosIdsByUser_${1234}`)
 
-    if (mode === 'retry' && processId) {
+    if ((mode === 'retry_process' || mode === 'remake_process') && processId) {
       this.process = await AnalyzerProcess.query()
         .where('id', processId)
         .preload('photos')
@@ -64,10 +64,11 @@ export default class AnalyzerProcessRunner {
         const pendingPhotos = await task.prepare(this.process)
         if (pendingPhotos.length) {
           await this.changeStage(
-            `*** Iniciando tarea *** | ${task.getName()} | Fotos: ${pendingPhotos.length} | ${this.process.mode.toUpperCase()}`
+            `*** Iniciando tarea *** | ${task.getName()} | Fotos: ${pendingPhotos.length} | ${this.process.mode.toUpperCase()}`,
+            task.name
           )
           await task.process(pendingPhotos)
-          await task.commit()
+          await task.commit(pendingPhotos)
           await this.changeStage(`*** Tarea completada *** | ${task.getName()}`)
         }
       } catch (error) {
@@ -121,7 +122,7 @@ export default class AnalyzerProcessRunner {
     }
 
     push('photo.embedding', !!photo.embedding)
-    push('detections', photo.detectionAreas.length > 0)
+    // push('detections', photo.detectionAreas.length > 0)
 
     const d = photo.descriptions ?? {}
     push('descriptions.context', !!d.context)

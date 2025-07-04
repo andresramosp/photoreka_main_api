@@ -70,43 +70,14 @@ export const packages = [
         type: 'VisualColorEmbeddingTask',
         needsImage: true,
       },
-      // {
-      //   name: 'visual_detections_task',
-      //   type: 'VisualDetectionTask',
-      //   needsImage: true,
-      //   categories: [
-      //     {
-      //       name: 'person',
-      //       min_box_size: 80,
-      //       max_box_area_ratio: 1,
-      //       color: 'red',
-      //     },
-      //     {
-      //       name: 'animal',
-      //       min_box_size: 90,
-      //       max_box_area_ratio: 0.8,
-      //       color: 'yellow',
-      //     },
-      //     {
-      //       name: 'prominent object',
-      //       min_box_size: 100,
-      //       max_box_area_ratio: 0.8,
-      //       color: 'green',
-      //     },
-      //     {
-      //       name: 'architectural feature',
-      //       min_box_size: 100,
-      //       max_box_area_ratio: 0.8,
-      //       color: 'orange',
-      //     },
-      //   ],
-      // },
+
       {
         name: 'topological_tags',
         type: 'VisionTopologicalTask',
         model: 'GPT',
         needsImage: true,
         sequential: false,
+        dependsOn: 'vision_context_story_accents', // deberia depender de varias
         resolution: 'high',
         prompts: [MESSAGE_ANALYZER_GPT_TOPOLOGIC_TAGS],
         imagesPerBatch: 4,
@@ -115,23 +86,39 @@ export const packages = [
       },
     ],
   },
-  {
-    id: 'topological_upgrade',
-    tasks: [
-      {
-        name: 'topological_tags',
-        type: 'VisionTopologicalTask',
-        model: 'GPT',
-        needsImage: true,
-        sequential: false,
-        resolution: 'high',
-        prompts: [MESSAGE_ANALYZER_GPT_TOPOLOGIC_TAGS],
-        imagesPerBatch: 4,
-        useGuideLines: true,
-        promptDependentField: null,
-      },
-    ],
-  },
+
+  // {
+  //   name: 'visual_detections_task',
+  //   type: 'VisualDetectionTask',
+  //   needsImage: true,
+  //   categories: [
+  //     {
+  //       name: 'person',
+  //       min_box_size: 80,
+  //       max_box_area_ratio: 1,
+  //       color: 'red',
+  //     },
+  //     {
+  //       name: 'animal',
+  //       min_box_size: 90,
+  //       max_box_area_ratio: 0.8,
+  //       color: 'yellow',
+  //     },
+  //     {
+  //       name: 'prominent object',
+  //       min_box_size: 100,
+  //       max_box_area_ratio: 0.8,
+  //       color: 'green',
+  //     },
+  //     {
+  //       name: 'architectural feature',
+  //       min_box_size: 100,
+  //       max_box_area_ratio: 0.8,
+  //       color: 'orange',
+  //     },
+  //   ],
+  // },
+
   {
     id: 'embeddings_remake',
     tasks: [

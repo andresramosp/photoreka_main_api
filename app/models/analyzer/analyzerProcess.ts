@@ -10,7 +10,12 @@ import _ from 'lodash'
 const logger = Logger.getInstance('AnalyzerProcess')
 logger.setLevel(LogLevel.DEBUG)
 
-export type AnalyzerMode = 'adding' | 'remake' | 'retry'
+export type AnalyzerMode =
+  | 'adding'
+  | 'remake_all'
+  | 'remake_task'
+  | 'remake_process'
+  | 'retry_process'
 export type ModelType = 'GPT' | 'Molmo'
 export type StageType =
   | 'init'
@@ -69,19 +74,31 @@ export default class AnalyzerProcess extends BaseModel {
 
     const photosToProcess = this.getInitialPhotos(userPhotos)
     await this.setProcessPhotos(photosToProcess)
-    if (this.mode !== 'retry') {
+    if (this.mode !== 'retry_process') {
       this.initializeProcessSheet()
       await this.save()
     }
   }
 
+  // 1. Adding: las fotos recien subidas, sin analyzerProcess
+  // 2. Remake all: todas las fotos ya procesadas
+  // 3. Remake task: todas las fotos ya procesadas, pero pensado para tareas sueltas (no se mira dependsOn)
+  // 4. Remake process: todas las fotos de un proceso, para re-procesar desde cero
+  // 5. Retry: todas las fotos de un proceso, para procesar SOLO lo que falta según la sheet
+
   private getInitialPhotos(userPhotos: Photo[]): Photo[] {
     switch (this.mode) {
       case 'adding':
         return userPhotos.filter((photo) => !photo.analyzerProcess)
-      case 'remake': // incluye upgrade, siempre sobre todas las fotos
-        return userPhotos
-      default:
+      case 'remake_all': // incluye upgrade, siempre sobre todas las fotos YA procesadas (no uploads)
+        return userPhotos.filter((photo) => photo.status == 'processed')
+      case 'remake_task': // como remake, para tareas aisladas
+        return userPhotos.filter((photo) => photo.status == 'processed')
+      case 'remake_process': // como remake, para tareas aisladas
+        return userPhotos.filter(
+          (photo) => photo.status == 'processed' && photo.analyzerProcessId == this.id
+        )
+      default: // retry
         return userPhotos.filter((photo) => photo.analyzerProcessId == this.id)
     }
   }
@@ -108,6 +125,8 @@ export default class AnalyzerProcess extends BaseModel {
     await this.save()
   }
 
+  // Crea una sheet vacia. Este metodo NO se invoca cuando hacemos
+  // retry, con lo cual conseguimos continuar con la sheet anterior
   private initializeProcessSheet() {
     if (!this.tasks) return
     const allPhotoIds = this.photos.map((photo) => photo.id)

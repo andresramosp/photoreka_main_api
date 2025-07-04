@@ -37,10 +37,8 @@ export abstract class AnalyzerTask {
     let candidates = myTaskState.pendingPhotoIds
     const initialCandidates = [...candidates] // Para comparar luego
 
-    // En remake permitimos iniciar tareas aisladas usando lo que está en BD de la tarea previa
-    // TODO: habria que crear un remakePartial para este caso, ya que actualmente se rompe el condicionamiento
-    // de la tarea anterior para remakes de paquetes enteros
-    if (this.dependsOn && process.mode !== 'remake') {
+    // En remake_task permitimos iniciar tareas aisladas usando lo que está en BD de la tarea previa
+    if (this.dependsOn && process.mode !== 'remake_task') {
       const dependsTaskState = processSheet[this.dependsOn]
       if (!dependsTaskState)
         throw new Error(`DependsOn task "${this.dependsOn}" not found in process sheet.`)
@@ -59,7 +57,7 @@ export abstract class AnalyzerTask {
       }
     }
 
-    if (process.mode == 'retry' && candidates.length)
+    if (process.mode == 'retry_process' && candidates.length)
       logger.info(`[${this.name}] Fotos a procesar: ${candidates.join(', ')}`)
 
     if (this.needsImage) {
@@ -74,7 +72,7 @@ export abstract class AnalyzerTask {
   }
 
   abstract process(pendingPhotos: Photo[] | PhotoImage[]): Promise<void>
-  abstract commit(): Promise<void>
+  abstract commit(batch?: any[]): Promise<void>
 
   getName() {
     return _.startCase(_.toLower(this.name))

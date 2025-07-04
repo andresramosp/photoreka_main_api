@@ -60,7 +60,7 @@ export class VisionDescriptionTask extends AnalyzerTask {
         this.data[photoId] = { ...this.data[photoId], ...results }
       })
 
-      await this.commit()
+      await this.commit(batch)
       logger.debug(`Datos salvados ${this.model} para ${batch.length} imágenes`)
     }
 
@@ -73,19 +73,29 @@ export class VisionDescriptionTask extends AnalyzerTask {
     }
   }
 
-  async commit(): Promise<void> {
+  async commit(batch: PhotoImage[]): Promise<void> {
     try {
       const photoManager = new PhotoManager()
+      const photoIds = batch.map((p) => p.photo.id)
+
       await Promise.all(
-        Object.entries(this.data).map(([photoId, descriptions]) => {
-          if (!isNaN(Number(photoId))) {
-            return photoManager.updatePhotoDescriptions(photoId, descriptions as PhotoDescriptions)
+        photoIds.map((photoId: number) => {
+          const descriptions = this.data[photoId]
+          if (!isNaN(Number(photoId)) && descriptions) {
+            return photoManager.updatePhotoDescriptions(
+              photoId.toString(),
+              descriptions as PhotoDescriptions
+            )
           }
           return Promise.resolve(null)
         })
       )
-      const photoIds = Object.keys(this.data).map(Number)
+
       await this.analyzerProcess.markPhotosCompleted(this.name, photoIds)
+
+      for (const photoId of photoIds) {
+        delete this.data[photoId]
+      }
     } catch (err) {
       logger.error(`Error guardando datos de VisionTask:`)
     }

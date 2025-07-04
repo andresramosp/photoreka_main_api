@@ -36,12 +36,12 @@ export class VisualDetectionTask extends AnalyzerTask {
         this.data[photoId] = { ...detections }
       })
 
-      await this.commit()
+      await this.commit(batch)
       logger.debug(`Datos salvados para ${batch.length} imágenes`)
     }
   }
 
-  async commit(): Promise<void> {
+  async commit(batch?: PhotoImage[]): Promise<void> {
     const photoManager = new PhotoManager()
 
     await Promise.all(
@@ -66,7 +66,15 @@ export class VisualDetectionTask extends AnalyzerTask {
       })
     )
 
-    const photoIds = Object.keys(this.data).map(Number)
+    let photoIds: number[]
+    if (batch) {
+      photoIds = batch.map((b) => b.photo.id)
+      for (const photoId of photoIds) {
+        delete this.data[photoId]
+      }
+    } else {
+      photoIds = Object.keys(this.data).map(Number)
+    }
     await this.analyzerProcess.markPhotosCompleted(this.name, photoIds)
   }
 

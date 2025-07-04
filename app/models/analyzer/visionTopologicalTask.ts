@@ -36,53 +36,47 @@ export class VisionTopologicalTask extends AnalyzerTask {
       batches.push(batch)
     }
 
-    const processBatch = async (batch: PhotoImage[], idx: number) => {
-      await this.sleep(idx * 1500)
-
-      let response: any
-      const injectedPrompts: any = this.prompts.map((p) =>
-        typeof p === 'function' ? p(batch.map((b) => b.photo)) : p
-      )
-      logger.debug(`Llamando a ${this.model} para ${batch.length} imágenes...`)
-
-      try {
-        if (this.model === 'GPT') {
-          response = await this.executeGPTTask(injectedPrompts, batch)
-        } else if (this.model === 'Molmo') {
-          response = await this.executeMolmoTask(injectedPrompts, batch)
-        } else {
-          throw new Error(`Modelo no soportado: ${this.model}`)
-        }
-      } catch (err) {
-        logger.error(`Error en ${this.model} para ${batch.length} imágenes:`)
-
-        return
-      }
-
-      response.result.forEach((res: any, photoIndex: number) => {
-        const { ...results } = res
-        const photoId = batch[photoIndex].photo.id
-        this.data[photoId] = { ...this.data[photoId], ...results }
-      })
-
-      await this.commit()
-
-      for (const photoImage of batch) {
-        delete this.data[photoImage.photo.id]
-      }
-      logger.debug(`Completada tarea ${this.model} para ${batch.length} imágenes`)
-    }
-
     if (this.sequential) {
       for (let i = 0; i < batches.length; i++) {
-        await processBatch(batches[i], i)
+        await this.processBatch(batches[i], i)
       }
     } else {
-      await Promise.all(batches.map((batch, idx) => processBatch(batch, idx)))
+      await Promise.all(batches.map((batch, idx) => this.processBatch(batch, idx)))
     }
   }
 
-  async commit(): Promise<void> {
+  async processBatch(batch: PhotoImage[], idx: number) {
+    await this.sleep(idx * 1500)
+
+    let response: any
+    const injectedPrompts: any = this.prompts.map((p) =>
+      typeof p === 'function' ? p(batch.map((b) => b.photo)) : p
+    )
+    logger.debug(`Llamando a ${this.model} para ${batch.length} imágenes...`)
+
+    try {
+      if (this.model === 'GPT') {
+        response = await this.executeGPTTask(injectedPrompts, batch)
+      } else if (this.model === 'Molmo') {
+        response = await this.executeMolmoTask(injectedPrompts, batch)
+      } else {
+        throw new Error(`Modelo no soportado: ${this.model}`)
+      }
+    } catch (err) {
+      logger.error(`Error en ${this.model} para ${batch.length} imágenes:`)
+      return
+    }
+
+    response.result.forEach((res: any, photoIndex: number) => {
+      const { ...results } = res
+      const photoId = batch[photoIndex].photo.id
+      this.data[photoId] = { ...this.data[photoId], ...results }
+    })
+
+    await this.commit(batch)
+  }
+
+  async commit(batch: PhotoImage[]): Promise<void> {
     try {
       const tagPhotoManager = new TagPhotoManager()
 
@@ -106,13 +100,19 @@ export class VisionTopologicalTask extends AnalyzerTask {
           })
           .flat()
       )
-      const photoIds = Object.keys(this.data).map(Number)
+
+      const photoIds = batch.map((p) => p.photo.id)
       await this.analyzerProcess.markPhotosCompleted(this.name, photoIds)
+
+      for (const photoId of photoIds) {
+        delete this.data[photoId]
+      }
+
+      logger.debug(`Completada tarea ${this.model} para ${batch.length} imágenes`)
     } catch (err) {
       logger.error(`Error guardando datos de VisionTask:`)
     }
   }
-
   private async executeGPTTask(prompts: string[], batch: PhotoImage[]): Promise<any> {
     const prompt = prompts[0]
     const images = batch.map((pp) => ({

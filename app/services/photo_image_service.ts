@@ -60,7 +60,7 @@ export default class PhotoImageService {
     process: AnalyzerProcess,
     useGuides: boolean = false
   ): Promise<PhotoImage[]> {
-    if (process.mode == 'retry') {
+    if (process.mode == 'retry_process') {
       this.clearCache(process.id)
     }
     const cacheKey = `${process.id}_${useGuides}`
