@@ -208,21 +208,31 @@ export default class ModelsService {
 
   @withWarmUp('image')
   async getEmbeddingsImages(images: { id: number; base64: string }[]) {
-    try {
-      const payload = { images }
-      const { url, requestPayload, headers } = this.buildRequestConfig(
-        'get_embeddings_image',
-        payload,
-        'image'
-      )
+    const maxRetries = 5
+    const baseDelay = 5000 // ms
 
-      const { data } = await axios.post(url, requestPayload, { headers })
+    const payload = { images }
+    const { url, requestPayload, headers } = this.buildRequestConfig(
+      'get_embeddings_image',
+      payload,
+      'image'
+    )
 
-      return { embeddings: data.output ? data.output : data || [] }
-    } catch (error) {
-      console.error('Error en getEmbeddingsImages:', error.message)
-      return { embeddings: [] }
+    let attempt = 0
+    while (attempt < maxRetries) {
+      try {
+        const { data } = await axios.post(url, requestPayload, { headers })
+        return { embeddings: data.output ? data.output : data || [] }
+      } catch (error) {
+        attempt++
+        const isLast = attempt === maxRetries
+        console.error(`Error en getEmbeddingsImages (intento ${attempt}):`, error.message)
+        if (isLast) break
+        // Backoff exponencial simple
+        await new Promise((res) => setTimeout(res, baseDelay * Math.pow(2, attempt)))
+      }
     }
+    return { embeddings: [] }
   }
 
   async getEmbeddingsCPU(tags) {
