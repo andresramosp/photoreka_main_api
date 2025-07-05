@@ -208,8 +208,8 @@ export default class ModelsService {
 
   // @withWarmUp('image')
   async getEmbeddingsImages(images: { id: number; base64: string }[]) {
-    const maxRetries = 5
-    const baseDelay = 5000 // ms
+    const maxRetries = 3
+    const baseDelay = 1000 // ms
 
     const payload = { images }
     const { url, requestPayload, headers } = this.buildRequestConfig(

@@ -19,6 +19,16 @@ import {
 
 export const packages = [
   {
+    id: 'visual_embeddings',
+    tasks: [
+      {
+        name: 'clip_embeddings',
+        type: 'VisualEmbeddingTask',
+        needsImage: true,
+      },
+    ],
+  },
+  {
     // Context + Story + Accents en una sola llamada GPT
     id: 'basic_1',
     tasks: [
@@ -118,99 +128,6 @@ export const packages = [
   //     },
   //   ],
   // },
-
-  {
-    id: 'embeddings_remake',
-    tasks: [
-      {
-        name: 'tags_context_story',
-        type: 'TagTask',
-        model: 'GPT',
-        needsImage: false,
-        dependsOn: 'vision_context_story_accents',
-        prompt: MESSAGE_TAGS_TEXT_EXTRACTION,
-        descriptionSourceFields: ['context', 'story'],
-      },
-      {
-        name: 'tags_visual_accents',
-        type: 'TagTask',
-        model: 'GPT',
-        dependsOn: 'vision_context_story_accents',
-        needsImage: false,
-        prompt: MESSAGE_TAGS_TEXT_EXTRACTION,
-        descriptionSourceFields: ['visual_accents'],
-      },
-      {
-        name: 'chunks_context_story_visual_accents',
-        type: 'ChunkTask',
-        prompt: null,
-        model: null,
-        needsImage: false,
-        dependsOn: 'vision_context_story_accents',
-        descriptionSourceFields: ['context', 'story', 'visual_accents'],
-        descriptionsChunksMethod: {
-          context: { type: 'split_by_size', maxLength: 250 },
-          story: { type: 'split_by_size', maxLength: 250 },
-          visual_accents: { type: 'split_by_size', maxLength: 15 },
-        },
-      },
-    ],
-  },
-  {
-    // Context Story GPT + Accents Molmo
-    // Habria que arreglar tema crops + revisar pequeñas alucinaciones (que no saque elementos borrosos o distantes). Plantear inyección contexto.
-    id: 'basic_3',
-    tasks: [
-      {
-        name: 'vision_context_story',
-        type: 'VisionDescriptionTask',
-        model: 'GPT',
-        sequential: false,
-        prompts: [MESSAGE_ANALYZER_GPT_CONTEXT_AND_STORY],
-        resolution: 'high',
-        imagesPerBatch: 4,
-        promptDependentField: null,
-      },
-      // TODO: intentar mandar visual_accents con 1000px
-      {
-        // xxxx por foto (xxxx con Batch API aprox.)
-        name: 'vision_visual_accents',
-        type: 'VisionDescriptionTask',
-        model: 'Molmo',
-        sequential: true,
-        prompts: [MESSAGE_ANALYZER_MOLMO_VISUAL_ACCENTS], // no va del todo mal, decirle que no coja elementos distantes o poco visibles
-        imagesPerBatch: 4,
-        promptsNames: ['visual_accents'],
-        promptDependentField: null,
-      },
-      {
-        name: 'tags_context_story',
-        type: 'TagTask',
-        model: 'GPT',
-        prompt: MESSAGE_TAGS_TEXT_EXTRACTION,
-        descriptionSourceFields: ['context', 'story'],
-      },
-      {
-        name: 'tags_visual_accents',
-        type: 'TagTask',
-        model: 'GPT',
-        prompt: MESSAGE_TAGS_TEXT_EXTRACTION,
-        descriptionSourceFields: ['visual_accents'],
-      },
-      {
-        name: 'chunks_context_story_visual_accents',
-        type: 'ChunkTask',
-        prompt: null,
-        model: null,
-        descriptionSourceFields: ['context', 'story', 'visual_accents'],
-        descriptionsChunksMethod: {
-          context: { type: 'split_by_size', maxLength: 300 },
-          story: { type: 'split_by_size', maxLength: 300 },
-          visual_accents: { type: 'split_by_size', maxLength: 15 },
-        },
-      },
-    ],
-  },
 ]
 
 export const getTaskList = (packageId: string, process: AnalyzerProcess): AnalyzerTask[] => {
