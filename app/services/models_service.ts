@@ -206,33 +206,31 @@ export default class ModelsService {
   //   }
   // }
 
-  // @withWarmUp('image')
+  @withWarmUp('image')
   async getEmbeddingsImages(images: { id: number; base64: string }[]) {
-    const maxRetries = 3
-    const baseDelay = 1000 // ms
+    const batchSize = 16
+    let allEmbeddings: any[] = []
 
-    const payload = { images }
-    const { url, requestPayload, headers } = this.buildRequestConfig(
-      'get_embeddings_image',
-      payload,
-      'image'
-    )
+    for (let i = 0; i < images.length; i += batchSize) {
+      const batch = images.slice(i, i + batchSize)
+      const payload = { images: batch }
+      const { url, requestPayload, headers } = this.buildRequestConfig(
+        'get_embeddings_image',
+        payload,
+        'image'
+      )
 
-    let attempt = 0
-    while (attempt < maxRetries) {
       try {
         const { data } = await axios.post(url, requestPayload, { headers })
-        return { embeddings: data.output ? data.output : data || [] }
+        const embeddings = data.output ? data.output : data || []
+        allEmbeddings = allEmbeddings.concat(embeddings)
       } catch (error) {
-        attempt++
-        const isLast = attempt === maxRetries
-        console.error(`Error en getEmbeddingsImages (intento ${attempt}):`, error.message)
-        if (isLast) break
-        // Backoff exponencial simple
-        await new Promise((res) => setTimeout(res, baseDelay * Math.pow(2, attempt)))
+        console.error('Error en getEmbeddingsImages:', error.message)
+        // Si falla un batch, añade arrays vacíos (opcional, según cómo quieras gestionarlo)
       }
     }
-    return { embeddings: [] }
+
+    return { embeddings: allEmbeddings }
   }
 
   async getEmbeddingsCPU(tags) {
