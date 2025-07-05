@@ -15,17 +15,6 @@ import {
 
 export const packages = [
   {
-    id: 'visual_embeddings',
-    tasks: [
-      {
-        name: 'clip_embeddings',
-        type: 'VisualEmbeddingTask',
-        needsImage: true,
-        checks: ['photo.embedding'],
-      },
-    ],
-  },
-  {
     // Context + Story + Accents en una sola llamada GPT
     id: 'basic_1',
     tasks: [

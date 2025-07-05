@@ -53,7 +53,7 @@ const EmbeddingController = () => import('#controllers/embeddings_controller')
 
 router.get('/api/catalog', [CatalogController, 'getPhotos'])
 router.get('/api/catalog/:id', [CatalogController, 'getPhoto'])
-router.delete('/api/catalog/:id', [CatalogController, 'deletePhoto'])
+router.post('/api/catalog/delete', [CatalogController, 'deletePhotos'])
 router.post('/api/catalog/photosByIds', [CatalogController, 'getPhotosByIds'])
 router.get('/api/catalog/google/sync', [CatalogController, 'syncGooglePhotos'])
 router.get('/api/catalog/google/callback', [CatalogController, 'callbackGooglePhotos'])

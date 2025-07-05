@@ -9,6 +9,7 @@ import { invalidateCache, withCache } from '../decorators/withCache.js'
 import TagPhotoManager from './tag_photo_manager.js'
 import MeasureExecutionTime from '../decorators/measureExecutionTime.js'
 import { DeleteObjectsCommand, S3Client } from '@aws-sdk/client-s3'
+import db from '@adonisjs/lucid/services/db'
 
 const s3 = new S3Client({
   region: 'auto',
@@ -208,12 +209,18 @@ export default class PhotoManager {
     return photo
   }
 
-  public async deletePhoto(id: number) {
-    const photo = await Photo.find(id)
-    if (!photo) throw new Error('Photo not found')
+  public async deletePhotos(ids: number[]) {
+    if (!ids.length) throw new Error('No photo IDs provided')
 
-    const objectsToDelete = [photo.name]
-    if (photo.thumbnailName) objectsToDelete.push(photo.thumbnailName)
+    // Busca los nombres de archivos a eliminar
+    const photos = await Photo.query().whereIn('id', ids)
+    if (!photos.length) throw new Error('No photos found')
+
+    const objectsToDelete: string[] = []
+    for (const photo of photos) {
+      objectsToDelete.push(photo.name)
+      if (photo.thumbnailName) objectsToDelete.push(photo.thumbnailName)
+    }
 
     try {
       await s3.send(
@@ -229,10 +236,13 @@ export default class PhotoManager {
       console.warn('⚠️ Fallo al eliminar archivos en R2:', err)
     }
 
-    await photo.delete()
+    // Elimina de golpe con raw query
+    await db.from('photos').whereIn('id', ids).delete()
+
+    // Invalida la caché según tus necesidades
     await invalidateCache(`getPhotos_${1234}`)
     await invalidateCache(`getPhotosIdsByUser_${1234}`)
 
-    return { message: 'Photo deleted successfully', id }
+    return { message: 'Photos deleted successfully', ids }
   }
 }

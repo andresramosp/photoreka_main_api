@@ -191,14 +191,19 @@ export default class CatalogController {
     }
   }
 
-  public async deletePhoto({ params, response }: HttpContext) {
+  public async deletePhotos({ request, response }: HttpContext) {
     try {
+      const { ids } = request.only(['ids'])
+      if (!ids || !Array.isArray(ids) || ids.length === 0) {
+        return response.badRequest({ message: 'No photo IDs provided' })
+      }
+
       const photoManager = new PhotoManager()
-      const result = await photoManager.deletePhoto(params.id)
+      const result = await photoManager.deletePhotos(ids)
       return response.ok(result)
     } catch (error) {
-      console.error('Error al eliminar foto:', error)
-      return response.internalServerError({ message: 'Error eliminando la foto' })
+      console.error('Error al eliminar fotos:', error)
+      return response.internalServerError({ message: 'Error eliminando las fotos' })
     }
   }
 
@@ -303,7 +308,7 @@ export default class CatalogController {
       const toDelete = sorted.slice(0, -1)
       const deleted: number[] = []
       for (const photo of toDelete) {
-        await photoManager.deletePhoto(photo.id)
+        await photoManager.deletePhotos([photo.id])
         deleted.push(photo.id)
       }
 
