@@ -76,6 +76,8 @@ export default class AnalyzerProcessRunner {
       }
     }
 
+    await this.updateSheetWithHealth()
+
     await this.changeStage('***  Proceso Completado ***', 'finished')
     logger.info(`\n  ${this.process.formatProcessSheet()} \n `)
 
@@ -83,6 +85,9 @@ export default class AnalyzerProcessRunner {
     await invalidateCache(`getPhotosIdsByUser_${1234}`)
 
     yield { type: 'analysisComplete', data: { costs: [] } }
+
+    // NUEVO: Retry automático si autoRetry está activo Y hay fotos fallidas
+    yield* this.handleAutoRetry()
   }
 
   private async changeStage(message: string, nextStage: string = null) {
@@ -98,7 +103,7 @@ export default class AnalyzerProcessRunner {
   }
 
   /* ─────────────────────────────────────
-   *  MÉTODOS DE “HEALTH CHECK” INTEGRADOS
+   *  MÉTODOS DE "HEALTH CHECK" INTEGRADOS
    * ───────────────────────────────────── */
 
   /* ───────── 1) photoHealth ───────── */
@@ -189,5 +194,95 @@ export default class AnalyzerProcessRunner {
     }
 
     return reports
+  }
+
+  /* ───────── NUEVO: healthForProcess ───────── */
+  public async healthForProcess(verbose = false) {
+    const mark = (ok: boolean) => (ok ? '✅' : '❌')
+    const photos = this.process.photos || []
+    const reports = await Promise.all(
+      photos.map(async (p) => ({
+        photoId: p.id,
+        ...(await this.photoHealth(p.id)),
+      }))
+    )
+    reports.sort((a, b) => a.photoId - b.photoId)
+    reports.forEach((r) => {
+      if (r.ok && !verbose) {
+        console.log(`Foto #${r.photoId} ${mark(true)} OK`)
+        return
+      }
+      console.log(`\n⟐  Foto #${r.photoId} ${mark(r.ok)}`)
+      r.checks
+        .filter((c) => verbose || !c.ok)
+        .forEach(({ label, ok }) => console.log(`  ${mark(ok)} ${label}`))
+    })
+    const failed = reports.filter((r) => !r.ok)
+    if (failed.length) {
+      console.log('\n❌ Fotos con campos faltantes:')
+      failed.forEach((r) => console.log(`  • #${r.photoId} → ${r.missing.join(', ')}`))
+    } else {
+      console.log('\n✅ Todas las fotos están completas')
+    }
+    return reports
+  }
+
+  // NUEVO: Función privada para actualizar la sheet usando health y el mapeo de checks
+  private async updateSheetWithHealth() {
+    const packageDef = (await import('../../app/analyzer_packages.js')).packages.find(
+      (p) => p.id === this.process.packageId
+    )
+    if (packageDef) {
+      const healthReports = await this.healthForProcess(false)
+      for (const taskDef of packageDef.tasks) {
+        const taskName = taskDef.name
+        const checksForTask = taskDef.checks || []
+        const completedPhotoIds = []
+        for (const report of healthReports) {
+          // Para cada foto, verificar si pasa todos los checks de la tarea
+          const ok = checksForTask.every((checkPattern) => {
+            if (checkPattern.includes('*')) {
+              // Patrón tipo descriptionChunk#*.embedding
+              const regex = new RegExp('^' + checkPattern.replace('*', '\\d+') + '$')
+              return report.checks.filter((c) => regex.test(c.label)).every((c) => c.ok)
+            } else {
+              const check = report.checks.find((c) => c.label === checkPattern)
+              return check ? check.ok : false
+            }
+          })
+          if (ok) completedPhotoIds.push(report.photoId)
+        }
+        await this.process.markPhotosCompleted(taskName, completedPhotoIds)
+      }
+      await this.process.save()
+    }
+  }
+
+  // NUEVO: Función privada para manejar el autoRetry
+  private async *handleAutoRetry() {
+    if (this.process.autoRetry) {
+      // Verificar si hay fotos pendientes en alguna tarea
+      const sheet = this.process.processSheet || {}
+      const hayFallidas = Object.values(sheet).some(
+        (task: any) => Array.isArray(task.pendingPhotoIds) && task.pendingPhotoIds.length > 0
+      )
+      const maxAttempts = this.process.maxAttempts ?? 3
+      const attempts = this.process.attempts ?? 0
+      if (hayFallidas && attempts < maxAttempts) {
+        logger.info(
+          `AutoRetry activo: lanzando retry_process automáticamente (hay fotos fallidas, intento ${attempts + 1}/${maxAttempts})...`
+        )
+        this.process.mode = 'retry_process'
+        this.process.attempts = attempts + 1
+        await this.process.save()
+        yield* this.run()
+      } else if (hayFallidas) {
+        logger.info(
+          `autoRetry: se alcanzó el máximo de intentos (${maxAttempts}). No se lanza retry_process.`
+        )
+      } else {
+        logger.info('autoRetry activo, pero no hay fotos fallidas. No se lanza retry_process.')
+      }
+    }
   }
 }

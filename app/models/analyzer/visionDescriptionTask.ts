@@ -91,8 +91,6 @@ export class VisionDescriptionTask extends AnalyzerTask {
         })
       )
 
-      await this.analyzerProcess.markPhotosCompleted(this.name, photoIds)
-
       for (const photoId of photoIds) {
         delete this.data[photoId]
       }

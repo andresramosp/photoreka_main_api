@@ -2,9 +2,7 @@ import DescriptionChunk from '#models/descriptionChunk'
 import { DescriptionType } from '#models/photo'
 import Photo from '#models/photo'
 import { AnalyzerTask } from './analyzerTask.js'
-import AnalyzerProcess from './analyzerProcess.js'
 import Logger, { LogLevel } from '../../utils/logger.js'
-import ModelsService from '../../services/models_service.js'
 
 const logger = Logger.getInstance('AnalyzerProcess', 'ChunkTask')
 logger.setLevel(LogLevel.DEBUG)
@@ -26,21 +24,42 @@ export class ChunkTask extends AnalyzerTask {
       this.data = {}
     }
 
-    // Inicializar el array de chunks para cada foto si no existe
+    // Filtrar fotos: solo aquellas que tengan TODOS los campos requeridos
+    const validPhotos: Photo[] = []
+    const skippedPhotoIds: number[] = []
+
     for (const photo of pendingPhotos) {
+      await photo.refresh()
+      const hasAllDescriptions = this.descriptionSourceFields.every(
+        (field) => photo.descriptions && photo.descriptions[field]
+      )
+      if (hasAllDescriptions) {
+        validPhotos.push(photo)
+      } else {
+        skippedPhotoIds.push(photo.id)
+      }
+    }
+
+    if (skippedPhotoIds.length > 0) {
+      logger.info(
+        `Saltando ${skippedPhotoIds.length} fotos por no tener descripciones requeridas: ${skippedPhotoIds.join(', ')}`
+      )
+    }
+    if (validPhotos.length === 0) {
+      logger.warn('No hay fotos válidas para procesar.')
+      return
+    }
+
+    // Inicializar el array de chunks para cada foto si no existe
+    for (const photo of validPhotos) {
       if (!this.data[photo.id]) {
         this.data[photo.id] = []
       }
     }
 
-    for (let photo of pendingPhotos) {
-      await photo.refresh()
-      if (!photo.descriptions || typeof photo.descriptions !== 'object') {
-        throw new Error('No descriptions found for this photo')
-      }
-
+    for (let photo of validPhotos) {
       for (const category of this.descriptionSourceFields) {
-        const description = photo.descriptions[category]
+        const description = photo.descriptions!![category]
         if (!description) continue
 
         let descriptionChunks
@@ -69,6 +88,7 @@ export class ChunkTask extends AnalyzerTask {
       }
     }
 
+    // ... resto del método sin cambios
     const allChunks = Object.values(this.data).flat()
     for (let i = 0; i < allChunks.length; i += batchEmbeddingsSize) {
       const batch = allChunks.slice(i, i + batchEmbeddingsSize)
@@ -96,8 +116,6 @@ export class ChunkTask extends AnalyzerTask {
         .flat()
         .map((chunk) => chunk.save())
     )
-
-    await this.analyzerProcess.markPhotosCompleted(this.name, photoIds)
   }
 
   private splitIntoChunks(desc: string, maxLength: number = 300): string[] {

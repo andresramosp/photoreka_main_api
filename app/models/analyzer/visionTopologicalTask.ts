@@ -26,13 +26,33 @@ export class VisionTopologicalTask extends AnalyzerTask {
       this.data = {}
     }
 
+    // Cargar tags y filtrar solo fotos con tags
+    const validPhotos: PhotoImage[] = []
+    const skippedPhotoIds: number[] = []
+
     for (const photoImage of pendingPhotos) {
       await photoImage.photo.load('tags', (query) => query.preload('tag'))
+      // Saltar si no hay tags
+      if (!photoImage.photo.tags || photoImage.photo.tags.length === 0) {
+        skippedPhotoIds.push(photoImage.photo.id)
+      } else {
+        validPhotos.push(photoImage)
+      }
+    }
+
+    if (skippedPhotoIds.length > 0) {
+      logger.info(
+        `Saltando ${skippedPhotoIds.length} fotos sin tags: ${skippedPhotoIds.join(', ')}`
+      )
+    }
+    if (validPhotos.length === 0) {
+      logger.warn('No hay fotos válidas para procesar.')
+      return
     }
 
     const batches: PhotoImage[][] = []
-    for (let i = 0; i < pendingPhotos.length; i += this.imagesPerBatch) {
-      const batch = pendingPhotos.slice(i, i + this.imagesPerBatch)
+    for (let i = 0; i < validPhotos.length; i += this.imagesPerBatch) {
+      const batch = validPhotos.slice(i, i + this.imagesPerBatch)
       batches.push(batch)
     }
 

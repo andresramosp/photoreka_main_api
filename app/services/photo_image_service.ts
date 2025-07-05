@@ -66,7 +66,7 @@ export default class PhotoImageService {
     const cacheKey = `${process.id}_${useGuides}`
 
     if (!this.imageCache.has(cacheKey)) {
-      logger.debug(`Cargando imágenes para proceso ${process.id} (guías: ${useGuides})`)
+      logger.debug(`Cargando imágenes para proceso ${process.id}`)
       await this.populatePhotoImages(process)
       this.imageCache.set(cacheKey, useGuides ? this.photoImagesWithGuides : this.photoImages)
     }

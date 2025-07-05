@@ -54,6 +54,12 @@ export default class AnalyzerProcess extends BaseModel {
   @column()
   declare userId: number | null
 
+  declare autoRetry: boolean | null
+
+  declare maxAttempts: number | null
+
+  declare attempts: number | null
+
   @column.dateTime({ autoCreate: true })
   declare createdAt: DateTime
 
@@ -70,6 +76,8 @@ export default class AnalyzerProcess extends BaseModel {
     this.packageId = packageId
     this.tasks = getTaskList(packageId, this)
     this.currentStage = 'init'
+    this.autoRetry = true
+    this.maxAttempts = 2
     await this.save()
 
     const photosToProcess = this.getInitialPhotos(userPhotos)

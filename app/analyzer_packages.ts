@@ -7,11 +7,7 @@ import { VisionTopologicalTask } from '#models/analyzer/visionTopologicalTask'
 import { VisualColorEmbeddingTask } from '#models/analyzer/visualColorEmbeddingTask'
 import { VisualDetectionTask } from '#models/analyzer/visualDetectionTask'
 import { VisualEmbeddingTask } from '#models/analyzer/visualEmbeddingTask'
-import {
-  MESSAGE_ANALYZER_GPT_CONTEXT_AND_STORY,
-  MESSAGE_ANALYZER_GPT_CONTEXT_STORY_ACCENTS,
-  MESSAGE_ANALYZER_MOLMO_VISUAL_ACCENTS,
-} from './utils/prompts/descriptions.js'
+import { MESSAGE_ANALYZER_GPT_CONTEXT_STORY_ACCENTS } from './utils/prompts/descriptions.js'
 import {
   MESSAGE_ANALYZER_GPT_TOPOLOGIC_TAGS,
   MESSAGE_TAGS_TEXT_EXTRACTION,
@@ -25,6 +21,7 @@ export const packages = [
         name: 'clip_embeddings',
         type: 'VisualEmbeddingTask',
         needsImage: true,
+        checks: ['photo.embedding'],
       },
     ],
   },
@@ -32,6 +29,13 @@ export const packages = [
     // Context + Story + Accents en una sola llamada GPT
     id: 'basic_1',
     tasks: [
+      {
+        name: 'clip_embeddings',
+        type: 'VisualEmbeddingTask',
+        needsImage: true,
+        onlyIfNeeded: true,
+        checks: ['photo.embedding'],
+      },
       {
         name: 'vision_context_story_accents',
         type: 'VisionDescriptionTask',
@@ -42,24 +46,25 @@ export const packages = [
         resolution: 'high',
         imagesPerBatch: 4,
         promptDependentField: null,
+        checks: ['descriptions.context', 'descriptions.story', 'descriptions.visual_accents'],
       },
       {
         name: 'tags_context_story',
         type: 'TagTask',
         model: 'GPT',
         needsImage: false,
-        dependsOn: 'vision_context_story_accents',
         prompt: MESSAGE_TAGS_TEXT_EXTRACTION,
         descriptionSourceFields: ['context', 'story'],
+        checks: ['tags.any', 'tags.context_story'],
       },
       {
         name: 'tags_visual_accents',
         type: 'TagTask',
         model: 'GPT',
-        dependsOn: 'vision_context_story_accents',
         needsImage: false,
         prompt: MESSAGE_TAGS_TEXT_EXTRACTION,
         descriptionSourceFields: ['visual_accents'],
+        checks: ['tags.visual_accents'],
       },
       {
         name: 'chunks_context_story_visual_accents',
@@ -67,32 +72,32 @@ export const packages = [
         prompt: null,
         model: null,
         needsImage: false,
-        dependsOn: 'vision_context_story_accents',
         descriptionSourceFields: ['context', 'story', 'visual_accents'],
         descriptionsChunksMethod: {
           context: { type: 'split_by_size', maxLength: 250 },
           story: { type: 'split_by_size', maxLength: 250 },
           visual_accents: { type: 'split_by_size', maxLength: 15 },
         },
+        checks: ['descriptionChunks.any', 'descriptionChunk#*.embedding'],
       },
       {
         name: 'visual_color_embedding_task',
         type: 'VisualColorEmbeddingTask',
         needsImage: true,
+        checks: ['photo.color_histogram'],
       },
-
       {
         name: 'topological_tags',
         type: 'VisionTopologicalTask',
         model: 'GPT',
         needsImage: true,
         sequential: false,
-        dependsOn: 'vision_context_story_accents', // deberia depender de varias
         resolution: 'high',
         prompts: [MESSAGE_ANALYZER_GPT_TOPOLOGIC_TAGS],
         imagesPerBatch: 4,
         useGuideLines: true,
         promptDependentField: null,
+        checks: ['tags.topological'],
       },
     ],
   },

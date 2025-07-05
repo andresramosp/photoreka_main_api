@@ -16,8 +16,8 @@ export abstract class AnalyzerTask {
   declare data: any
   declare needsImage: boolean
   declare useGuideLines: boolean
-  declare dependsOn: string
   declare analyzerProcess: AnalyzerProcess
+  declare onlyIfNeeded: boolean
 
   declare modelsService: ModelsService
 
@@ -35,30 +35,9 @@ export abstract class AnalyzerTask {
     if (!myTaskState) throw new Error(`Task "${this.name}" not found in process sheet.`)
 
     let candidates = myTaskState.pendingPhotoIds
-    const initialCandidates = [...candidates] // Para comparar luego
-
-    // En remake_task permitimos iniciar tareas aisladas usando lo que está en BD de la tarea previa
-    if (this.dependsOn && process.mode !== 'remake_task') {
-      const dependsTaskState = processSheet[this.dependsOn]
-      if (!dependsTaskState)
-        throw new Error(`DependsOn task "${this.dependsOn}" not found in process sheet.`)
-
-      const pendingInDepends = new Set(dependsTaskState.pendingPhotoIds)
-
-      // Excluir fotos que siguen pendientes en la tarea de dependencia
-      candidates = candidates.filter((photoId) => !pendingInDepends.has(photoId))
-
-      const excludedIds = initialCandidates.filter((id) => pendingInDepends.has(id))
-
-      if (excludedIds.length) {
-        logger.info(
-          `[${this.name}] Fotos excluidas por dependencia de ${this.dependsOn}: ${excludedIds.join(', ')}`
-        )
-      }
-    }
 
     if (process.mode == 'retry_process' && candidates.length)
-      logger.info(`[${this.name}] Fotos a procesar: ${candidates.join(', ')}`)
+      logger.info(`[${this.name}] Fotos a procesar: ${candidates.length}`)
 
     if (this.needsImage) {
       const photoImages: PhotoImage[] = await PhotoImageService.getInstance().getPhotoImages(

@@ -41,10 +41,37 @@ export class TagTask extends AnalyzerTask {
     const photosWithTags = await Photo.query().whereIn('id', photoIds).preload('tags')
 
     logger.debug('Carga y limpieza de descripciones...')
-    const cleanedResults = await this.cleanPhotosDescs(photosWithTags)
+    // Filtra aquí solo las fotos válidas
+    const validPhotos: Photo[] = []
+    const skippedPhotoIds: string[] = []
+
+    for (const photo of photosWithTags) {
+      // Si a la foto le falta al menos uno de los campos requeridos, la saltamos
+      const missing = this.descriptionSourceFields.some(
+        (field) => !photo.descriptions || !photo.descriptions[field]
+      )
+      if (missing) {
+        skippedPhotoIds.push(photo.id)
+      } else {
+        validPhotos.push(photo)
+      }
+    }
+
+    if (skippedPhotoIds.length > 0) {
+      logger.info(
+        `Saltando ${skippedPhotoIds.length} fotos por no tener descripciones requeridas: ${skippedPhotoIds.join(', ')}`
+      )
+    }
+
+    if (validPhotos.length === 0) {
+      logger.warn('No hay fotos válidas para procesar.')
+      return
+    }
+
+    const cleanedResults = await this.cleanPhotosDescs(validPhotos)
     logger.debug('Procesando extracción de tags...')
 
-    await this.requestTagsFromGPT(photosWithTags, cleanedResults)
+    await this.requestTagsFromGPT(validPhotos, cleanedResults)
     logger.debug('Procesando creación de tags...')
   }
 
@@ -145,7 +172,6 @@ export class TagTask extends AnalyzerTask {
     )
 
     const photoIds = Object.keys(this.data).map(Number)
-    await this.analyzerProcess.markPhotosCompleted(this.name, photoIds)
     logger.debug(`Datos salvados para ${photoIds.length} imágenes`)
   }
 
@@ -226,10 +252,6 @@ export class TagTask extends AnalyzerTask {
 
   private getSourceTextFromPhoto(photo: Photo) {
     let text = ''
-
-    if (!photo || !photo.descriptions) {
-      return ''
-    }
 
     for (const category of this.descriptionSourceFields) {
       try {
