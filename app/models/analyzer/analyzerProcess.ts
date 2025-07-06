@@ -30,6 +30,7 @@ export type ProcessSheet = {
   [taskName: string]: {
     pendingPhotoIds: number[]
     completedPhotoIds: number[]
+    batchId?: string
   }
 }
 

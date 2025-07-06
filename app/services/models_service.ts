@@ -6,6 +6,8 @@ import NodeCache from 'node-cache'
 import MeasureExecutionTime from '../decorators/measureExecutionTime.js'
 import withWarmUp from '../decorators/withWarmUp.js'
 import { withCache } from '../decorators/withCache.js'
+import { Readable } from 'stream'
+import FormData from 'form-data'
 
 const cache = new NodeCache() // Simple in-memory cache
 
@@ -718,19 +720,18 @@ export default class ModelsService {
   }
 
   private async uploadBatchFile(requests: any[]): Promise<string> {
-    // Cada línea es un objeto JSON como si fuera una llamada a chat/completions
-    const jsonl = requests.map((req) => JSON.stringify(req)).join('\n')
+    const jsonl = requests.map((req) => JSON.stringify(req)).join('\n') + '\n'
     const buffer = Buffer.from(jsonl, 'utf-8')
 
-    const formData = new FormData()
-    formData.append('file', buffer, 'batch.jsonl')
-    formData.append('purpose', 'batch')
+    const form = new FormData()
+    form.append('file', buffer, {
+      filename: 'batch.jsonl',
+      contentType: 'application/jsonl',
+    })
+    form.append('purpose', 'batch')
 
-    const { data } = await axios.post(`${env.get('OPENAI_BASEURL')}/files`, formData, {
-      headers: {
-        Authorization: `Bearer ${env.get('OPENAI_KEY')}`,
-        ...formData.getHeaders(),
-      },
+    const { data } = await axios.post(`${env.get('OPENAI_BASEURL')}/files`, form, {
+      headers: { Authorization: `Bearer ${env.get('OPENAI_KEY')}`, ...form.getHeaders() },
     })
 
     return data.id
@@ -744,10 +745,25 @@ export default class ModelsService {
   }
 
   public async getBatchResults(batchId: string): Promise<any[]> {
-    const { data } = await axios.get(`${env.get('OPENAI_BASEURL')}/batches/${batchId}/outputs`, {
+    const { data: batch } = await axios.get(`${env.get('OPENAI_BASEURL')}/batches/${batchId}`, {
       headers: { Authorization: `Bearer ${env.get('OPENAI_KEY')}` },
     })
 
-    return data.data // Array con los resultados en orden de envío
+    const outputFileId = batch.output_file_id
+
+    const { data: content } = await axios.get(
+      `${env.get('OPENAI_BASEURL')}/files/${outputFileId}/content`,
+      {
+        headers: { Authorization: `Bearer ${env.get('OPENAI_KEY')}` },
+        responseType: 'text',
+      }
+    )
+
+    // Cada línea del archivo es un JSON individual
+    const lines = content.trim().split('\n')
+
+    const results = lines.map((line) => JSON.parse(line))
+
+    return results
   }
 }

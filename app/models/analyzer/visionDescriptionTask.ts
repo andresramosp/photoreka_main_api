@@ -5,6 +5,7 @@ import { AnalyzerTask } from './analyzerTask.js'
 import PhotoImage from './photoImage.js'
 import Logger, { LogLevel } from '../../utils/logger.js'
 import ModelsService from '../../services/models_service.js'
+import AnalyzerProcess, { ProcessSheet } from './analyzerProcess.js'
 
 const logger = Logger.getInstance('AnalyzerProcess', 'VisionDescriptionTask')
 logger.setLevel(LogLevel.DEBUG)
@@ -22,8 +23,10 @@ export class VisionDescriptionTask extends AnalyzerTask {
   declare data: Record<number, Record<string, string>>
   declare complete: boolean
   declare useBatchAPI: boolean
+  declare analyzerProcess: AnalyzerProcess
 
-  async process(pendingPhotos: PhotoImage[]): Promise<void> {
+  async process(pendingPhotos: PhotoImage[], analyzerProcess: AnalyzerProcess): Promise<void> {
+    this.analyzerProcess = analyzerProcess
     if (this.useBatchAPI) {
       await this.processWithBatchAPI(pendingPhotos)
     } else {
@@ -79,47 +82,58 @@ export class VisionDescriptionTask extends AnalyzerTask {
     }
   }
 
+  // Aquí se miraría que, si ya tiene un batchId asociado previamente, es que estamos
+  // reenganchandonos, por lo que vamos directos al while
   private async processWithBatchAPI(pendingPhotos: PhotoImage[]): Promise<void> {
     if (!this.data) this.data = {}
 
-    const prompts = await this.injectPromptsDependencies(pendingPhotos)
+    let batchId = this.analyzerProcess.processSheet?.[this.name]?.batchId
 
-    const requests = pendingPhotos.map((photoImage, idx) => {
-      return {
-        method: 'POST',
-        url: '/v1/chat/completions',
-        body: {
-          model: 'gpt-4o',
-          temperature: 0.1,
-          response_format: { type: 'json_object' },
-          max_tokens: 15000,
-          messages: [
-            {
-              role: 'user',
-              content: [
-                {
-                  type: 'image_url',
-                  image_url: {
-                    url: `data:image/jpeg;base64,${photoImage.base64}`,
-                    detail: this.resolution,
-                  },
-                },
-                {
-                  type: 'text',
-                  text: Array.isArray(prompts) ? prompts[idx] : prompts,
-                },
-              ],
-            },
-          ],
-        },
+    if (!batchId) {
+      const prompts = await this.injectPromptsDependencies(pendingPhotos)
+
+      const imagesPerRequest = 4
+      const requests: any[] = []
+
+      for (let i = 0; i < pendingPhotos.length; i += imagesPerRequest) {
+        const batch = pendingPhotos.slice(i, i + imagesPerRequest)
+
+        const customId = batch.map((p) => p.photo.id).join('-')
+
+        const userContent = batch.map((photoImage) => ({
+          type: 'image_url',
+          image_url: {
+            url: `data:image/jpeg;base64,${photoImage.base64}`,
+            detail: this.resolution,
+          },
+        }))
+
+        requests.push({
+          custom_id: customId,
+          method: 'POST',
+          url: '/v1/chat/completions',
+          body: {
+            model: 'gpt-4.1',
+            temperature: 0.1,
+            response_format: { type: 'json_object' },
+            max_tokens: 15000,
+            messages: [
+              { role: 'system', content: prompts[0] },
+              { role: 'user', content: userContent },
+            ],
+          },
+        })
       }
-    })
 
-    const batchId = await this.modelsService.submitGPTBatch(requests)
+      batchId = await this.modelsService.submitGPTBatch(requests)
+
+      this.analyzerProcess.processSheet!![this.name].batchId = batchId
+      await this.analyzerProcess.save()
+    }
 
     let status = 'in_progress'
-    while (status === 'in_progress') {
-      await this.sleep(3000)
+    while (status === 'in_progress' || status === 'finalizing') {
+      await this.sleep(5000)
       status = await this.modelsService.getBatchStatus(batchId)
     }
 
@@ -130,17 +144,27 @@ export class VisionDescriptionTask extends AnalyzerTask {
 
     const results = await this.modelsService.getBatchResults(batchId)
 
-    results.forEach((res: any, idx: number) => {
+    results.forEach((res: any) => {
       try {
-        const content = res.response.choices[0].message.content
-        const parsed = JSON.parse(content.replace(/```(?:json)?\s*/g, '').trim())
-        const photoId = pendingPhotos[idx].photo.id
-        this.data[photoId] = { ...this.data[photoId], ...parsed }
+        const content = res.response.body.choices[0].message.content
+        const { results: parsed } = JSON.parse(content.replace(/```(?:json)?\s*/g, '').trim())
+
+        // El custom_id ahora es un grupo de IDs: "123-124-125-126"
+        const photoIds = res.custom_id.split('-').map(Number)
+
+        if (!Array.isArray(parsed)) {
+          logger.error(`Error: la respuesta no es un array para el batch ${res.custom_id}`)
+          return
+        }
+
+        parsed.forEach((photoResult: any, idx: number) => {
+          const photoId = photoIds[idx]
+          if (photoId) {
+            this.data[photoId] = { ...this.data[photoId], ...photoResult }
+          }
+        })
       } catch (err) {
-        logger.error(
-          `Error procesando resultado del batch para foto ${pendingPhotos[idx].photo.id}:`,
-          err
-        )
+        logger.error(`Error procesando resultado del batch para fotos ${res.custom_id}:`, err)
       }
     })
 

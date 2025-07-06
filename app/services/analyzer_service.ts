@@ -65,7 +65,7 @@ export default class AnalyzerProcessRunner {
             `*** Iniciando tarea *** | ${task.getName()} | Fotos: ${pendingPhotos.length} | ${this.process.mode.toUpperCase()}`,
             task.name
           )
-          await task.process(pendingPhotos)
+          await task.process(pendingPhotos, this.process)
           await task.commit(pendingPhotos)
           await this.changeStage(`*** Tarea completada *** | ${task.getName()}`)
         }

@@ -68,6 +68,7 @@
     "blockhash-core": "^0.1.0",
     "colorsys": "^1.0.22",
     "compromise": "^14.14.4",
+    "form-data": "^4.0.3",
     "googleapis": "^144.0.0",
     "image-hash": "^5.3.2",
     "imghash": "^0.0.9",

@@ -36,6 +36,7 @@ export const packages = [
         imagesPerBatch: 4,
         promptDependentField: null,
         checks: ['descriptions.context', 'descriptions.story', 'descriptions.visual_accents'],
+        useBatchAPI: true,
       },
       {
         name: 'tags_context_story',

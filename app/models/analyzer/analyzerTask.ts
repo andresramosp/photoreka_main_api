@@ -1,4 +1,4 @@
-import { ModelType } from './analyzerProcess.js'
+import { ModelType, ProcessSheet } from './analyzerProcess.js'
 import AnalyzerProcess from './analyzerProcess.js'
 import Photo from '../photo.js'
 import PhotoImage from './photoImage.js'
@@ -71,7 +71,7 @@ export abstract class AnalyzerTask {
     }
   }
 
-  abstract process(pendingPhotos: Photo[] | PhotoImage[]): Promise<void>
+  abstract process(pendingPhotos: Photo[] | PhotoImage[], process?: AnalyzerProcess): Promise<void>
   abstract commit(batch?: any[]): Promise<void>
 
   getName() {
