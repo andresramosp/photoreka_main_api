@@ -254,6 +254,8 @@ export class VisionDescriptionTask extends AnalyzerTask {
 
     const batchId = await this.modelsService.submitGPTBatch(requests)
 
+    logger.debug(`Batch con id ${batchId} en espera para ${batchPhotos.length} imágenes`)
+
     let status = 'in_progress'
     while (status === 'in_progress' || status === 'finalizing') {
       await this.sleep(5000)
@@ -264,6 +266,8 @@ export class VisionDescriptionTask extends AnalyzerTask {
       logger.error(`El batch ${batchId} ha fallado.`)
       return
     }
+
+    logger.debug(`Batch con id ${batchId} resuelto`)
 
     const results = await this.modelsService.getBatchResults(batchId)
 
