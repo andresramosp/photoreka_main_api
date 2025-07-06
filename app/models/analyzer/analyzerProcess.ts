@@ -76,7 +76,7 @@ export default class AnalyzerProcess extends BaseModel {
     this.packageId = packageId
     this.tasks = getTaskList(packageId, this)
     this.currentStage = 'init'
-    this.autoRetry = true
+    this.autoRetry = false
     this.maxAttempts = 2
     await this.save()
 
@@ -133,8 +133,6 @@ export default class AnalyzerProcess extends BaseModel {
     await this.save()
   }
 
-  // Crea una sheet vacia. Este metodo NO se invoca cuando hacemos
-  // retry, con lo cual conseguimos continuar con la sheet anterior
   private initializeProcessSheet() {
     if (!this.tasks) return
     const allPhotoIds = this.photos.map((photo) => photo.id)

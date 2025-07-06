@@ -63,7 +63,8 @@ router.post('/api/catalog/checkDuplicates', [CatalogController, 'checkDuplicates
 router.post('/api/catalog/deleteDuplicates', [CatalogController, 'deleteDuplicates'])
 
 router.post('/api/analyzer/', [AnalyzerController, 'analyze'])
-router.get('/api/analyzer/health', [AnalyzerController, 'health'])
+router.get('/api/analyzer/health/user', [AnalyzerController, 'healthForUser'])
+router.get('/api/analyzer/health/process', [AnalyzerController, 'healthForProcess'])
 router.post('/api/embeddings/', [EmbeddingController, 'getEmbeddings'])
 
 router.post('/api/search/semantic', [SearchController, 'searchSemantic'])

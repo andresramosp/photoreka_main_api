@@ -5,7 +5,6 @@ import { AnalyzerTask } from './analyzerTask.js'
 import PhotoImage from './photoImage.js'
 import Logger, { LogLevel } from '../../utils/logger.js'
 import ModelsService from '../../services/models_service.js'
-import AnalyzerProcess from './analyzerProcess.js'
 
 const logger = Logger.getInstance('AnalyzerProcess', 'VisionDescriptionTask')
 logger.setLevel(LogLevel.DEBUG)
@@ -22,11 +21,18 @@ export class VisionDescriptionTask extends AnalyzerTask {
   declare promptsNames: DescriptionType[]
   declare data: Record<number, Record<string, string>>
   declare complete: boolean
+  declare useBatchAPI: boolean
 
   async process(pendingPhotos: PhotoImage[]): Promise<void> {
-    if (!this.data) {
-      this.data = {}
+    if (this.useBatchAPI) {
+      await this.processWithBatchAPI(pendingPhotos)
+    } else {
+      await this.processWithDirectAPI(pendingPhotos)
     }
+  }
+
+  private async processWithDirectAPI(pendingPhotos: PhotoImage[]): Promise<void> {
+    if (!this.data) this.data = {}
 
     const batches: PhotoImage[][] = []
     for (let i = 0; i < pendingPhotos.length; i += this.imagesPerBatch) {
@@ -50,7 +56,7 @@ export class VisionDescriptionTask extends AnalyzerTask {
           throw new Error(`Modelo no soportado: ${this.model}`)
         }
       } catch (err) {
-        logger.error(`Error en ${this.model} para ${batch.length} imágenes:`)
+        logger.error(`Error en ${this.model} para ${batch.length} imágenes:`, err)
         return
       }
 
@@ -71,6 +77,75 @@ export class VisionDescriptionTask extends AnalyzerTask {
     } else {
       await Promise.all(batches.map((batch, idx) => processBatch(batch, idx)))
     }
+  }
+
+  private async processWithBatchAPI(pendingPhotos: PhotoImage[]): Promise<void> {
+    if (!this.data) this.data = {}
+
+    const prompts = await this.injectPromptsDependencies(pendingPhotos)
+
+    const requests = pendingPhotos.map((photoImage, idx) => {
+      return {
+        method: 'POST',
+        url: '/v1/chat/completions',
+        body: {
+          model: 'gpt-4o',
+          temperature: 0.1,
+          response_format: { type: 'json_object' },
+          max_tokens: 15000,
+          messages: [
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'image_url',
+                  image_url: {
+                    url: `data:image/jpeg;base64,${photoImage.base64}`,
+                    detail: this.resolution,
+                  },
+                },
+                {
+                  type: 'text',
+                  text: Array.isArray(prompts) ? prompts[idx] : prompts,
+                },
+              ],
+            },
+          ],
+        },
+      }
+    })
+
+    const batchId = await this.modelsService.submitGPTBatch(requests)
+
+    let status = 'in_progress'
+    while (status === 'in_progress') {
+      await this.sleep(3000)
+      status = await this.modelsService.getBatchStatus(batchId)
+    }
+
+    if (status !== 'completed') {
+      logger.error(`El batch ${batchId} ha fallado.`)
+      return
+    }
+
+    const results = await this.modelsService.getBatchResults(batchId)
+
+    results.forEach((res: any, idx: number) => {
+      try {
+        const content = res.response.choices[0].message.content
+        const parsed = JSON.parse(content.replace(/```(?:json)?\s*/g, '').trim())
+        const photoId = pendingPhotos[idx].photo.id
+        this.data[photoId] = { ...this.data[photoId], ...parsed }
+      } catch (err) {
+        logger.error(
+          `Error procesando resultado del batch para foto ${pendingPhotos[idx].photo.id}:`,
+          err
+        )
+      }
+    })
+
+    await this.commit(pendingPhotos)
+    logger.debug(`Datos salvados del batch para ${pendingPhotos.length} imágenes`)
   }
 
   async commit(batch: PhotoImage[]): Promise<void> {
@@ -95,7 +170,7 @@ export class VisionDescriptionTask extends AnalyzerTask {
         delete this.data[photoId]
       }
     } catch (err) {
-      logger.error(`Error guardando datos de VisionTask:`)
+      logger.error(`Error guardando datos de VisionTask:`, err)
     }
   }
 
@@ -128,7 +203,7 @@ export class VisionDescriptionTask extends AnalyzerTask {
             const descObj = photoResult.descriptions.find((d: any) => d.id_prompt === targetPrompt)
             descriptionsByPrompt = descObj.description
           } catch (err) {
-            logger.error(`Error en Molmo para foto ${photoResult.id}:`)
+            logger.error(`Error en Molmo para foto ${photoResult.id}:`, err)
           }
         })
         return {

@@ -463,7 +463,7 @@ export default class ModelsService {
   ): Promise<any> {
     let cacheDuration = 60 * 5
     try {
-      const simulateErrorRate: number = 0
+      const simulateErrorRate: number = model == 'gpt-4o-mini' ? 0 : 0
 
       // Simular fallo aleatorio si está activado
       if (simulateErrorRate > 0 && Math.random() < simulateErrorRate) {
@@ -694,5 +694,60 @@ export default class ModelsService {
       console.error('Error fetching DS response:', error)
       return {}
     }
+  }
+
+  // METODOS BATCH API //
+
+  public async submitGPTBatch(requests: any[]): Promise<string> {
+    const payload = {
+      input_file_id: await this.uploadBatchFile(requests),
+      endpoint: '/v1/chat/completions',
+      completion_window: '24h',
+      metadata: { type: 'photo_analyzer' },
+      // webhook_url: `${env.get('APP_BASE_URL')}/api/openai/batch-webhook`,
+    }
+
+    const { data } = await axios.post(`${env.get('OPENAI_BASEURL')}/batches`, payload, {
+      headers: {
+        'Authorization': `Bearer ${env.get('OPENAI_KEY')}`,
+        'Content-Type': 'application/json',
+      },
+    })
+
+    return data.id // Este es el batchId que debes guardar
+  }
+
+  private async uploadBatchFile(requests: any[]): Promise<string> {
+    // Cada línea es un objeto JSON como si fuera una llamada a chat/completions
+    const jsonl = requests.map((req) => JSON.stringify(req)).join('\n')
+    const buffer = Buffer.from(jsonl, 'utf-8')
+
+    const formData = new FormData()
+    formData.append('file', buffer, 'batch.jsonl')
+    formData.append('purpose', 'batch')
+
+    const { data } = await axios.post(`${env.get('OPENAI_BASEURL')}/files`, formData, {
+      headers: {
+        Authorization: `Bearer ${env.get('OPENAI_KEY')}`,
+        ...formData.getHeaders(),
+      },
+    })
+
+    return data.id
+  }
+
+  public async getBatchStatus(batchId: string): Promise<string> {
+    const { data } = await axios.get(`${env.get('OPENAI_BASEURL')}/batches/${batchId}`, {
+      headers: { Authorization: `Bearer ${env.get('OPENAI_KEY')}` },
+    })
+    return data.status // "in_progress", "completed", "failed"
+  }
+
+  public async getBatchResults(batchId: string): Promise<any[]> {
+    const { data } = await axios.get(`${env.get('OPENAI_BASEURL')}/batches/${batchId}/outputs`, {
+      headers: { Authorization: `Bearer ${env.get('OPENAI_KEY')}` },
+    })
+
+    return data.data // Array con los resultados en orden de envío
   }
 }

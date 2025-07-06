@@ -10,7 +10,8 @@ import { invalidateCache } from '../decorators/withCache.js'
 import ModelsService from '#services/models_service'
 import PhotoImageService from '#services/photo_image_service'
 import VectorService from '#services/vector_service'
-import AnalyzerProcessRunner from '#services/analyzer_service'
+
+import HealthPhotoService from '#services/health_photo_service'
 
 const s3 = new S3Client({
   region: 'auto',
@@ -282,7 +283,6 @@ export default class CatalogController {
   public async deleteDuplicates({ request, response }: HttpContext) {
     try {
       const photoManager = new PhotoManager()
-      const analyzerService = new AnalyzerProcessRunner()
 
       const { duplicates }: { duplicates: number[] } = request.only(['duplicates'])
       if (!duplicates || duplicates.length < 2) {
@@ -294,7 +294,7 @@ export default class CatalogController {
       const healthReports = await Promise.all(
         duplicates.map(async (id) => ({
           id,
-          ...(await analyzerService.photoHealth(id)),
+          ...(await HealthPhotoService.photoHealth(id)),
         }))
       )
 

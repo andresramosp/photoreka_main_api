@@ -6,6 +6,7 @@ import _ from 'lodash'
 import PhotoImageService from '#services/photo_image_service'
 import Logger, { LogLevel } from '../../utils/logger.js'
 import ModelsService from '#services/models_service'
+import HealthPhotoService from '#services/health_photo_service'
 
 const logger = Logger.getInstance('AnalyzerProcess')
 logger.setLevel(LogLevel.DEBUG)
@@ -18,6 +19,7 @@ export abstract class AnalyzerTask {
   declare useGuideLines: boolean
   declare analyzerProcess: AnalyzerProcess
   declare onlyIfNeeded: boolean
+  declare checks: string[]
 
   declare modelsService: ModelsService
 
@@ -26,27 +28,46 @@ export abstract class AnalyzerTask {
     this.modelsService = new ModelsService()
   }
 
-  // Métodos abstractos que todas las tareas deben implementar
   async prepare(process: AnalyzerProcess): Promise<Photo[] | PhotoImage[]> {
-    const processSheet = process.processSheet
-    if (!processSheet) throw new Error('No process sheet initialized.')
+    let targetPhotos: Photo[]
 
-    const myTaskState = processSheet[this.name]
-    if (!myTaskState) throw new Error(`Task "${this.name}" not found in process sheet.`)
+    if (process.mode === 'retry_process') {
+      const allPhotos = process.photos
+      targetPhotos = []
 
-    let candidates = myTaskState.pendingPhotoIds
+      for (const photo of allPhotos) {
+        const health = await HealthPhotoService.photoHealth(photo.id)
 
-    if (process.mode == 'retry_process' && candidates.length)
-      logger.info(`[${this.name}] Fotos a procesar: ${candidates.length}`)
+        const isComplete = this.checks.every((checkPattern) => {
+          if (checkPattern.includes('*')) {
+            const regex = new RegExp('^' + checkPattern.replace('*', '\\d+') + '$')
+            return health.checks.filter((c) => regex.test(c.label)).every((c) => c.ok)
+          } else {
+            const check = health.checks.find((c) => c.label === checkPattern)
+            return check ? check.ok : false
+          }
+        })
+
+        if (!isComplete) targetPhotos.push(photo)
+      }
+
+      logger.info(`[${this.name}] Fotos pendientes: ${targetPhotos.length}`)
+    } else {
+      // En cualquier otro modo procesamos todas las fotos
+      targetPhotos = process.photos
+      logger.info(`[${this.name}] Procesando todas las fotos (${targetPhotos.length})`)
+    }
+
+    if (targetPhotos.length === 0) return []
 
     if (this.needsImage) {
-      const photoImages: PhotoImage[] = await PhotoImageService.getInstance().getPhotoImages(
+      const photoImages = await PhotoImageService.getInstance().getPhotoImages(
         process,
         this.useGuideLines
       )
-      return photoImages.filter((pi) => candidates.includes(pi.photo.id))
+      return photoImages.filter((pi) => targetPhotos.some((p) => p.id === pi.photo.id))
     } else {
-      return process.photos.filter((p) => candidates.includes(p.id))
+      return targetPhotos
     }
   }
 
