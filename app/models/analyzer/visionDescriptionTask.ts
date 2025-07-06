@@ -87,16 +87,16 @@ export class VisionDescriptionTask extends AnalyzerTask {
   private async processWithBatchAPI(pendingPhotos: PhotoImage[]): Promise<void> {
     if (!this.data) this.data = {}
 
-    let batchId = this.analyzerProcess.processSheet?.[this.name]?.batchId
+    const imagesPerRequest = 4
+    const imagesPerBatch = 200
 
-    if (!batchId) {
-      const prompts = await this.injectPromptsDependencies(pendingPhotos)
-
-      const imagesPerRequest = 4
+    for (let i = 0; i < pendingPhotos.length; i += imagesPerBatch) {
+      const batchPhotos = pendingPhotos.slice(i, i + imagesPerBatch)
+      const prompts = await this.injectPromptsDependencies(batchPhotos)
       const requests: any[] = []
 
-      for (let i = 0; i < pendingPhotos.length; i += imagesPerRequest) {
-        const batch = pendingPhotos.slice(i, i + imagesPerRequest)
+      for (let j = 0; j < batchPhotos.length; j += imagesPerRequest) {
+        const batch = batchPhotos.slice(j, j + imagesPerRequest)
 
         const customId = batch.map((p) => p.photo.id).join('-')
 
@@ -125,51 +125,47 @@ export class VisionDescriptionTask extends AnalyzerTask {
         })
       }
 
-      batchId = await this.modelsService.submitGPTBatch(requests)
+      const batchId = await this.modelsService.submitGPTBatch(requests)
 
-      this.analyzerProcess.processSheet!![this.name].batchId = batchId
-      await this.analyzerProcess.save()
-    }
-
-    let status = 'in_progress'
-    while (status === 'in_progress' || status === 'finalizing') {
-      await this.sleep(5000)
-      status = await this.modelsService.getBatchStatus(batchId)
-    }
-
-    if (status !== 'completed') {
-      logger.error(`El batch ${batchId} ha fallado.`)
-      return
-    }
-
-    const results = await this.modelsService.getBatchResults(batchId)
-
-    results.forEach((res: any) => {
-      try {
-        const content = res.response.body.choices[0].message.content
-        const { results: parsed } = JSON.parse(content.replace(/```(?:json)?\s*/g, '').trim())
-
-        // El custom_id ahora es un grupo de IDs: "123-124-125-126"
-        const photoIds = res.custom_id.split('-').map(Number)
-
-        if (!Array.isArray(parsed)) {
-          logger.error(`Error: la respuesta no es un array para el batch ${res.custom_id}`)
-          return
-        }
-
-        parsed.forEach((photoResult: any, idx: number) => {
-          const photoId = photoIds[idx]
-          if (photoId) {
-            this.data[photoId] = { ...this.data[photoId], ...photoResult }
-          }
-        })
-      } catch (err) {
-        logger.error(`Error procesando resultado del batch para fotos ${res.custom_id}:`, err)
+      let status = 'in_progress'
+      while (status === 'in_progress' || status === 'finalizing') {
+        await this.sleep(5000)
+        status = await this.modelsService.getBatchStatus(batchId)
       }
-    })
 
-    await this.commit(pendingPhotos)
-    logger.debug(`Datos salvados del batch para ${pendingPhotos.length} imágenes`)
+      if (status !== 'completed') {
+        logger.error(`El batch ${batchId} ha fallado.`)
+        continue // Salta al siguiente batch
+      }
+
+      const results = await this.modelsService.getBatchResults(batchId)
+
+      results.forEach((res: any) => {
+        try {
+          const content = res.response.body.choices[0].message.content
+          const { results: parsed } = JSON.parse(content.replace(/```(?:json)?\s*/g, '').trim())
+
+          const photoIds = res.custom_id.split('-').map(Number)
+
+          if (!Array.isArray(parsed)) {
+            logger.error(`Error: la respuesta no es un array para el batch ${res.custom_id}`)
+            return
+          }
+
+          parsed.forEach((photoResult: any, idx: number) => {
+            const photoId = photoIds[idx]
+            if (photoId) {
+              this.data[photoId] = { ...this.data[photoId], ...photoResult }
+            }
+          })
+        } catch (err) {
+          logger.error(`Error procesando resultado del batch para fotos ${res.custom_id}:`, err)
+        }
+      })
+
+      await this.commit(batchPhotos)
+      logger.debug(`Datos salvados del batch para ${batchPhotos.length} imágenes`)
+    }
   }
 
   async commit(batch: PhotoImage[]): Promise<void> {
