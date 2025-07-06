@@ -6,6 +6,7 @@ import PhotoImage from './photoImage.js'
 import Logger, { LogLevel } from '../../utils/logger.js'
 import ModelsService from '../../services/models_service.js'
 import AnalyzerProcess, { ProcessSheet } from './analyzerProcess.js'
+import pLimit from 'p-limit'
 
 const logger = Logger.getInstance('AnalyzerProcess', 'VisionDescriptionTask')
 logger.setLevel(LogLevel.DEBUG)
@@ -84,7 +85,7 @@ export class VisionDescriptionTask extends AnalyzerTask {
 
   // Aquí se miraría que, si ya tiene un batchId asociado previamente, es que estamos
   // reenganchandonos, por lo que vamos directos al while
-  private async processWithBatchAPI(pendingPhotos: PhotoImage[]): Promise<void> {
+  private async processWithBatchAPI_(pendingPhotos: PhotoImage[]): Promise<void> {
     if (!this.data) this.data = {}
 
     const imagesPerRequest = 4
@@ -168,6 +169,28 @@ export class VisionDescriptionTask extends AnalyzerTask {
     }
   }
 
+  private async processWithBatchAPI(pendingPhotos: PhotoImage[]): Promise<void> {
+    if (!this.data) this.data = {}
+
+    const imagesPerBatch = 200
+    const maxConcurrency = 5 // Número de batches simultáneos
+
+    // Divide las fotos en batches de 200
+    const batches: PhotoImage[][] = []
+    for (let i = 0; i < pendingPhotos.length; i += imagesPerBatch) {
+      batches.push(pendingPhotos.slice(i, i + imagesPerBatch))
+    }
+
+    const limit = pLimit(maxConcurrency)
+
+    // Ejecuta todos los batches con concurrencia limitada
+    const batchPromises = batches.map((batchPhotos) =>
+      limit(() => this.processSingleBatch(batchPhotos))
+    )
+
+    await Promise.all(batchPromises)
+  }
+
   async commit(batch: PhotoImage[]): Promise<void> {
     try {
       const photoManager = new PhotoManager()
@@ -192,6 +215,83 @@ export class VisionDescriptionTask extends AnalyzerTask {
     } catch (err) {
       logger.error(`Error guardando datos de VisionTask:`, err)
     }
+  }
+
+  private async processSingleBatch(batchPhotos: PhotoImage[]): Promise<void> {
+    const prompts = await this.injectPromptsDependencies(batchPhotos)
+    const requests: any[] = []
+
+    const imagesPerRequest = 4
+    for (let j = 0; j < batchPhotos.length; j += imagesPerRequest) {
+      const batch = batchPhotos.slice(j, j + imagesPerRequest)
+
+      const customId = batch.map((p) => p.photo.id).join('-')
+
+      const userContent = batch.map((photoImage) => ({
+        type: 'image_url',
+        image_url: {
+          url: `data:image/jpeg;base64,${photoImage.base64}`,
+          detail: this.resolution,
+        },
+      }))
+
+      requests.push({
+        custom_id: customId,
+        method: 'POST',
+        url: '/v1/chat/completions',
+        body: {
+          model: 'gpt-4.1',
+          temperature: 0.1,
+          response_format: { type: 'json_object' },
+          max_tokens: 15000,
+          messages: [
+            { role: 'system', content: prompts[0] },
+            { role: 'user', content: userContent },
+          ],
+        },
+      })
+    }
+
+    const batchId = await this.modelsService.submitGPTBatch(requests)
+
+    let status = 'in_progress'
+    while (status === 'in_progress' || status === 'finalizing') {
+      await this.sleep(5000)
+      status = await this.modelsService.getBatchStatus(batchId)
+    }
+
+    if (status !== 'completed') {
+      logger.error(`El batch ${batchId} ha fallado.`)
+      return
+    }
+
+    const results = await this.modelsService.getBatchResults(batchId)
+
+    results.forEach((res: any) => {
+      try {
+        const content = res.response.body.choices[0].message.content
+        const { results: parsed } = JSON.parse(content.replace(/```(?:json)?\s*/g, '').trim())
+
+        const photoIds = res.custom_id.split('-').map(Number)
+
+        if (!Array.isArray(parsed)) {
+          logger.error(`Error: la respuesta no es un array para el batch ${res.custom_id}`)
+          return
+        }
+
+        parsed.forEach((photoResult: any, idx: number) => {
+          const photoId = photoIds[idx]
+          if (photoId) {
+            this.data[photoId] = { ...this.data[photoId], ...photoResult }
+          }
+        })
+      } catch (err) {
+        logger.error(`Error procesando resultado del batch para fotos ${res.custom_id}:`, err)
+      }
+    })
+
+    await this.commit(batchPhotos)
+    logger.debug(`Datos salvados del batch para ${batchPhotos.length} imágenes`)
   }
 
   private async executeGPTTask(prompts: string[], batch: PhotoImage[]): Promise<any> {
