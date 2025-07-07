@@ -23,12 +23,11 @@ export class VisionDescriptionTask extends AnalyzerTask {
   declare promptsNames: DescriptionType[]
   declare data: Record<number, Record<string, string>>
   declare complete: boolean
-  declare useBatchAPI: boolean
   declare analyzerProcess: AnalyzerProcess
 
   async process(pendingPhotos: PhotoImage[], analyzerProcess: AnalyzerProcess): Promise<void> {
     this.analyzerProcess = analyzerProcess
-    if (this.useBatchAPI) {
+    if (!analyzerProcess.fastMode) {
       await this.processWithBatchAPI(pendingPhotos)
     } else {
       await this.processWithDirectAPI(pendingPhotos)

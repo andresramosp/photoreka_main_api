@@ -61,6 +61,8 @@ export default class AnalyzerProcess extends BaseModel {
 
   declare attempts: number | null
 
+  declare fastMode: boolean
+
   @column.dateTime({ autoCreate: true })
   declare createdAt: DateTime
 
@@ -72,13 +74,19 @@ export default class AnalyzerProcess extends BaseModel {
   })
   declare photos: HasMany<typeof Photo>
 
-  public async initialize(userPhotos: Photo[], packageId: string, mode: AnalyzerMode = 'adding') {
+  public async initialize(
+    userPhotos: Photo[],
+    packageId: string,
+    mode: AnalyzerMode = 'adding',
+    fastMode: boolean
+  ) {
     this.mode = mode
     this.packageId = packageId
     this.tasks = getTaskList(packageId, this)
     this.currentStage = 'init'
-    this.autoRetry = false
+    this.autoRetry = true
     this.maxAttempts = 2
+    this.fastMode = fastMode
     await this.save()
 
     const photosToProcess = this.getInitialPhotos(userPhotos)

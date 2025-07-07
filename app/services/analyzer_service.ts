@@ -35,6 +35,7 @@ export default class AnalyzerProcessRunner {
     userPhotos: Photo[],
     packageId: string,
     mode: AnalyzerMode = 'first',
+    fastMode: boolean,
     processId?: number
   ) {
     await invalidateCache(`getPhotos_${1234}`)
@@ -47,7 +48,7 @@ export default class AnalyzerProcessRunner {
         .firstOrFail()
     }
 
-    await this.process.initialize(userPhotos, packageId, mode)
+    await this.process.initialize(userPhotos, packageId, mode, fastMode)
     await this.changeStage(
       `Proceso Iniciado | Paquete: ${packageId} | Modo ${mode}`,
       'vision_tasks'

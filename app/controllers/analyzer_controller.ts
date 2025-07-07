@@ -20,7 +20,7 @@ export default class AnalyzerController {
     const photoManager = new PhotoManager()
 
     try {
-      const { userId, packageId, processId, mode } = request.body()
+      const { userId, packageId, processId, mode, fastMode } = request.body()
       logger.info(
         `Iniciando análisis para usuario ${userId} - Paquete: ${packageId} - Modo: ${mode}`
       )
@@ -28,7 +28,7 @@ export default class AnalyzerController {
       const photos = await photoManager.getPhotos(userId, false)
 
       if (photos.length) {
-        await analyzerService.initProcess(photos, packageId, mode, processId)
+        await analyzerService.initProcess(photos, packageId, mode, fastMode, processId)
 
         if (!analysisProcesses.has(userId)) {
           const process = analyzerService.run()
