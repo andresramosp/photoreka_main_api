@@ -19,11 +19,13 @@ export type AnalyzerMode =
 export type ModelType = 'GPT' | 'Molmo'
 export type StageType =
   | 'init'
-  | 'vision_tasks'
-  | 'tags_tasks'
-  | 'embeddings_tags'
-  | 'chunks_tasks'
-  | 'embeddings_chunks'
+  | 'clip_embeddings'
+  | 'vision_context_story_accents'
+  | 'tags_context_story'
+  | 'tags_visual_accents'
+  | 'chunks_context_story_visual_accents'
+  | 'visual_color_embedding_task'
+  | 'topological_tags'
   | 'finished'
   | 'failed'
 export type ProcessSheet = {

@@ -7,6 +7,7 @@
 |
 */
 
+import AnalyzerProcessController from '#controllers/analyzer_process_controller'
 import router from '@adonisjs/core/services/router'
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3'
 import { Readable } from 'node:stream'
@@ -66,6 +67,9 @@ router.post('/api/analyzer/', [AnalyzerController, 'analyze'])
 router.get('/api/analyzer/health/user', [AnalyzerController, 'healthForUser'])
 router.get('/api/analyzer/health/process', [AnalyzerController, 'healthForProcess'])
 router.post('/api/embeddings/', [EmbeddingController, 'getEmbeddings'])
+
+router.get('/api/analyzer-process', [AnalyzerProcessController, 'getAll'])
+router.get('/api/analyzer-process/:id', [AnalyzerProcessController, 'getById'])
 
 router.post('/api/search/semantic', [SearchController, 'searchSemantic'])
 router.post('/api/search/tags', [SearchController, 'searchByTags'])
