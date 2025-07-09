@@ -2,16 +2,12 @@
 
 import type { HttpContext } from '@adonisjs/core/http'
 import AnalyzerService from '#services/analyzer_service'
-import ws from '#services/ws'
 import Photo from '#models/photo'
 import PhotoManager from '../managers/photo_manager.js'
 import Logger from '../utils/logger.js'
-import { invalidateCache } from '../decorators/withCache.js'
-import AnalyzerProcessRunner from '#services/analyzer_service'
 import HealthPhotoService from '#services/health_photo_service'
 import AnalyzerProcess from '#models/analyzer/analyzerProcess'
 
-const analysisProcesses = new Map<string, AsyncGenerator>()
 const logger = Logger.getInstance('AnalyzerProcess')
 
 export default class AnalyzerController {
@@ -20,9 +16,9 @@ export default class AnalyzerController {
     const photoManager = new PhotoManager()
 
     try {
-      const { userId, packageId, processId, mode, fastMode } = request.body()
+      const { userId, packageId, processId, mode, fastMode, inmediate = true } = request.body()
       logger.info(
-        `Iniciando análisis para usuario ${userId} - Paquete: ${packageId} - Modo: ${mode}`
+        `Iniciando análisis para usuario ${userId} - Paquete: ${packageId} - Modo: ${mode} - Inmediato: ${inmediate}`
       )
 
       const photos = await photoManager.getPhotos(userId, false)
@@ -30,14 +26,17 @@ export default class AnalyzerController {
       if (photos.length) {
         await analyzerService.initProcess(photos, packageId, mode, fastMode, processId)
 
-        if (!analysisProcesses.has(userId)) {
-          const process = analyzerService.run()
-
-          analysisProcesses.set(userId, process)
-
-          this.handleAnalysisStream(userId, process)
-          return response.ok({ message: 'Analysis started', userId })
+        if (inmediate) {
+          analyzerService.run()
+          logger.info(`Análisis ejecutado inmediatamente para usuario ${userId}`)
+        } else {
+          logger.info(`Análisis inicializado pero diferido para usuario ${userId}`)
         }
+
+        return response.ok({
+          message: inmediate ? 'Analysis started' : 'Analysis initialized',
+          userId,
+        })
       }
 
       logger.info(`No hay fotos para analizar para el usuario ${userId}`)
@@ -75,27 +74,11 @@ export default class AnalyzerController {
       await process?.load('photos')
       const reports = await HealthPhotoService.updateSheetWithHealth(process)
 
-      // Para devolver la sheet hay que hacer que updateSheetWithHealth distribuya las fotos entre pending y complete
-
-      // await process?.refresh()
-
+      // Aquí puedes devolver los datos que necesites
       // return response.ok(process?.processSheet)
     } catch (error) {
       logger.error('Error obteniendo health:', error)
       return response.internalServerError({ message: 'Something went wrong', error: error.message })
-    }
-  }
-
-  private async handleAnalysisStream(userId: string, stream: AsyncGenerator) {
-    try {
-      for await (const result of stream) {
-        ws.io?.emit(result.type, result.data)
-      }
-      logger.info(`Análisis completado para usuario ${userId}`)
-    } catch (error) {
-      logger.error(`Error en el stream de análisis para usuario ${userId}:`, error)
-    } finally {
-      analysisProcesses.delete(userId)
     }
   }
 }

@@ -55,7 +55,7 @@ export default class AnalyzerProcessRunner {
     )
   }
 
-  public async *run() {
+  public async run() {
     if (!this.process || !this.process.tasks) throw new Exception('[ERROR] No process found')
 
     for (const task of this.process.tasks) {
@@ -83,10 +83,7 @@ export default class AnalyzerProcessRunner {
     await invalidateCache(`getPhotos_${1234}`)
     await invalidateCache(`getPhotosIdsByUser_${1234}`)
 
-    yield { type: 'analysisComplete', data: { costs: [] } }
-
-    // NUEVO: Retry automático si autoRetry está activo Y hay fotos fallidas
-    yield* this.handleAutoRetry()
+    this.handleAutoRetry()
   }
 
   private async changeStage(message: string, nextStage: string = null) {
@@ -102,7 +99,7 @@ export default class AnalyzerProcessRunner {
   }
 
   // NUEVO: Función privada para manejar el autoRetry
-  private async *handleAutoRetry() {
+  private async handleAutoRetry() {
     if (this.process.autoRetry) {
       // Verificar si hay fotos pendientes en alguna tarea
       const sheet = this.process.processSheet || {}
@@ -118,7 +115,7 @@ export default class AnalyzerProcessRunner {
         this.process.mode = 'retry_process'
         this.process.attempts = attempts + 1
         await this.process.save()
-        yield* this.run()
+        this.run()
       } else if (hayFallidas) {
         logger.info(
           `autoRetry: se alcanzó el máximo de intentos (${maxAttempts}). No se lanza retry_process.`
