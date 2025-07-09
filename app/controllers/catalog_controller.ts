@@ -211,41 +211,9 @@ export default class CatalogController {
   public async checkDuplicates({ request, response }: HttpContext) {
     const { newPhotoIds } = request.only(['newPhotoIds'])
 
-    const modelsService = new ModelsService()
     const vectorService = new VectorService()
 
     const allPhotos = await Photo.all()
-    const photosWithoutEmbedding = allPhotos.filter((p) => !p.embedding)
-
-    // 1. Generar embeddings para las fotos que no lo tengan
-    if (photosWithoutEmbedding.length > 0) {
-      const payload = await Promise.all(
-        photosWithoutEmbedding.map(async (p) => {
-          try {
-            const buffer = await PhotoImageService.getInstance().getImageBufferFromR2(p.name)
-            const base64 = buffer.toString('base64')
-            return { id: p.id, base64 }
-          } catch (err) {
-            console.warn(`⚠️ No se pudo obtener imagen para la foto ${p.id}: ${err.message}`)
-            return null
-          }
-        })
-      ).then((arr) => arr.filter(Boolean))
-
-      if (payload.length > 0) {
-        const { embeddings } = await modelsService.getEmbeddingsImages(payload)
-
-        await Promise.all(
-          embeddings.map(async (item: { id: number; embedding: number[] }) => {
-            const photo = allPhotos.find((p) => p.id === item.id)
-            if (photo) {
-              photo.embedding = item.embedding
-              await photo.save()
-            }
-          })
-        )
-      }
-    }
 
     // 2. Selección de fotos nuevas
     const newPhotos =

@@ -26,6 +26,7 @@ export type StageType =
   | 'chunks_context_story_visual_accents'
   | 'visual_color_embedding_task'
   | 'topological_tags'
+  | 'preprocessed' // Nuevo estado para pre-análisis
   | 'finished'
   | 'failed'
 export type ProcessSheet = {
@@ -64,6 +65,8 @@ export default class AnalyzerProcess extends BaseModel {
   declare attempts: number | null
 
   declare fastMode: boolean
+
+  declare isPreprocess: boolean
 
   @column.dateTime({ autoCreate: true })
   declare createdAt: DateTime
@@ -107,8 +110,14 @@ export default class AnalyzerProcess extends BaseModel {
 
   private getInitialPhotos(userPhotos: Photo[]): Photo[] {
     switch (this.mode) {
-      case 'adding':
-        return userPhotos.filter((photo) => !photo.analyzerProcess)
+      case 'adding': {
+        // Fotos sin proceso, o con proceso terminado en preprocessed
+        return userPhotos.filter((photo) => {
+          if (!photo.analyzerProcess) return true
+          // Si tiene proceso, pero su currentStage es 'preprocessed', también se puede añadir
+          return photo.analyzerProcess && photo.analyzerProcess.currentStage === 'preprocessed'
+        })
+      }
       case 'remake_all': // incluye upgrade, siempre sobre todas las fotos YA procesadas (no uploads)
         return userPhotos.filter((photo) => photo.status == 'processed')
       case 'remake_task': // como remake, para tareas aisladas

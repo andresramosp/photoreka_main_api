@@ -16,7 +16,30 @@ import {
 export const packages = [
   {
     // Context + Story + Accents en una sola llamada GPT
-    id: 'basic_1',
+    id: 'preprocess',
+    isPreprocess: true, // Indica que este package es de pre-análisis
+    tasks: [
+      {
+        name: 'clip_embeddings',
+        type: 'VisualEmbeddingTask',
+        needsImage: true,
+        onlyIfNeeded: true,
+        checks: ['photo.embedding'],
+      },
+
+      {
+        name: 'visual_color_embedding_task',
+        type: 'VisualColorEmbeddingTask',
+        needsImage: true,
+        checks: ['photo.color_histogram'],
+      },
+    ],
+  },
+
+  {
+    // Context + Story + Accents en una sola llamada GPT
+    id: 'process',
+    isPreprocess: false, // Package normal de análisis
     tasks: [
       {
         name: 'clip_embeddings',
@@ -129,6 +152,10 @@ export const getTaskList = (packageId: string, process: AnalyzerProcess): Analyz
   if (!pkg) {
     throw new Error(`Package with id ${packageId} not found`)
   }
+
+  // Asignar la propiedad isPreprocess al proceso
+  process.isPreprocess = pkg.isPreprocess || false
+
   return pkg.tasks.map((taskData) => {
     let task: AnalyzerTask
     switch (taskData.type) {

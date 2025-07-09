@@ -16,7 +16,15 @@ export default class AnalyzerController {
     const photoManager = new PhotoManager()
 
     try {
-      const { userId, packageId, processId, mode, fastMode, inmediate = true } = request.body()
+      const {
+        userId,
+        packageId,
+        processId,
+        mode,
+        fastMode,
+        inmediate = true,
+        sync = false,
+      } = request.body()
       logger.info(
         `Iniciando análisis para usuario ${userId} - Paquete: ${packageId} - Modo: ${mode} - Inmediato: ${inmediate}`
       )
@@ -27,8 +35,13 @@ export default class AnalyzerController {
         await analyzerService.initProcess(photos, packageId, mode, fastMode, processId)
 
         if (inmediate) {
-          analyzerService.run()
-          logger.info(`Análisis ejecutado inmediatamente para usuario ${userId}`)
+          if (sync) {
+            logger.info(`Ejecutando análisis de forma síncrona para usuario ${userId}`)
+            await analyzerService.run()
+          } else {
+            analyzerService.run()
+            logger.info(`Análisis ejecutado inmediatamente para usuario ${userId}`)
+          }
         } else {
           logger.info(`Análisis inicializado pero diferido para usuario ${userId}`)
         }

@@ -70,7 +70,7 @@ export default class Photo extends BaseModel {
 
   @computed()
   public get status(): PhotoStatus {
-    if (!this.analyzerProcessId) {
+    if (!this.analyzerProcessId || this.analyzerProcess?.currentStage == 'preprocessed') {
       return 'uploaded'
     } else if (this.analyzerProcess?.currentStage !== 'finished') {
       return 'processing'

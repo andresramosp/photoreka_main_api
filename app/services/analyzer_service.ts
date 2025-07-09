@@ -75,9 +75,12 @@ export default class AnalyzerProcessRunner {
       }
     }
 
-    await HealthPhotoService.updateSheetWithHealth(this.process)
+    if (!this.process.isPreprocess) await HealthPhotoService.updateSheetWithHealth(this.process)
 
-    await this.changeStage('***  Proceso Completado ***', 'finished')
+    // Determinar si el package es de preproceso usando la propiedad del proceso
+    const finalStage = this.process.isPreprocess ? 'preprocessed' : 'finished'
+
+    await this.changeStage('***  Proceso Completado ***', finalStage)
     logger.info(`\n  ${this.process.formatProcessSheet()} \n `)
 
     await invalidateCache(`getPhotos_${1234}`)
@@ -100,7 +103,7 @@ export default class AnalyzerProcessRunner {
 
   // NUEVO: Función privada para manejar el autoRetry
   private async handleAutoRetry() {
-    if (this.process.autoRetry) {
+    if (this.process.autoRetry && !this.process.isPreprocess) {
       // Verificar si hay fotos pendientes en alguna tarea
       const sheet = this.process.processSheet || {}
       const hayFallidas = Object.values(sheet).some(
