@@ -29,7 +29,8 @@ export default class AnalyzerController {
         `Iniciando análisis para usuario ${userId} - Paquete: ${packageId} - Modo: ${mode} - Inmediato: ${inmediate}`
       )
 
-      const photos = await photoManager.getPhotos(userId, false)
+      // Usar consulta optimizada según el modo de análisis
+      const photos = await photoManager.getPhotosForAnalysis(mode, processId)
 
       if (photos.length) {
         await analyzerService.initProcess(photos, packageId, mode, fastMode, processId)

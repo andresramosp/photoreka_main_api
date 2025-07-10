@@ -32,7 +32,7 @@ export default class AnalyzerProcessRunner {
    * ──────────────────────────────────── */
 
   public async initProcess(
-    userPhotos: Photo[],
+    photosForProcess: Photo[],
     packageId: string,
     mode: AnalyzerMode = 'first',
     fastMode: boolean,
@@ -48,7 +48,7 @@ export default class AnalyzerProcessRunner {
         .firstOrFail()
     }
 
-    await this.process.initialize(userPhotos, packageId, mode, fastMode)
+    await this.process.initialize(photosForProcess, packageId, mode, fastMode)
     await this.changeStage(
       `Proceso Iniciado | Paquete: ${packageId} | Modo ${mode}`,
       'vision_tasks'
@@ -57,6 +57,13 @@ export default class AnalyzerProcessRunner {
 
   public async run() {
     if (!this.process || !this.process.tasks) throw new Exception('[ERROR] No process found')
+
+    // Precargar health en paralelo solo si es retry_process
+
+    if (this.process.mode === 'retry_process') {
+      await this.changeStage('*** Precargando health de fotos ***')
+      await this.process.preloadPhotoHealth()
+    }
 
     for (const task of this.process.tasks) {
       try {
@@ -85,6 +92,11 @@ export default class AnalyzerProcessRunner {
 
     await invalidateCache(`getPhotos_${1234}`)
     await invalidateCache(`getPhotosIdsByUser_${1234}`)
+
+    // Limpiar cache de health solo si se precargó
+    if (this.process.mode === 'retry_process') {
+      this.process.clearHealthCache()
+    }
 
     this.handleAutoRetry()
   }

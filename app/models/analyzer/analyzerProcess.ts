@@ -37,7 +37,40 @@ export type ProcessSheet = {
   }
 }
 
+import HealthPhotoService from '../../services/health_photo_service.js'
+
 export default class AnalyzerProcess extends BaseModel {
+  // Cache de health para fotos
+  private healthCache: Map<number, any> = new Map()
+  /**
+   * Precarga el health de todas las fotos del proceso en paralelo y lo cachea
+   */
+  public async preloadPhotoHealth(): Promise<void> {
+    if (this.healthCache.size > 0) return // Ya está cacheado
+    if (!this.photos || this.photos.length === 0) return
+    const photoIds = this.photos.map((p: any) => p.id)
+    const healthArr = await Promise.all(
+      photoIds.map((photoId) => HealthPhotoService.photoHealth(photoId))
+    )
+    photoIds.forEach((id, idx) => {
+      this.healthCache.set(id, healthArr[idx])
+    })
+    logger.info(`Health precargado para ${photoIds.length} fotos`)
+  }
+
+  /**
+   * Devuelve el health de una foto desde el cache
+   */
+  public getPhotoHealthFromCache(photoId: number): any {
+    return this.healthCache.get(photoId)
+  }
+
+  /**
+   * Limpia el cache de health
+   */
+  public clearHealthCache(): void {
+    this.healthCache.clear()
+  }
   @column({ isPrimary: true })
   declare id: string
 
@@ -80,7 +113,7 @@ export default class AnalyzerProcess extends BaseModel {
   declare photos: HasMany<typeof Photo>
 
   public async initialize(
-    userPhotos: Photo[],
+    photosForProcess: Photo[],
     packageId: string,
     mode: AnalyzerMode = 'adding',
     fastMode: boolean
@@ -94,40 +127,10 @@ export default class AnalyzerProcess extends BaseModel {
     this.fastMode = fastMode
     await this.save()
 
-    const photosToProcess = this.getInitialPhotos(userPhotos)
-    await this.setProcessPhotos(photosToProcess)
+    await this.setProcessPhotos(photosForProcess)
     if (this.mode !== 'retry_process') {
       this.initializeProcessSheet()
       await this.save()
-    }
-  }
-
-  // 1. Adding: las fotos recien subidas, sin analyzerProcess
-  // 2. Remake all: todas las fotos ya procesadas
-  // 3. Remake task: todas las fotos ya procesadas, pero pensado para tareas sueltas (no se mira dependsOn)
-  // 4. Remake process: todas las fotos de un proceso, para re-procesar desde cero
-  // 5. Retry: todas las fotos de un proceso, para procesar SOLO lo que falta según la sheet
-
-  private getInitialPhotos(userPhotos: Photo[]): Photo[] {
-    switch (this.mode) {
-      case 'adding': {
-        // Fotos sin proceso, o con proceso terminado en preprocessed
-        return userPhotos.filter((photo) => {
-          if (!photo.analyzerProcess) return true
-          // Si tiene proceso, pero su currentStage es 'preprocessed', también se puede añadir
-          return photo.analyzerProcess && photo.analyzerProcess.currentStage === 'preprocessed'
-        })
-      }
-      case 'remake_all': // incluye upgrade, siempre sobre todas las fotos YA procesadas (no uploads)
-        return userPhotos.filter((photo) => photo.status == 'processed')
-      case 'remake_task': // como remake, para tareas aisladas
-        return userPhotos.filter((photo) => photo.status == 'processed')
-      case 'remake_process': // como remake, para tareas aisladas
-        return userPhotos.filter(
-          (photo) => photo.status == 'processed' && photo.analyzerProcessId == this.id
-        )
-      default: // retry
-        return userPhotos.filter((photo) => photo.analyzerProcessId == this.id)
     }
   }
 

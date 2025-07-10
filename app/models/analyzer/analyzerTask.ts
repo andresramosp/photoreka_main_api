@@ -6,7 +6,6 @@ import _ from 'lodash'
 import PhotoImageService from '#services/photo_image_service'
 import Logger, { LogLevel } from '../../utils/logger.js'
 import ModelsService from '#services/models_service'
-import HealthPhotoService from '#services/health_photo_service'
 
 const logger = Logger.getInstance('AnalyzerProcess')
 logger.setLevel(LogLevel.DEBUG)
@@ -33,24 +32,23 @@ export abstract class AnalyzerTask {
 
     if (process.mode === 'retry_process') {
       const allPhotos = process.photos
-      targetPhotos = []
-
-      for (const photo of allPhotos) {
-        const health = await HealthPhotoService.photoHealth(photo.id)
-
+      targetPhotos = allPhotos.filter((photo) => {
+        const health = process.getPhotoHealthFromCache(photo.id)
         const isComplete = this.checks.every((checkPattern) => {
           if (checkPattern.includes('*')) {
-            const regex = new RegExp('^' + checkPattern.replace('*', '\\d+') + '$')
-            return health.checks.filter((c) => regex.test(c.label)).every((c) => c.ok)
+            const regex = new RegExp('^' + checkPattern.replace('*', '\d+') + '$')
+            return (health.checks as { label: string; ok: boolean }[])
+              .filter((c) => regex.test(c.label))
+              .every((c) => c.ok)
           } else {
-            const check = health.checks.find((c) => c.label === checkPattern)
+            const check = (health.checks as { label: string; ok: boolean }[]).find(
+              (c) => c.label === checkPattern
+            )
             return check ? check.ok : false
           }
         })
-
-        if (!isComplete) targetPhotos.push(photo)
-      }
-
+        return !isComplete
+      })
       logger.info(`[${this.name}] Fotos pendientes: ${targetPhotos.length}`)
     } else {
       // En cualquier otro modo procesamos todas las fotos

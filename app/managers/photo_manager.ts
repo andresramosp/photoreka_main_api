@@ -91,6 +91,90 @@ export default class PhotoManager {
     return photos.map((p) => p.id)
   }
 
+  /**
+   * Métodos optimizados para obtener fotos según el modo de análisis
+   * Evita traer todas las fotos para filtrar después
+   */
+
+  public async getPhotosForAdding(): Promise<Photo[]> {
+    return await Photo.query()
+      // .where('user_id', userId)
+      .where((query) => {
+        query.whereNull('analyzer_process_id').orWhereHas('analyzerProcess', (subQuery) => {
+          subQuery.where('current_stage', 'preprocessed')
+        })
+      })
+      .preload('analyzerProcess')
+      .orderBy('created_at', 'desc')
+  }
+
+  public async getPhotosForRemakeAll(): Promise<Photo[]> {
+    return await Photo.query()
+      // .where('user_id', userId)
+      .where('status', 'processed')
+      .preload('tags', (q) => q.preload('tag'))
+      .preload('detections')
+      .preload('descriptionChunks')
+      .preload('analyzerProcess')
+      .orderBy('created_at', 'desc')
+  }
+
+  public async getPhotosForRemakeTask(): Promise<Photo[]> {
+    return await Photo.query()
+      // .where('user_id', userId)
+      .where('status', 'processed')
+      .preload('tags', (q) => q.preload('tag'))
+      .preload('detections')
+      .preload('descriptionChunks')
+      .preload('analyzerProcess')
+      .orderBy('created_at', 'desc')
+  }
+
+  public async getPhotosForRemakeProcess(processId: string): Promise<Photo[]> {
+    return await Photo.query()
+      // .where('user_id', userId)
+      .where('status', 'processed')
+      .where('analyzer_process_id', processId)
+      .preload('tags', (q) => q.preload('tag'))
+      .preload('detections')
+      .preload('descriptionChunks')
+      .preload('analyzerProcess')
+      .orderBy('created_at', 'desc')
+  }
+
+  public async getPhotosForRetryProcess(processId: string): Promise<Photo[]> {
+    return await Photo.query()
+      // .where('user_id', userId)
+      .where('analyzer_process_id', processId)
+      .preload('tags', (q) => q.preload('tag'))
+      .preload('detections')
+      .preload('descriptionChunks')
+      .preload('analyzerProcess')
+      .orderBy('created_at', 'desc')
+  }
+
+  /**
+   * Método principal que decide qué consulta optimizada usar según el modo
+   */
+  public async getPhotosForAnalysis(mode: string, processId?: string): Promise<Photo[]> {
+    switch (mode) {
+      case 'adding':
+        return this.getPhotosForAdding()
+      case 'remake_all':
+        return this.getPhotosForRemakeAll()
+      case 'remake_task':
+        return this.getPhotosForRemakeTask()
+      case 'remake_process':
+        if (!processId) throw new Error('processId required for remake_process mode')
+        return this.getPhotosForRemakeProcess(processId)
+      case 'retry_process':
+        if (!processId) throw new Error('processId required for retry_process mode')
+        return this.getPhotosForRetryProcess(processId)
+      default:
+        throw new Error(`Unknown analysis mode: ${mode}`)
+    }
+  }
+
   public async updatePhoto(id: string, updates: Partial<Photo>) {
     const photo = await Photo.find(id)
     if (!photo) {
