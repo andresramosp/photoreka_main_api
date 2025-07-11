@@ -8,7 +8,7 @@ import DetectionPhoto from './detection_photo.js'
 
 export type DescriptionType = 'context' | 'story' | 'visual_accents' | 'artistic'
 export type PhotoDescriptions = Record<DescriptionType, string>
-export type PhotoStatus = 'uploaded' | 'processing' | 'processed'
+export type PhotoStatus = 'uploaded' | 'preprocessing' | 'preprocessed' | 'processing' | 'processed'
 
 export default class Photo extends BaseModel {
   @column({ isPrimary: true })
@@ -69,13 +69,31 @@ export default class Photo extends BaseModel {
   declare analyzerProcess: BelongsTo<typeof AnalyzerProcess>
 
   @computed()
-  public get status(): PhotoStatus {
-    if (!this.analyzerProcessId || this.analyzerProcess?.currentStage == 'preprocessed') {
-      return 'uploaded'
-    } else if (this.analyzerProcess?.currentStage !== 'finished') {
-      return 'processing'
+  public get status(): PhotoStatus | null {
+    if (!this.analyzerProcess) {
+      return null
     }
-    return 'processed'
+    if (!this.analyzerProcessId) {
+      return 'uploaded'
+    }
+
+    if (this.analyzerProcess.currentStage == 'failed') {
+      return 'preprocessing'
+    }
+
+    if (this.analyzerProcess.isPreprocess) {
+      if (this.analyzerProcess.currentStage === 'finished') {
+        return 'preprocessed'
+      } else {
+        return 'preprocessing'
+      }
+    } else {
+      if (this.analyzerProcess.currentStage === 'finished') {
+        return 'processed'
+      } else {
+        return 'processing'
+      }
+    }
   }
 
   @beforeSave()

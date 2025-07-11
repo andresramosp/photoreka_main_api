@@ -10,6 +10,8 @@ export default class CreateAnalyzerProcesses extends BaseSchema {
       table.jsonb('process_sheet').nullable() // Se almacena como JSONB
       table.string('mode', 255).nullable()
       table.string('current_stage', 255).nullable()
+      table.boolean('is_fast_mode')
+      table.boolean('is_preprocess')
       table
         .integer('user_id')
         .nullable()

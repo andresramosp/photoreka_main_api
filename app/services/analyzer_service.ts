@@ -82,10 +82,12 @@ export default class AnalyzerProcessRunner {
       }
     }
 
-    if (!this.process.isPreprocess) await HealthPhotoService.updateSheetWithHealth(this.process)
+    await HealthPhotoService.updateSheetWithHealth(this.process)
+
+    const hasFailed = this.hasFailedPhotos()
 
     // Determinar si el package es de preproceso usando la propiedad del proceso
-    const finalStage = this.process.isPreprocess ? 'preprocessed' : 'finished'
+    const finalStage = hasFailed ? 'failed' : 'finished'
 
     await this.changeStage('***  Proceso Completado ***', finalStage)
     logger.info(`\n  ${this.process.formatProcessSheet()} \n `)
@@ -113,14 +115,19 @@ export default class AnalyzerProcessRunner {
     return new Promise((resolve) => setTimeout(resolve, ms))
   }
 
+  private hasFailedPhotos = () => {
+    const sheet = this.process.processSheet || {}
+    return Object.values(sheet).some(
+      (task: any) => Array.isArray(task.pendingPhotoIds) && task.pendingPhotoIds.length > 0
+    )
+  }
+
   // NUEVO: Función privada para manejar el autoRetry
   private async handleAutoRetry() {
-    if (this.process.autoRetry && !this.process.isPreprocess) {
+    if (this.process.autoRetry) {
       // Verificar si hay fotos pendientes en alguna tarea
       const sheet = this.process.processSheet || {}
-      const hayFallidas = Object.values(sheet).some(
-        (task: any) => Array.isArray(task.pendingPhotoIds) && task.pendingPhotoIds.length > 0
-      )
+      const hayFallidas = this.hasFailedPhotos()
       const maxAttempts = this.process.maxAttempts ?? 3
       const attempts = this.process.attempts ?? 0
       if (hayFallidas && attempts < maxAttempts) {

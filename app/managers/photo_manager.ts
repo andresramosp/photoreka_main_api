@@ -101,7 +101,7 @@ export default class PhotoManager {
       // .where('user_id', userId)
       .where((query) => {
         query.whereNull('analyzer_process_id').orWhereHas('analyzerProcess', (subQuery) => {
-          subQuery.where('current_stage', 'preprocessed')
+          subQuery.where('is_preprocess', true)
         })
       })
       .preload('analyzerProcess')

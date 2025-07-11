@@ -26,7 +26,6 @@ export type StageType =
   | 'chunks_context_story_visual_accents'
   | 'visual_color_embedding_task'
   | 'topological_tags'
-  | 'preprocessed' // Nuevo estado para pre-análisis
   | 'finished'
   | 'failed'
 export type ProcessSheet = {
@@ -97,8 +96,10 @@ export default class AnalyzerProcess extends BaseModel {
 
   declare attempts: number | null
 
-  declare fastMode: boolean
+  @column()
+  declare isFastMode: boolean
 
+  @column()
   declare isPreprocess: boolean
 
   @column.dateTime({ autoCreate: true })
@@ -116,15 +117,15 @@ export default class AnalyzerProcess extends BaseModel {
     photosForProcess: Photo[],
     packageId: string,
     mode: AnalyzerMode = 'adding',
-    fastMode: boolean
+    isFastMode: boolean
   ) {
     this.mode = mode
-    this.packageId = packageId
-    this.tasks = getTaskList(packageId, this)
+    this.packageId = this.mode == 'retry_process' ? this.packageId : packageId
+    this.tasks = getTaskList(this.packageId, this)
     this.currentStage = 'init'
     this.autoRetry = true
     this.maxAttempts = 2
-    this.fastMode = fastMode
+    this.isFastMode = isFastMode
     await this.save()
 
     await this.setProcessPhotos(photosForProcess)

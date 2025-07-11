@@ -27,7 +27,7 @@ export class VisionDescriptionTask extends AnalyzerTask {
 
   async process(pendingPhotos: PhotoImage[], analyzerProcess: AnalyzerProcess): Promise<void> {
     this.analyzerProcess = analyzerProcess
-    if (!analyzerProcess.fastMode) {
+    if (!analyzerProcess.isFastMode) {
       await this.processWithBatchAPI(pendingPhotos)
     } else {
       await this.processWithDirectAPI(pendingPhotos)
