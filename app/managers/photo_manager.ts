@@ -57,7 +57,7 @@ export default class PhotoManager {
   })
   public async getPhotos(userId: string) {
     const query = Photo.query()
-      // .where('user_id', userId)
+      .where('user_id', userId)
       .preload('tags', (q) => q.preload('tag'))
       .preload('detections')
       .preload('descriptionChunks')
@@ -68,7 +68,10 @@ export default class PhotoManager {
   }
 
   public async getPhotosPreview(userId: string) {
-    const photos = await Photo.query().preload('analyzerProcess').orderBy('created_at', 'desc')
+    const photos = await Photo.query()
+      .where('user_id', userId)
+      .preload('analyzerProcess')
+      .orderBy('created_at', 'desc')
     return photos.map((p) => ({
       id: p.id,
       originalUrl: p.originalUrl,
@@ -84,9 +87,7 @@ export default class PhotoManager {
     key: (userId) => `getPhotosIdsByUser_${userId}`,
   })
   public async getPhotosIdsByUser(userId: string): Promise<number[]> {
-    const photos = await Photo.query()
-      // .where('user_id', userId)  // <-- preparado para futuro filtro
-      .select('id')
+    const photos = await Photo.query().where('user_id', userId).select('id')
 
     return photos.map((p) => p.id)
   }
@@ -96,9 +97,8 @@ export default class PhotoManager {
    * Evita traer todas las fotos para filtrar después
    */
 
-  public async getPhotosForAdding(): Promise<Photo[]> {
-    return await Photo.query()
-      // .where('user_id', userId)
+  public async getPhotosForAdding(userId?: string): Promise<Photo[]> {
+    const query = Photo.query()
       .where((query) => {
         query.whereNull('analyzer_process_id').orWhereHas('analyzerProcess', (subQuery) => {
           subQuery.where('is_preprocess', true)
@@ -106,33 +106,32 @@ export default class PhotoManager {
       })
       .preload('analyzerProcess')
       .orderBy('created_at', 'desc')
+
+    if (userId) {
+      query.where('user_id', userId)
+    }
+
+    return await query
   }
 
-  public async getPhotosForRemakeAll(): Promise<Photo[]> {
-    return await Photo.query()
-      // .where('user_id', userId)
+  public async getPhotosForRemakeAll(userId?: string): Promise<Photo[]> {
+    const query = Photo.query()
       .where('status', 'processed')
       .preload('tags', (q) => q.preload('tag'))
       .preload('detections')
       .preload('descriptionChunks')
       .preload('analyzerProcess')
       .orderBy('created_at', 'desc')
+
+    if (userId) {
+      query.where('user_id', userId)
+    }
+
+    return await query
   }
 
-  public async getPhotosForRemakeTask(): Promise<Photo[]> {
-    return await Photo.query()
-      // .where('user_id', userId)
-      .where('status', 'processed')
-      .preload('tags', (q) => q.preload('tag'))
-      .preload('detections')
-      .preload('descriptionChunks')
-      .preload('analyzerProcess')
-      .orderBy('created_at', 'desc')
-  }
-
-  public async getPhotosForRemakeProcess(processId: string): Promise<Photo[]> {
-    return await Photo.query()
-      // .where('user_id', userId)
+  public async getPhotosForRemakeProcess(processId: string, userId?: string): Promise<Photo[]> {
+    const query = Photo.query()
       .where('status', 'processed')
       .where('analyzer_process_id', processId)
       .preload('tags', (q) => q.preload('tag'))
@@ -140,30 +139,43 @@ export default class PhotoManager {
       .preload('descriptionChunks')
       .preload('analyzerProcess')
       .orderBy('created_at', 'desc')
+
+    if (userId) {
+      query.where('user_id', userId)
+    }
+
+    return await query
   }
 
-  public async getPhotosForRetryProcess(processId: string): Promise<Photo[]> {
-    return await Photo.query()
-      // .where('user_id', userId)
+  public async getPhotosForRetryProcess(processId: string, userId?: string): Promise<Photo[]> {
+    const query = Photo.query()
       .where('analyzer_process_id', processId)
       .preload('tags', (q) => q.preload('tag'))
       .preload('detections')
       .preload('descriptionChunks')
       .preload('analyzerProcess')
       .orderBy('created_at', 'desc')
+
+    if (userId) {
+      query.where('user_id', userId)
+    }
+
+    return await query
   }
 
   /**
    * Método principal que decide qué consulta optimizada usar según el modo
    */
-  public async getPhotosForAnalysis(mode: string, processId?: string): Promise<Photo[]> {
+  public async getPhotosForAnalysis(
+    mode: string,
+    processId?: string,
+    userId?: string
+  ): Promise<Photo[]> {
     switch (mode) {
       case 'adding':
-        return this.getPhotosForAdding()
+        return this.getPhotosForAdding(userId)
       case 'remake_all':
-        return this.getPhotosForRemakeAll()
-      case 'remake_task':
-        return this.getPhotosForRemakeTask()
+        return this.getPhotosForRemakeAll(userId)
       case 'remake_process':
         if (!processId) throw new Error('processId required for remake_process mode')
         return this.getPhotosForRemakeProcess(processId)
@@ -293,7 +305,7 @@ export default class PhotoManager {
     return photo
   }
 
-  public async deletePhotos(ids: number[]) {
+  public async deletePhotos(ids: number[], userId?: string) {
     if (!ids.length) throw new Error('No photo IDs provided')
 
     // Busca los nombres de archivos a eliminar
@@ -324,8 +336,9 @@ export default class PhotoManager {
     await db.from('photos').whereIn('id', ids).delete()
 
     // Invalida la caché según tus necesidades
-    await invalidateCache(`getPhotos_${1234}`)
-    await invalidateCache(`getPhotosIdsByUser_${1234}`)
+    const finalUserId = userId || '1234' // Fallback temporal
+    await invalidateCache(`getPhotos_${finalUserId}`)
+    await invalidateCache(`getPhotosIdsByUser_${finalUserId}`)
 
     return { message: 'Photos deleted successfully', ids }
   }

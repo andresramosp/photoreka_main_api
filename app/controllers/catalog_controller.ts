@@ -23,8 +23,12 @@ const s3 = new S3Client({
 })
 
 export default class CatalogController {
-  public async uploadLocal({ request, response }: HttpContext) {
+  public async uploadLocal({ request, response, auth }: HttpContext) {
     try {
+      await auth.use('api').check()
+      const user = auth.use('api').user! as any
+      const userId = user.id.toString()
+
       const { fileType, originalName: originalFileName } = request.only([
         'fileType',
         'originalName',
@@ -62,10 +66,11 @@ export default class CatalogController {
         name: key,
         thumbnailName: thumbnailKey,
         originalFileName,
+        userId: Number(userId),
       })
 
-      await invalidateCache(`getPhotos_${1234}`)
-      await invalidateCache(`getPhotosIdsByUser_${1234}`)
+      await invalidateCache(`getPhotos_${userId}`)
+      await invalidateCache(`getPhotosIdsByUser_${userId}`)
 
       return response.ok({
         uploadUrl,
@@ -132,7 +137,7 @@ export default class CatalogController {
   //   }
   // }
 
-  public async getPhoto({ response, request, params }: HttpContext) {
+  public async getPhoto({ response, params }: HttpContext) {
     const photoManager = new PhotoManager()
     const id = params.id
     try {
@@ -144,10 +149,14 @@ export default class CatalogController {
     }
   }
 
-  public async getPhotos({ response }: HttpContext) {
+  public async getPhotos({ response, auth }: HttpContext) {
+    await auth.use('api').check()
+    const user = auth.use('api').user! as any
+    const userId = user.id.toString()
+
     const photoManager = new PhotoManager()
     try {
-      const photos = await photoManager.getPhotosPreview('1234')
+      const photos = await photoManager.getPhotosPreview(userId)
       return response.ok({ photos })
     } catch (error) {
       console.error('Error fetching photos:', error)
@@ -192,15 +201,19 @@ export default class CatalogController {
     }
   }
 
-  public async deletePhotos({ request, response }: HttpContext) {
+  public async deletePhotos({ request, response, auth }: HttpContext) {
     try {
+      await auth.use('api').check()
+      const user = auth.use('api').user! as any
+      const userId = user.id.toString()
+
       const { ids } = request.only(['ids'])
       if (!ids || !Array.isArray(ids) || ids.length === 0) {
         return response.badRequest({ message: 'No photo IDs provided' })
       }
 
       const photoManager = new PhotoManager()
-      const result = await photoManager.deletePhotos(ids)
+      const result = await photoManager.deletePhotos(ids, userId)
       return response.ok(result)
     } catch (error) {
       console.error('Error al eliminar fotos:', error)
@@ -208,7 +221,11 @@ export default class CatalogController {
     }
   }
 
-  public async checkDuplicates({ request, response }: HttpContext) {
+  public async checkDuplicates({ request, response, auth }: HttpContext) {
+    await auth.use('api').check()
+    const user = auth.use('api').user! as any
+    const userId = user.id.toString()
+
     const { newPhotoIds } = request.only(['newPhotoIds'])
 
     const vectorService = new VectorService()
@@ -248,8 +265,12 @@ export default class CatalogController {
     return response.ok(results)
   }
 
-  public async deleteDuplicates({ request, response }: HttpContext) {
+  public async deleteDuplicates({ request, response, auth }: HttpContext) {
     try {
+      await auth.use('api').check()
+      const user = auth.use('api').user! as any
+      const userId = user.id.toString()
+
       const photoManager = new PhotoManager()
 
       const { duplicates }: { duplicates: number[] } = request.only(['duplicates'])
@@ -276,7 +297,7 @@ export default class CatalogController {
       const toDelete = sorted.slice(0, -1)
       const deleted: number[] = []
       for (const photo of toDelete) {
-        await photoManager.deletePhotos([photo.id])
+        await photoManager.deletePhotos([photo.id], userId)
         deleted.push(photo.id)
       }
 

@@ -36,19 +36,39 @@ export default class AnalyzerProcessRunner {
     packageId: string,
     mode: AnalyzerMode = 'first',
     fastMode: boolean,
-    processId?: number
+    processId?: number,
+    userId?: string
   ) {
-    await invalidateCache(`getPhotos_${1234}`)
-    await invalidateCache(`getPhotosIdsByUser_${1234}`)
+    const finalUserId = userId || '1234' // Fallback temporal
+
+    await invalidateCache(`getPhotos_${finalUserId}`)
+    await invalidateCache(`getPhotosIdsByUser_${finalUserId}`)
 
     if ((mode === 'retry_process' || mode === 'remake_process') && processId) {
       this.process = await AnalyzerProcess.query()
         .where('id', processId)
         .preload('photos')
         .firstOrFail()
+
+      // Para retry/remake, usar el userId original del proceso
+      await this.process.initialize(
+        photosForProcess,
+        packageId,
+        mode,
+        fastMode,
+        this.process.userId
+      )
+    } else {
+      // Para nuevos procesos, usar el userId pasado como parámetro
+      await this.process.initialize(
+        photosForProcess,
+        packageId,
+        mode,
+        fastMode,
+        Number(finalUserId)
+      )
     }
 
-    await this.process.initialize(photosForProcess, packageId, mode, fastMode)
     await this.changeStage(
       `Proceso Iniciado | Paquete: ${packageId} | Modo ${mode}`,
       'vision_tasks'
@@ -92,8 +112,10 @@ export default class AnalyzerProcessRunner {
     await this.changeStage('***  Proceso Completado ***', finalStage)
     logger.info(`\n  ${this.process.formatProcessSheet()} \n `)
 
-    await invalidateCache(`getPhotos_${1234}`)
-    await invalidateCache(`getPhotosIdsByUser_${1234}`)
+    // Usar el userId del proceso para invalidar cache
+    const processUserId = this.process.userId?.toString() || '1234'
+    await invalidateCache(`getPhotos_${processUserId}`)
+    await invalidateCache(`getPhotosIdsByUser_${processUserId}`)
 
     // Limpiar cache de health solo si se precargó
     if (this.process.mode === 'retry_process') {

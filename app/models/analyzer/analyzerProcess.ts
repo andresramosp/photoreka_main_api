@@ -117,7 +117,8 @@ export default class AnalyzerProcess extends BaseModel {
     photosForProcess: Photo[],
     packageId: string,
     mode: AnalyzerMode = 'adding',
-    isFastMode: boolean
+    isFastMode: boolean,
+    userId?: number
   ) {
     this.mode = mode
     this.packageId = this.mode == 'retry_process' ? this.packageId : packageId
@@ -126,6 +127,7 @@ export default class AnalyzerProcess extends BaseModel {
     this.autoRetry = true
     this.maxAttempts = 2
     this.isFastMode = isFastMode
+    this.userId = userId || null
     await this.save()
 
     await this.setProcessPhotos(photosForProcess)

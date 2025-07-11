@@ -100,7 +100,7 @@ export default class SearchController {
     }
   }
 
-  public async warmUp({ response, request }: HttpContext) {
+  public async warmUp({ response }: HttpContext) {
     try {
       const modelService = new ModelsService()
 

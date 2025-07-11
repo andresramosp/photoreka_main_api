@@ -15,6 +15,9 @@ export default class Photo extends BaseModel {
   declare id: number
 
   @column()
+  declare userId: number
+
+  @column()
   declare descriptions: PhotoDescriptions | null
 
   @column()
