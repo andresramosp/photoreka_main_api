@@ -11,8 +11,8 @@ export default class SearchController {
    */
 
   public async searchSemantic({ request, response, auth }: HttpContext) {
+    const user = auth.use('api').user!
     try {
-      const user = auth.use('api').user!
       const searchService = new SearchTextService()
       const query = request.body()
 
@@ -24,13 +24,13 @@ export default class SearchController {
       })
 
       for await (const result of stream) {
-        ws.io?.emit(result.type, result.data)
+        ws.io?.to(user.id.toString()).emit(result.type, result.data)
       }
 
       return response.ok({ message: 'Search process initiated' })
     } catch (error) {
       console.error('Error fetching photos:', error)
-      ws.io?.emit('searchError', { message: 'Error fetching photos' })
+      ws.io?.to(user.id.toString()).emit('searchError', { message: 'Error fetching photos' })
       return response.internalServerError({ message: 'Error fetching photos' })
     }
   }
@@ -54,7 +54,7 @@ export default class SearchController {
       )
 
       for await (const result of stream) {
-        ws.io?.emit(result.type, result.data)
+        ws.io?.to(user.id.toString()).emit(result.type, result.data)
       }
 
       return response.ok({ message: 'Search process initiated' })
@@ -81,7 +81,7 @@ export default class SearchController {
       })
 
       for await (const result of stream) {
-        ws.io?.emit(result.type, result.data)
+        ws.io?.to(user.id.toString()).emit(result.type, result.data)
       }
 
       return response.ok({ message: 'Search process initiated' })
