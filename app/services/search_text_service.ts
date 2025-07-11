@@ -34,6 +34,7 @@ export type SearchOptions = {
   iteration: number
   pageSize: number
   minMatchScore?: number
+  userId?: number
 }
 
 export type SearchTagsOptions = SearchOptions & {
@@ -66,6 +67,7 @@ export default class SearchTextService {
 
   public async *searchSemantic(
     query: string,
+    userId: string | number,
     options: SearchOptions = {
       searchMode: 'logical',
       pageSize: 18,
@@ -74,7 +76,7 @@ export default class SearchTextService {
   ) {
     let { searchMode, pageSize, iteration, minMatchScore } = options
 
-    const photoIds = await this.photoManager.getPhotosIdsByUser('1234')
+    const photoIds = await this.photoManager.getPhotosIdsByUser(userId?.toString() || '1234')
 
     const { structuredResult, useImage, expansionCost } = await this.queryService.structureQuery(
       query,
@@ -88,7 +90,8 @@ export default class SearchTextService {
     let embeddingScoredPhotos = await this.scoringService.getScoredPhotosByTagsAndDesc(
       photoIds,
       structuredResult,
-      searchMode
+      searchMode,
+      userId?.toString() || '1234'
     )
 
     do {
@@ -178,16 +181,18 @@ export default class SearchTextService {
   }
 
   //   @withCostWS
-  public async *searchByTags(options: SearchTagsOptions) {
+
+  public async *searchByTags(options: SearchTagsOptions, userId: string | number) {
     const { included, excluded, iteration, pageSize, searchMode } = options
 
-    const photoIds = await this.photoManager.getPhotosIdsByUser('1234')
+    const photoIds = await this.photoManager.getPhotosIdsByUser(userId?.toString() || '1234')
 
     let embeddingScoredPhotos = await this.scoringService.getScoredPhotosByTags(
       photoIds,
       included,
       excluded,
-      searchMode
+      searchMode,
+      userId?.toString() || '1234'
     )
 
     const { paginatedPhotos, hasMore } = await this.getPaginatedPhotosByPage(
@@ -208,9 +213,13 @@ export default class SearchTextService {
     }
   }
 
-  public async *searchTopological(query: any, options: SearchTopologicalOptions) {
+  public async *searchTopological(
+    query: any,
+    userId: string | number,
+    options: SearchTopologicalOptions
+  ) {
     const { pageSize, iteration, searchMode } = options
-    const photoIds = await this.photoManager.getPhotosIdsByUser('1234')
+    const photoIds = await this.photoManager.getPhotosIdsByUser(userId?.toString() || '1234')
 
     let embeddingScoredPhotos = await this.scoringService.getScoredPhotosByTopoAreas(
       photoIds,
@@ -219,7 +228,8 @@ export default class SearchTextService {
         right: options.right,
         middle: options.middle,
       },
-      searchMode
+      searchMode,
+      userId?.toString() || '1234'
     )
 
     const { paginatedPhotos, hasMore } = await this.getPaginatedPhotosByPage(

@@ -10,12 +10,13 @@ export default class SearchController {
    * Handle the upload of multiple photos
    */
 
-  public async searchSemantic({ request, response }: HttpContext) {
+  public async searchSemantic({ request, response, auth }: HttpContext) {
     try {
+      const user = auth.use('api').user!
       const searchService = new SearchTextService()
       const query = request.body()
 
-      const stream = searchService.searchSemantic(query.description, {
+      const stream = searchService.searchSemantic(query.description, user.id, {
         searchMode: query.options.searchMode,
         pageSize: query.options.pageSize,
         iteration: query.options.iteration,
@@ -34,19 +35,23 @@ export default class SearchController {
     }
   }
 
-  public async searchByTags({ response, request }: HttpContext) {
+  public async searchByTags({ response, request, auth }: HttpContext) {
     try {
+      const user = auth.use('api').user!
       const searchService = new SearchTextService()
 
       const query = request.body()
 
-      const stream = searchService.searchByTags({
-        included: query.included,
-        excluded: query.excluded,
-        pageSize: query.options.pageSize,
-        iteration: query.options.iteration,
-        searchMode: query.options.searchMode,
-      })
+      const stream = searchService.searchByTags(
+        {
+          included: query.included,
+          excluded: query.excluded,
+          pageSize: query.options.pageSize,
+          iteration: query.options.iteration,
+          searchMode: query.options.searchMode,
+        },
+        user.id
+      )
 
       for await (const result of stream) {
         ws.io?.emit(result.type, result.data)
@@ -59,13 +64,14 @@ export default class SearchController {
     }
   }
 
-  public async searchTopological({ response, request }: HttpContext) {
+  public async searchTopological({ response, request, auth }: HttpContext) {
     try {
+      const user = auth.use('api').user!
       const searchService = new SearchTextService()
 
       const query = request.body()
 
-      const stream = searchService.searchTopological(query, {
+      const stream = searchService.searchTopological(query, user.id, {
         left: query.left,
         right: query.right,
         middle: query.middle,

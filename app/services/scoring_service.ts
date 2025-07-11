@@ -84,7 +84,8 @@ export default class ScoringService {
   public async getScoredPhotosByTagsAndDesc(
     photoIds: number[],
     structuredQuery: any,
-    searchMode: SearchMode
+    searchMode: SearchMode,
+    userId: string = '1234'
   ): Promise<ScoredPhoto[] | undefined> {
     let weights = getWeights(searchMode == 'curation')
 
@@ -139,7 +140,9 @@ export default class ScoringService {
               weights.nuancesTags,
               searchMode,
               ['context_story', 'visual_accents'],
-              ['context', 'story', 'visual_accents']
+              ['context', 'story', 'visual_accents'],
+              [],
+              userId
             )
           )
         )
@@ -154,7 +157,9 @@ export default class ScoringService {
           weights.semantic,
           searchMode,
           ['context_story', 'visual_accents'],
-          ['context', 'story']
+          ['context', 'story'],
+          [],
+          userId
         )
       }
       return scores
@@ -194,13 +199,22 @@ export default class ScoringService {
   // TODO: replantear: tiene
   private async filterExcludedPhotoIdsByTags(
     photoIds: number[],
-    excluded: string[]
+    excluded: string[],
+    userId: string
   ): Promise<number[]> {
     const proximityThreshold = 1 + 0.6
-    const allTags = await this.tagManager.getTagsByUser('1234')
+    const allTags = await this.tagManager.getTagsByUser(userId)
 
     const matchingPromises = excluded.map((tag) =>
-      this.findMatchingTagsForSegment({ name: tag, index: 1 }, allTags, 0.2, true, photoIds)
+      this.findMatchingTagsForSegment(
+        { name: tag, index: 1 },
+        allTags,
+        0.2,
+        searchMode,
+        photoIds,
+        [],
+        []
+      )
     )
 
     const matchingResults = await Promise.all(matchingPromises)
@@ -236,7 +250,8 @@ export default class ScoringService {
     photoIds: number[],
     included: string[],
     excluded: string[],
-    searchMode: SearchMode
+    searchMode: SearchMode,
+    userId: string = '1234'
   ): Promise<ScoredPhoto[] | undefined> {
     const weights = getWeights(searchMode == 'curation')
 
@@ -246,7 +261,7 @@ export default class ScoringService {
     await EmbeddingStoreService.calculateEmbeddings([...included, ...excluded])
 
     // Aplicar exclusión directamente a nivel de IDs
-    const filteredPhotoIds = await this.filterExcludedPhotoIdsByTags(photoIds, excluded)
+    const filteredPhotoIds = await this.filterExcludedPhotoIdsByTags(photoIds, excluded, userId)
 
     let aggregatedScores: ScoredPhoto[] = filteredPhotoIds.map((id) => ({
       id,
@@ -264,7 +279,9 @@ export default class ScoringService {
           weights.tags,
           searchMode,
           ['context_story', 'visual_accents'],
-          ['context', 'story']
+          ['context', 'story'],
+          [],
+          userId
         )
       }
       return scores
@@ -290,7 +307,8 @@ export default class ScoringService {
   public async getScoredPhotosByTopoAreas(
     photoIds: number[],
     queryByAreas: { left: string; right: string; middle: string },
-    searchMode: SearchMode
+    searchMode: SearchMode,
+    userId: string = '1234'
   ): Promise<ScoredPhoto[] | undefined> {
     const weights = getWeights(searchMode == 'curation')
 
@@ -337,7 +355,8 @@ export default class ScoringService {
           searchMode,
           ['context_story', 'visual_accents'],
           [],
-          areasToSearch
+          areasToSearch,
+          userId
         )
       }
       return scores
@@ -434,7 +453,8 @@ export default class ScoringService {
     searchMode: SearchMode,
     tagsCategories: string[],
     descCategories: string[],
-    areas: string[]
+    areas: string[],
+    userId: string = '1234'
   ): Promise<ScoredPhoto[]> {
     const photoIds = aggregatedScores.map((s) => s.id)
 
@@ -446,7 +466,8 @@ export default class ScoringService {
             weights.embeddingsTagsThreshold,
             searchMode,
             tagsCategories,
-            areas
+            areas,
+            userId
           )
         : Promise.resolve([])
 
@@ -556,9 +577,10 @@ export default class ScoringService {
     embeddingsProximityThreshold: number = 0.15,
     searchMode: SearchMode,
     categories?: string[],
-    areas: string[]
+    areas: string[],
+    userId: string = '1234'
   ): Promise<{ id: number; tagScore: number; matchingTags: any[] }[]> {
-    let userTags = await this.tagManager.getTagsByUser('1234')
+    let userTags = await this.tagManager.getTagsByUser(userId)
 
     const { matchingPhotoTags } = await this.findMatchingTagsForSegment(
       segment,
