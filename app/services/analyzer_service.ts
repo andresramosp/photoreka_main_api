@@ -110,7 +110,7 @@ export default class AnalyzerProcessRunner {
     const finalStage = hasFailed ? 'failed' : 'finished'
 
     await this.changeStage('***  Proceso Completado ***', finalStage)
-    logger.info(`\n  ${this.process.formatProcessSheet()} \n `)
+    if (!this.process.isPreprocess) logger.info(`\n  ${this.process.formatProcessSheet()} \n `)
 
     // Usar el userId del proceso para invalidar cache
     const processUserId = this.process.userId?.toString() || '1234'

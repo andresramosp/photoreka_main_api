@@ -7,6 +7,7 @@ import PhotoManager from '../managers/photo_manager.js'
 import Logger from '../utils/logger.js'
 import HealthPhotoService from '#services/health_photo_service'
 import AnalyzerProcess from '#models/analyzer/analyzerProcess'
+import { packages } from '../analyzer_packages.js'
 
 const logger = Logger.getInstance('AnalyzerProcess')
 
@@ -27,22 +28,35 @@ export default class AnalyzerController {
         mode,
         fastMode,
         inmediate = true,
-        sync = false,
       } = request.body()
+
+      // Obtener isPreprocess del package configuration
+      const selectedPackage = packages.find((p) => p.id === packageId)
+      if (!selectedPackage) {
+        return response.badRequest({ message: `Package with id ${packageId} not found` })
+      }
+      const isPreprocess = selectedPackage.isPreprocess || false
 
       logger.info(
         `Iniciando análisis para usuario ${realUserId} - Paquete: ${packageId} - Modo: ${mode} - Inmediato: ${inmediate}`
       )
 
       // Usar consulta optimizada según el modo de análisis
-      const photos = await photoManager.getPhotosForAnalysis(mode, processId, realUserId)
+      const photos = await photoManager.getPhotosForAnalysis(
+        mode,
+        processId,
+        realUserId,
+        isPreprocess
+      )
 
       if (photos.length) {
         await analyzerService.initProcess(photos, packageId, mode, fastMode, processId, realUserId)
 
         if (inmediate) {
-          if (sync) {
-            logger.info(`Ejecutando análisis de forma síncrona para usuario ${realUserId}`)
+          if (isPreprocess) {
+            logger.info(
+              `Ejecutando análisis de forma síncrona (preprocess) para usuario ${realUserId}`
+            )
             await analyzerService.run()
           } else {
             analyzerService.run()

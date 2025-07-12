@@ -114,6 +114,19 @@ export default class PhotoManager {
     return await query
   }
 
+  public async getPhotosForPreprocess(userId?: string): Promise<Photo[]> {
+    const query = Photo.query()
+      .whereNull('analyzer_process_id')
+      .preload('analyzerProcess')
+      .orderBy('created_at', 'desc')
+
+    if (userId) {
+      query.where('user_id', userId)
+    }
+
+    return await query
+  }
+
   public async getPhotosForRemakeAll(userId?: string): Promise<Photo[]> {
     const query = Photo.query()
       .where('status', 'processed')
@@ -169,11 +182,12 @@ export default class PhotoManager {
   public async getPhotosForAnalysis(
     mode: string,
     processId?: string,
-    userId?: string
+    userId?: string,
+    isPreprocess?: boolean
   ): Promise<Photo[]> {
     switch (mode) {
       case 'adding':
-        return this.getPhotosForAdding(userId)
+        return isPreprocess ? this.getPhotosForPreprocess(userId) : this.getPhotosForAdding(userId)
       case 'remake_all':
         return this.getPhotosForRemakeAll(userId)
       case 'remake_process':
