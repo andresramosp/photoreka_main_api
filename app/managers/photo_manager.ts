@@ -55,7 +55,7 @@ export default class PhotoManager {
     ttl: 60 * 30,
     key: (userId) => `getPhotos_${userId}`,
   })
-  public async getPhotos(userId: string) {
+  public async getPhotosByUser(userId: string) {
     const query = Photo.query()
       .where('user_id', userId)
       .preload('tags', (q) => q.preload('tag'))

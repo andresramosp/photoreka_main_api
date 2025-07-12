@@ -35,10 +35,13 @@ export default class SearchPhotoService {
   private scoringService = new ScoringService()
   private vectorService = new VectorService()
 
-  public async searchByPhotos(query: SearchByPhotoOptions): Promise<(Photo & { score: number })[]> {
+  public async searchByPhotos(
+    query: SearchByPhotoOptions,
+    userId: number
+  ): Promise<(Photo & { score: number })[]> {
     if (!query.anchorIds?.length) return []
 
-    const userPhotoIds = await this.photoManager.getPhotosIdsByUser('1234')
+    const userPhotoIds = await this.photoManager.getPhotosIdsByUser(userId)
 
     const anchors = await this.photoManager.getPhotosByIds(query.anchorIds)
     if (!anchors.length) return []
@@ -174,12 +177,11 @@ export default class SearchPhotoService {
       query.opposite ? 1 : 0.4,
       200,
       'cosine_similarity',
+      candidateIds,
       query.opposite
     )
 
-    return similar
-      .filter((s) => candidateIds.includes(s.id))
-      .map((s) => ({ id: s.id, score: s.proximity }))
+    return similar.map((s) => ({ id: s.id, score: s.proximity }))
   }
 
   @MeasureExecutionTime
@@ -210,13 +212,12 @@ export default class SearchPhotoService {
       query.opposite ? 1 : 0.1,
       200,
       'cosine_similarity',
+      candidateIds,
       query.opposite,
       useDominants
     )
 
-    return similar
-      .filter((s) => candidateIds.includes(s.id))
-      .map((s) => ({ id: s.id, score: s.proximity }))
+    return similar.map((s) => ({ id: s.id, score: s.proximity }))
   }
 
   private async scoreTags(query: SearchByPhotoOptions, candidateIds: number[], anchors: Photo[]) {
@@ -234,7 +235,6 @@ export default class SearchPhotoService {
           null,
           [],
           candidateIds,
-          null,
           query.opposite
         )
         similar.forEach((t) => {

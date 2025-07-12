@@ -91,13 +91,14 @@ export default class SearchController {
     }
   }
 
-  public async searchByPhotos({ response, request }: HttpContext) {
+  public async searchByPhotos({ response, request, auth }: HttpContext) {
     try {
+      const user = auth.use('api').user!
       const searchService = new SearchPhotoService()
 
       const query: any = request.body()
 
-      const result = await searchService.searchByPhotos(query)
+      const result = await searchService.searchByPhotos(query, user.id)
 
       return response.ok(result)
     } catch (error) {

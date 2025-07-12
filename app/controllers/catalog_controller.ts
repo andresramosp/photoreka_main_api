@@ -7,8 +7,6 @@ import { GoogleAuthService } from '#services/google_photos_service'
 import PhotoManager from '../managers/photo_manager.js'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { invalidateCache } from '../decorators/withCache.js'
-import ModelsService from '#services/models_service'
-import PhotoImageService from '#services/photo_image_service'
 import VectorService from '#services/vector_service'
 
 import HealthPhotoService from '#services/health_photo_service'
@@ -229,14 +227,15 @@ export default class CatalogController {
     const { newPhotoIds } = request.only(['newPhotoIds'])
 
     const vectorService = new VectorService()
+    const photoManager = new PhotoManager()
 
-    const allPhotos = await Photo.all()
+    const userPhotos = await photoManager.getPhotosByUser(userId)
 
     // 2. Selección de fotos nuevas
     const newPhotos =
       !newPhotoIds || newPhotoIds.length === 0
-        ? allPhotos
-        : allPhotos.filter((p) => newPhotoIds.includes(p.id))
+        ? userPhotos
+        : userPhotos.filter((p) => newPhotoIds.includes(p.id))
 
     // 3. Buscar duplicados usando similitud de embeddings (paralelizado)
     const results: Record<number, number[]> = {}
@@ -249,7 +248,8 @@ export default class CatalogController {
           VectorService.getParsedEmbedding(newPhoto.embedding)!!,
           0.92,
           5,
-          'cosine_similarity'
+          'cosine_similarity',
+          userPhotos.map((p) => p.id)
         )
 
         const matches = similarPhotos

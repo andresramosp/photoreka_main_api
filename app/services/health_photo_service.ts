@@ -69,7 +69,7 @@ export default class HealthPhotoService {
     const mark = (ok: boolean) => (ok ? '✅' : '❌')
 
     const photoManager = new PhotoManager()
-    const photos = await photoManager.getPhotos(userId)
+    const photos = await photoManager.getPhotosByUser(userId)
 
     const reports = await Promise.all(
       photos.map(async (p) => ({

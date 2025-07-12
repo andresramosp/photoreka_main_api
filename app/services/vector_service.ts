@@ -31,124 +31,6 @@ export default class VectorService {
     this.modelsService = new ModelsService()
   }
 
-  // @MeasureExecutionTime
-  public async findSimilarTagsToText(
-    term: string,
-    threshold: Threshold = 0.3,
-    limit: number = 10,
-    metric: 'distance' | 'inner_product' | 'cosine_similarity' = 'cosine_similarity'
-  ) {
-    const modelsService = new ModelsService()
-    let result = null
-
-    let existingTag = await Tag.query().where('name', term).andWhereNotNull('embedding').first()
-    if (existingTag) {
-      result = this.findSimilarTagsToTag(existingTag, threshold, limit, metric)
-    } else {
-      let { embeddings } = await modelsService.getEmbeddingsCPU([term])
-      result = this.findSimilarTagToEmbedding(embeddings[0], threshold, limit, metric)
-    }
-
-    return result
-  }
-
-  // @MeasureExecutionTime
-  public async findSimilarChunksToText(
-    term: string,
-    threshold: Threshold = 0.3,
-    limit: number = 10,
-    metric: 'distance' | 'inner_product' | 'cosine_similarity' = 'cosine_similarity',
-    photoIds: number[] = null,
-    categories: DescriptionType[] = null,
-    areas: string[] = null
-  ) {
-    const modelsService = new ModelsService()
-    let { embeddings } = await modelsService.getEmbeddingsCPU([term])
-    return this.findSimilarChunkToEmbedding(
-      embeddings[0],
-      threshold,
-      limit,
-      metric,
-      photoIds,
-      categories,
-      areas
-    )
-  }
-
-  // @MeasureExecutionTime
-  public async findSimilarTagsToTag(
-    tag: Tag,
-    threshold: Threshold = 0.3,
-    limit: number = 10,
-    metric: 'distance' | 'inner_product' | 'cosine_similarity' = 'cosine_similarity'
-  ) {
-    if (!tag || !tag.id) {
-      throw new Error('Tag no encontrado o no tiene ID asociado')
-    }
-
-    let metricQuery: string = ''
-    let whereCondition: string = ''
-    let orderBy: string = ''
-
-    // Determinar los parámetros según el tipo de threshold
-    let additionalParams: any = {}
-    let thresholdCondition = ''
-    if (typeof threshold === 'number') {
-      if (metric === 'distance') {
-        metricQuery = 't2.embedding <-> t1.embedding AS proximity'
-        thresholdCondition = 't2.embedding <-> t1.embedding <= :threshold'
-        orderBy = 'proximity ASC'
-      } else if (metric === 'inner_product') {
-        metricQuery = '(t2.embedding <#> t1.embedding) * -1 AS proximity'
-        thresholdCondition = '(t2.embedding <#> t1.embedding) * -1 >= :threshold'
-        orderBy = 'proximity DESC'
-      } else if (metric === 'cosine_similarity') {
-        metricQuery = '1 - (t2.embedding <=> t1.embedding) AS proximity'
-        thresholdCondition = '1 - (t2.embedding <=> t1.embedding) >= :threshold'
-        orderBy = 'proximity DESC'
-      }
-      additionalParams.threshold = threshold
-    } else {
-      if (metric === 'distance') {
-        metricQuery = 't2.embedding <-> t1.embedding AS proximity'
-        thresholdCondition = 't2.embedding <-> t1.embedding BETWEEN :minThreshold AND :maxThreshold'
-        orderBy = 'proximity ASC'
-      } else if (metric === 'inner_product') {
-        metricQuery = '(t2.embedding <#> t1.embedding) * -1 AS proximity'
-        thresholdCondition =
-          '(t2.embedding <#> t1.embedding) * -1 BETWEEN :minThreshold AND :maxThreshold'
-        orderBy = 'proximity DESC'
-      } else if (metric === 'cosine_similarity') {
-        metricQuery = '1 - (t2.embedding <=> t1.embedding) AS proximity'
-        thresholdCondition =
-          '1 - (t2.embedding <=> t1.embedding) BETWEEN :minThreshold AND :maxThreshold'
-        orderBy = 'proximity DESC'
-      }
-      additionalParams.minThreshold = threshold.min
-      additionalParams.maxThreshold = threshold.max
-    }
-
-    whereCondition = thresholdCondition
-
-    const result = await db.rawQuery(
-      `
-        SELECT t2.id, t2.name, t2."group", t2.created_at, t2.updated_at, ${metricQuery}
-        FROM tags t1
-        JOIN tags t2 ON t1.id = :id AND t2.id != t1.id
-        WHERE ${whereCondition}
-        ORDER BY ${orderBy}
-        LIMIT :limit
-        `,
-      {
-        id: tag.id,
-        limit,
-        ...additionalParams,
-      }
-    )
-
-    return result.rows
-  }
-
   @MeasureExecutionTime
   public async findSimilarChunkToEmbedding(
     embedding: number[],
@@ -273,7 +155,6 @@ export default class VectorService {
     categories?: string[], // garantizamos que pertenece a esa categorías, pero aún no sabemos para qué foto
     areas?: string[],
     photoIds?: number[],
-    userId?: number, // 🔥 Se deja opcional para el futuro
     opposite: boolean = false
   ) {
     if (!embedding || embedding.length === 0) {
@@ -334,9 +215,8 @@ export default class VectorService {
       areas && areas.length > 0 ? 'AND tags_photos.area = ANY(:areas)' : ''
     const photoFilterCondition =
       photoIds && photoIds.length > 0 ? 'AND photos.id = ANY(:photoIds)' : ''
-    const userFilterCondition = userId ? 'AND photos.user_id = :userId' : ''
 
-    whereCondition = `${thresholdCondition} ${tagFilterCondition} ${categoryFilterCondition} ${areaFilterCondition} ${photoFilterCondition} ${userFilterCondition}`
+    whereCondition = `${thresholdCondition} ${tagFilterCondition} ${categoryFilterCondition} ${areaFilterCondition} ${photoFilterCondition}`
 
     const embeddingString = `[${embedding.join(',')}]`
 
@@ -367,7 +247,6 @@ export default class VectorService {
         categories: categories || [],
         areas: areas || [],
         photoIds: photoIds || [],
-        userId: userId || null,
         ...additionalParams,
       }
     )
@@ -380,6 +259,7 @@ export default class VectorService {
     threshold: Threshold = 0.3,
     limit: number = 10,
     metric: 'distance' | 'inner_product' | 'cosine_similarity' = 'cosine_similarity',
+    photoIds?: number[],
     opposite: boolean = false
   ) {
     if (!embedding || embedding.length === 0) {
@@ -443,13 +323,20 @@ export default class VectorService {
       additionalParams.maxThreshold = threshold.max
     }
 
+    // Filtro por photo_id si se proporciona
+    let whereCondition = thresholdCondition
+    if (photoIds && photoIds.length > 0) {
+      whereCondition += ' AND photos.id = ANY(:photoIds)'
+      additionalParams.photoIds = photoIds
+    }
+
     const embeddingString = `[${embedding.join(',')}]`
 
     const result = await db.rawQuery(
       `
         SELECT photos.id, photos.name, ${metricQuery}
         FROM photos
-        WHERE ${thresholdCondition}
+        WHERE ${whereCondition}
         ORDER BY ${orderBy}
         LIMIT :limit
       `,
@@ -468,6 +355,7 @@ export default class VectorService {
     threshold: Threshold = 0.3,
     limit: number = 10,
     metric: 'distance' | 'inner_product' | 'cosine_similarity' = 'cosine_similarity',
+    photoIds?: number[],
     opposite: boolean = false,
     useDominants: boolean = false
   ) {
@@ -503,13 +391,20 @@ export default class VectorService {
       additionalParams.maxThreshold = threshold.max
     }
 
+    // Filtro por photo_id si se proporciona
+    let whereCondition = thresholdCondition
+    if (photoIds && photoIds.length > 0) {
+      whereCondition += ' AND photos.id = ANY(:photoIds)'
+      additionalParams.photoIds = photoIds
+    }
+
     const embeddingString = `[${embedding.join(',')}]`
 
     const result = await db.rawQuery(
       `
     SELECT photos.id, photos.name, ${metricQuery}
     FROM photos
-    WHERE ${thresholdCondition}
+    WHERE ${whereCondition}
     ORDER BY ${orderBy}
     LIMIT :limit
     `,
