@@ -19,7 +19,8 @@ const redisConfig = defineConfig({
       port: Number(redisUrl.port),
       password: redisUrl.password || undefined,
       db: Number(redisUrl.pathname.slice(1)) || 0,
-      tls: redisUrl.protocol === 'rediss:' ? {} : undefined, // Soporte TLS si la URL es rediss://
+      tls: redisUrl.protocol === 'rediss:' ? {} : undefined,
+      family: 0, // 👈 Añade esto para permitir IPv6
     },
   },
 })
