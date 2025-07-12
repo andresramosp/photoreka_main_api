@@ -350,7 +350,7 @@ export default class PhotoManager {
     await db.from('photos').whereIn('id', ids).delete()
 
     // Invalida la caché según tus necesidades
-    const finalUserId = userId || '1234' // Fallback temporal
+    const finalUserId = userId // Fallback temporal
     await invalidateCache(`getPhotos_${finalUserId}`)
     await invalidateCache(`getPhotosIdsByUser_${finalUserId}`)
 

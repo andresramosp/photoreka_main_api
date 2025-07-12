@@ -85,7 +85,7 @@ export default class ScoringService {
     photoIds: number[],
     structuredQuery: any,
     searchMode: SearchMode,
-    userId: string = '1234'
+    userId: string
   ): Promise<ScoredPhoto[] | undefined> {
     let weights = getWeights(searchMode == 'curation')
 
@@ -251,7 +251,7 @@ export default class ScoringService {
     included: string[],
     excluded: string[],
     searchMode: SearchMode,
-    userId: string = '1234'
+    userId: string
   ): Promise<ScoredPhoto[] | undefined> {
     const weights = getWeights(searchMode == 'curation')
 
@@ -308,7 +308,7 @@ export default class ScoringService {
     photoIds: number[],
     queryByAreas: { left: string; right: string; middle: string },
     searchMode: SearchMode,
-    userId: string = '1234'
+    userId: string
   ): Promise<ScoredPhoto[] | undefined> {
     const weights = getWeights(searchMode == 'curation')
 
@@ -454,7 +454,7 @@ export default class ScoringService {
     tagsCategories: string[],
     descCategories: string[],
     areas: string[],
-    userId: string = '1234'
+    userId: string
   ): Promise<ScoredPhoto[]> {
     const photoIds = aggregatedScores.map((s) => s.id)
 
@@ -578,7 +578,7 @@ export default class ScoringService {
     searchMode: SearchMode,
     categories?: string[],
     areas: string[],
-    userId: string = '1234'
+    userId: string
   ): Promise<{ id: number; tagScore: number; matchingTags: any[] }[]> {
     let userTags = await this.tagManager.getTagsByUser(userId)
 

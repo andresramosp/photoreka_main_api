@@ -39,7 +39,7 @@ export default class AnalyzerProcessRunner {
     processId?: number,
     userId?: string
   ) {
-    const finalUserId = userId || '1234' // Fallback temporal
+    const finalUserId = userId
 
     await invalidateCache(`getPhotos_${finalUserId}`)
     await invalidateCache(`getPhotosIdsByUser_${finalUserId}`)
@@ -113,7 +113,7 @@ export default class AnalyzerProcessRunner {
     if (!this.process.isPreprocess) logger.info(`\n  ${this.process.formatProcessSheet()} \n `)
 
     // Usar el userId del proceso para invalidar cache
-    const processUserId = this.process.userId?.toString() || '1234'
+    const processUserId = this.process.userId?.toString()
     await invalidateCache(`getPhotos_${processUserId}`)
     await invalidateCache(`getPhotosIdsByUser_${processUserId}`)
 

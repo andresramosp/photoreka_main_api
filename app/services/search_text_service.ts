@@ -76,7 +76,7 @@ export default class SearchTextService {
   ) {
     let { searchMode, pageSize, iteration, minMatchScore } = options
 
-    const photoIds = await this.photoManager.getPhotosIdsByUser(userId?.toString() || '1234')
+    const photoIds = await this.photoManager.getPhotosIdsByUser(userId?.toString())
 
     const { structuredResult, useImage, expansionCost } = await this.queryService.structureQuery(
       query,
@@ -91,7 +91,7 @@ export default class SearchTextService {
       photoIds,
       structuredResult,
       searchMode,
-      userId?.toString() || '1234'
+      userId?.toString()
     )
 
     do {
@@ -185,14 +185,14 @@ export default class SearchTextService {
   public async *searchByTags(options: SearchTagsOptions, userId: string | number) {
     const { included, excluded, iteration, pageSize, searchMode } = options
 
-    const photoIds = await this.photoManager.getPhotosIdsByUser(userId?.toString() || '1234')
+    const photoIds = await this.photoManager.getPhotosIdsByUser(userId?.toString())
 
     let embeddingScoredPhotos = await this.scoringService.getScoredPhotosByTags(
       photoIds,
       included,
       excluded,
       searchMode,
-      userId?.toString() || '1234'
+      userId?.toString()
     )
 
     const { paginatedPhotos, hasMore } = await this.getPaginatedPhotosByPage(
@@ -219,7 +219,7 @@ export default class SearchTextService {
     options: SearchTopologicalOptions
   ) {
     const { pageSize, iteration, searchMode } = options
-    const photoIds = await this.photoManager.getPhotosIdsByUser(userId?.toString() || '1234')
+    const photoIds = await this.photoManager.getPhotosIdsByUser(userId?.toString())
 
     let embeddingScoredPhotos = await this.scoringService.getScoredPhotosByTopoAreas(
       photoIds,
@@ -229,7 +229,7 @@ export default class SearchTextService {
         middle: options.middle,
       },
       searchMode,
-      userId?.toString() || '1234'
+      userId?.toString()
     )
 
     const { paginatedPhotos, hasMore } = await this.getPaginatedPhotosByPage(
