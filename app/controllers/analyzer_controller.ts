@@ -22,13 +22,13 @@ export default class AnalyzerController {
       const realUserId = user.id.toString()
 
       const {
-        userId, // Este puede venir del body pero usaremos el real del token
+        userId,
         packageId,
         processId,
         mode,
         fastMode,
         inmediate = true,
-        photoIds, // Nuevo parámetro opcional
+        photoIds,
       } = request.body()
 
       // Obtener isPreprocess del package configuration
@@ -58,9 +58,9 @@ export default class AnalyzerController {
             logger.info(
               `Ejecutando análisis de forma síncrona (preprocess) para usuario ${realUserId}`
             )
-            await analyzerService.run()
+            await analyzerService.runAll()
           } else {
-            analyzerService.run()
+            analyzerService.runAll()
             logger.info(`Análisis ejecutado inmediatamente para usuario ${realUserId}`)
           }
         } else {

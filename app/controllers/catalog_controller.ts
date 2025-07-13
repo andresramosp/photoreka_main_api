@@ -67,7 +67,7 @@ export default class CatalogController {
         userId: Number(userId),
       })
 
-      await invalidateCache(`getPhotos_${userId}`)
+      await invalidateCache(`getPhotosByUser_${userId}`)
       await invalidateCache(`getPhotosIdsByUser_${userId}`)
 
       return response.ok({
@@ -227,9 +227,8 @@ export default class CatalogController {
     const { newPhotoIds } = request.only(['newPhotoIds'])
 
     const vectorService = new VectorService()
-    const photoManager = new PhotoManager()
 
-    const userPhotos = await photoManager.getPhotosByUser(userId)
+    const userPhotos = await Photo.query().where('user_id', userId)
 
     // 2. Selección de fotos nuevas
     const newPhotos =

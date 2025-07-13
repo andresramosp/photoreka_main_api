@@ -53,7 +53,7 @@ export default class PhotoManager {
   @withCache({
     provider: 'redis',
     ttl: 60 * 30,
-    key: (userId) => `getPhotos_${userId}`,
+    key: (userId) => `getPhotosByUser_${userId}`,
   })
   public async getPhotosByUser(userId: string) {
     const query = Photo.query()
@@ -129,7 +129,6 @@ export default class PhotoManager {
 
   public async getPhotosForRemakeAll(userId?: string): Promise<Photo[]> {
     const query = Photo.query()
-      .where('status', 'processed')
       .preload('tags', (q) => q.preload('tag'))
       .preload('detections')
       .preload('descriptionChunks')

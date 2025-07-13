@@ -18,6 +18,7 @@ export abstract class AnalyzerTask {
   declare useGuideLines: boolean
   declare analyzerProcess: AnalyzerProcess
   declare onlyIfNeeded: boolean
+  declare isGlobal: boolean
   declare checks: string[]
 
   declare modelsService: ModelsService
@@ -36,7 +37,7 @@ export abstract class AnalyzerTask {
         const health = process.getPhotoHealthFromCache(photo.id)
         const isComplete = this.checks.every((checkPattern) => {
           if (checkPattern.includes('*')) {
-            const regex = new RegExp('^' + checkPattern.replace('*', '\d+') + '$')
+            const regex = new RegExp('^' + checkPattern.replace(/\*/g, '\\d+') + '$')
             return (health.checks as { label: string; ok: boolean }[])
               .filter((c) => regex.test(c.label))
               .every((c) => c.ok)

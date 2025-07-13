@@ -7,6 +7,7 @@ import { VisionTopologicalTask } from '#models/analyzer/visionTopologicalTask'
 import { VisualColorEmbeddingTask } from '#models/analyzer/visualColorEmbeddingTask'
 import { VisualDetectionTask } from '#models/analyzer/visualDetectionTask'
 import { VisualEmbeddingTask } from '#models/analyzer/visualEmbeddingTask'
+import { GlobalEmbeddingsTagsTask } from '#models/analyzer/globalEmbeddingsTagsTask'
 import { MESSAGE_ANALYZER_GPT_CONTEXT_STORY_ACCENTS } from './utils/prompts/descriptions.js'
 import {
   MESSAGE_ANALYZER_GPT_TOPOLOGIC_TAGS,
@@ -67,7 +68,7 @@ export const packages = [
         needsImage: false,
         prompt: MESSAGE_TAGS_TEXT_EXTRACTION,
         descriptionSourceFields: ['context', 'story'],
-        checks: ['tags.any', 'tags.context_story'],
+        checks: ['tags.any', 'tags.context_story'], // 'tagPhoto#*.tag#*.embedding' Mejor lanzar el review global que relanzar toda la task completa, al menos hasta que se subdivida
       },
       {
         name: 'tags_visual_accents',
@@ -110,6 +111,18 @@ export const packages = [
         useGuideLines: true,
         promptDependentField: null,
         checks: ['tags.topological'],
+      },
+    ],
+  },
+
+  {
+    id: 'global_embeddings',
+    isPreprocess: false,
+    tasks: [
+      {
+        name: 'review_embeddings_tags',
+        type: 'GlobalEmbeddingsTagsTask',
+        isGlobal: true,
       },
     ],
   },
@@ -179,6 +192,9 @@ export const getTaskList = (packageId: string, process: AnalyzerProcess): Analyz
         break
       case 'VisualDetectionTask':
         task = new VisualDetectionTask(process)
+        break
+      case 'GlobalEmbeddingsTagsTask':
+        task = new GlobalEmbeddingsTagsTask(process)
         break
       default:
         throw new Error(`Unknown task type: ${taskData.type}`)

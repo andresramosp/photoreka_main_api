@@ -61,6 +61,9 @@ export default class HealthPhotoService {
       push(`tagPhoto#${t.id}.tag#${t.tagId}.embedding`, !!(t.tag && t.tag.embedding))
     )
 
+    // if (missing.length > 0) {
+    //   console.log(`❌ Foto #${photoId} tiene campos faltantes: ${missing.join(', ')}`)
+    // }
     return { ok: missing.length === 0, checks, missing }
   }
 
@@ -152,7 +155,7 @@ export default class HealthPhotoService {
           const ok = checksForTask.every((checkPattern) => {
             if (checkPattern.includes('*')) {
               // Patrón tipo descriptionChunk#*.embedding
-              const regex = new RegExp('^' + checkPattern.replace('*', '\\d+') + '$')
+              const regex = new RegExp('^' + checkPattern.replace(/\*/g, '\\d+') + '$')
               return report.checks.filter((c) => regex.test(c.label)).every((c) => c.ok)
             } else {
               const check = report.checks.find((c) => c.label === checkPattern)

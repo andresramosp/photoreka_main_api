@@ -34,7 +34,7 @@ export default class AnalyzerProcessRunner {
   public async initProcess(
     photosForProcess: Photo[],
     packageId: string,
-    mode: AnalyzerMode = 'first',
+    mode: AnalyzerMode = 'adding',
     fastMode: boolean,
     processId?: number,
     userId?: string
@@ -56,7 +56,7 @@ export default class AnalyzerProcessRunner {
         packageId,
         mode,
         fastMode,
-        this.process.userId
+        this.process.userId!!
       )
     } else {
       // Para nuevos procesos, usar el userId pasado como parámetro
@@ -75,17 +75,32 @@ export default class AnalyzerProcessRunner {
     )
   }
 
+  /**
+   * Ejecuta todas las tasks: primero las no globales, luego las globales
+   */
+  public async runAll() {
+    await this.run()
+    await this.runGlobal()
+  }
+
+  /**
+   * Ejecuta solo las tasks que NO son globales (isGlobal === false)
+   */
   public async run() {
     if (!this.process || !this.process.tasks) throw new Exception('[ERROR] No process found')
 
+    const tasks = this.process.tasks.filter((t) => !t.isGlobal)
+    if (tasks.length === 0) {
+      logger.info('No hay tareas para ejecutar en este proceso')
+      return
+    }
     // Precargar health en paralelo solo si es retry_process
-
     if (this.process.mode === 'retry_process') {
       await this.changeStage('*** Precargando health de fotos ***')
       await this.process.preloadPhotoHealth()
     }
 
-    for (const task of this.process.tasks) {
+    for (const task of tasks) {
       try {
         const pendingPhotos = await task.prepare(this.process)
         if (pendingPhotos.length) {
@@ -101,7 +116,6 @@ export default class AnalyzerProcessRunner {
         logger.error(`Error en tarea ${task.name}:`, error)
       }
     }
-
     await HealthPhotoService.updateSheetWithHealth(this.process)
 
     const hasFailed = this.hasFailedPhotos()
@@ -123,6 +137,28 @@ export default class AnalyzerProcessRunner {
     }
 
     this.handleAutoRetry()
+  }
+
+  /**
+   * Ejecuta solo las tasks globales (isGlobal === true)
+   * Estas tasks no requieren pendingPhotos, solo process() y commit()
+   */
+  public async runGlobal() {
+    if (!this.process || !this.process.tasks) throw new Exception('[ERROR] No process found')
+
+    for (const task of this.process.tasks.filter((t) => t.isGlobal)) {
+      try {
+        await this.changeStage(
+          `*** Iniciando tarea GLOBAL *** | ${task.getName()} | ${this.process.mode.toUpperCase()}`,
+          task.name
+        )
+        await task.process(null, this.process) // process solo recibe el proceso
+        await task.commit() // commit sin argumentos
+        await this.changeStage(`*** Tarea GLOBAL completada *** | ${task.getName()}`)
+      } catch (error) {
+        logger.error(`Error en tarea GLOBAL ${task.name}:`, error)
+      }
+    }
   }
 
   private async changeStage(message: string, nextStage: string = null) {
@@ -148,7 +184,6 @@ export default class AnalyzerProcessRunner {
   private async handleAutoRetry() {
     if (this.process.autoRetry) {
       // Verificar si hay fotos pendientes en alguna tarea
-      const sheet = this.process.processSheet || {}
       const hayFallidas = this.hasFailedPhotos()
       const maxAttempts = this.process.maxAttempts ?? 3
       const attempts = this.process.attempts ?? 0
