@@ -28,6 +28,7 @@ export default class AnalyzerController {
         mode,
         fastMode,
         inmediate = true,
+        photoIds, // Nuevo parámetro opcional
       } = request.body()
 
       // Obtener isPreprocess del package configuration
@@ -41,13 +42,13 @@ export default class AnalyzerController {
         `Iniciando análisis para usuario ${realUserId} - Paquete: ${packageId} - Modo: ${mode} - Inmediato: ${inmediate}`
       )
 
-      // Usar consulta optimizada según el modo de análisis
-      const photos = await photoManager.getPhotosForAnalysis(
-        mode,
-        processId,
-        realUserId,
-        isPreprocess
-      )
+      // Si photoIds está presente y es un array, usar getPhotosByIds, si no, getPhotosForAnalysis
+      let photos = []
+      if (Array.isArray(photoIds) && photoIds.length > 0) {
+        photos = await photoManager.getPhotosByIds(photoIds, realUserId)
+      } else {
+        photos = await photoManager.getPhotosForAnalysis(mode, processId, realUserId, isPreprocess)
+      }
 
       if (photos.length) {
         await analyzerService.initProcess(photos, packageId, mode, fastMode, processId, realUserId)
