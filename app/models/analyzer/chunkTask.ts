@@ -1,4 +1,5 @@
 import DescriptionChunk from '#models/descriptionChunk'
+import pLimit from 'p-limit'
 import { DescriptionType } from '#models/photo'
 import Photo from '#models/photo'
 import { AnalyzerTask } from './analyzerTask.js'
@@ -19,8 +20,10 @@ export class ChunkTask extends AnalyzerTask {
   declare data: Record<string, DescriptionChunk[]>
 
   async process(pendingPhotos: Photo[]): Promise<void> {
-    const batchSize = 50 // procesar de a 10 fotos por vez
+    const batchSize = 50 // procesar de a 50 fotos por vez
     const batchEmbeddingsSize = 200 // tamaño inicial del lote para embeddings
+    const embeddingsConcurrency = 3 // concurrencia para embeddings
+    const embeddingsDelay = 1000 // 1 segundo de demora entre batches de embeddings
 
     if (!this.data) {
       this.data = {}
@@ -103,20 +106,32 @@ export class ChunkTask extends AnalyzerTask {
       // Obtener embeddings para el lote actual
       const allChunks = Object.values(this.data).flat()
       if (allChunks.length > 0) {
+        const limit = pLimit(embeddingsConcurrency)
+        const embeddingTasks: Promise<void>[] = []
+
         for (let j = 0; j < allChunks.length; j += batchEmbeddingsSize) {
           const batch = allChunks.slice(j, j + batchEmbeddingsSize)
-          const texts = batch.map((chunk) => chunk.chunk)
-          logger.info(
-            `Obteniendo embeddings para batch de ${texts.length} chunks (${j + 1}-${j + texts.length} de ${allChunks.length})`
-          )
-          const { embeddings } = await this.modelsService.getEmbeddingsCPU(texts)
+          const taskIndex = Math.floor(j / batchEmbeddingsSize)
 
-          // Asignar embeddings a los chunks
-          batch.forEach((chunk, index) => {
-            chunk.embedding = embeddings[index]
+          const embeddingTask = limit(async () => {
+            if (taskIndex > 0) {
+              await new Promise((resolve) => setTimeout(resolve, embeddingsDelay))
+            }
+            const texts = batch.map((chunk) => chunk.chunk)
+            logger.info(
+              `Obteniendo embeddings para batch de ${texts.length} chunks (${j + 1}-${j + texts.length} de ${allChunks.length})`
+            )
+            const { embeddings } = await this.modelsService.getEmbeddingsCPU(texts)
+
+            // Asignar embeddings a los chunks
+            batch.forEach((chunk, index) => {
+              chunk.embedding = embeddings[index]
+            })
           })
+          embeddingTasks.push(embeddingTask)
         }
 
+        await Promise.all(embeddingTasks)
         // Hacer commit parcial del lote actual
         await this.commit(photoBatch)
       }
