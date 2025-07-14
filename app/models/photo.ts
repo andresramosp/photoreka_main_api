@@ -81,7 +81,7 @@ export default class Photo extends BaseModel {
     }
 
     if (this.analyzerProcess.currentStage == 'failed') {
-      return 'preprocessing'
+      return this.analyzerProcess.isPreprocess ? 'preprocessing' : 'preprocessed'
     }
 
     if (this.analyzerProcess.isPreprocess) {
