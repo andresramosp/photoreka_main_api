@@ -143,51 +143,71 @@ export class VisionDescriptionTask extends AnalyzerTask {
 
   private async processSingleBatch(batchPhotos: PhotoImage[]): Promise<void> {
     const prompts = await this.injectPromptsDependencies(batchPhotos)
-    const requests: any[] = []
-
     const imagesPerRequest = 4
-    for (let j = 0; j < batchPhotos.length; j += imagesPerRequest) {
-      const batch = batchPhotos.slice(j, j + imagesPerRequest)
-
-      const customId = batch.map((p) => p.photo.id).join('-')
-
-      const userContent = batch.map((photoImage) => ({
-        type: 'image_url',
-        image_url: {
-          url: `data:image/jpeg;base64,${photoImage.base64}`,
-          detail: this.resolution,
-        },
-      }))
-
-      requests.push({
-        custom_id: customId,
-        method: 'POST',
-        url: '/v1/chat/completions',
-        body: {
-          model: 'gpt-4.1',
-          temperature: 0.1,
-          response_format: { type: 'json_object' },
-          max_tokens: 15000,
-          messages: [
-            { role: 'system', content: prompts[0] },
-            { role: 'user', content: userContent },
-          ],
-        },
-      })
-    }
-
-    const batchId = await this.modelsService.submitGPTBatch(requests)
-
-    logger.debug(`Batch con id ${batchId} en espera para ${batchPhotos.length} imágenes`)
-
+    const maxRetries = 3
+    let attempt = 0
+    let completed = false
+    let batchId: string | null = null
     let status = 'in_progress'
-    while (status === 'in_progress' || status === 'finalizing') {
-      await this.sleep(5000)
-      status = await this.modelsService.getBatchStatus(batchId)
+    let requests: any[] = []
+
+    while (attempt < maxRetries && !completed) {
+      // Generar requests en cada intento para evitar side effects
+      requests = []
+      for (let j = 0; j < batchPhotos.length; j += imagesPerRequest) {
+        const batch = batchPhotos.slice(j, j + imagesPerRequest)
+        const customId = batch.map((p) => p.photo.id).join('-')
+        const userContent = batch.map((photoImage) => ({
+          type: 'image_url',
+          image_url: {
+            url: `data:image/jpeg;base64,${photoImage.base64}`,
+            detail: this.resolution,
+          },
+        }))
+        requests.push({
+          custom_id: customId,
+          method: 'POST',
+          url: '/v1/chat/completions',
+          body: {
+            model: 'gpt-4.1',
+            temperature: 0.1,
+            response_format: { type: 'json_object' },
+            max_tokens: 15000,
+            messages: [
+              { role: 'system', content: prompts[0] },
+              { role: 'user', content: userContent },
+            ],
+          },
+        })
+      }
+
+      batchId = await this.modelsService.submitGPTBatch(requests)
+      logger.debug(
+        `Batch con id ${batchId} en espera para ${batchPhotos.length} imágenes (intento ${attempt + 1}/${maxRetries})`
+      )
+
+      status = 'in_progress'
+      // Espera hasta que el batch cambie de estado o se agoten los reintentos
+      while (status === 'in_progress' || status === 'finalizing') {
+        await this.sleep(5000)
+        status = await this.modelsService.getBatchStatus(batchId)
+      }
+      if (status === 'completed') {
+        completed = true
+      } else {
+        attempt++
+        if (attempt < maxRetries) {
+          logger.warn(
+            `El batch ${batchId} no se completó (status: ${status}). Reintentando (${attempt}/${maxRetries})...`
+          )
+        }
+      }
     }
 
-    if (status !== 'completed') {
-      logger.error(`El batch ${batchId} ha fallado.`)
+    if (!completed || !batchId) {
+      logger.error(
+        `El batch${batchId ? ' ' + batchId : ''} ha fallado tras ${maxRetries} reintentos.`
+      )
       return
     }
 
