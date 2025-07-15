@@ -119,22 +119,18 @@ export default class HealthPhotoService {
       }))
     )
     reports.sort((a, b) => a.photoId - b.photoId)
-    reports.forEach((r) => {
-      if (r.ok && !verbose) {
-        console.log(`Foto #${r.photoId} ${mark(true)} OK`)
-        return
+    if (verbose) {
+      reports.forEach((r) => {
+        console.log(`\n⟐  Foto #${r.photoId} ${mark(r.ok)}`)
+        r.checks.forEach(({ label, ok }) => console.log(`  ${mark(ok)} ${label}`))
+      })
+      const failed = reports.filter((r) => !r.ok)
+      if (failed.length) {
+        console.log('\n❌ Fotos con campos faltantes:')
+        failed.forEach((r) => console.log(`  • #${r.photoId} → ${r.missing.join(', ')}`))
+      } else {
+        console.log('\n✅ Todas las fotos están completas')
       }
-      console.log(`\n⟐  Foto #${r.photoId} ${mark(r.ok)}`)
-      r.checks
-        .filter((c) => verbose || !c.ok)
-        .forEach(({ label, ok }) => console.log(`  ${mark(ok)} ${label}`))
-    })
-    const failed = reports.filter((r) => !r.ok)
-    if (failed.length) {
-      console.log('\n❌ Fotos con campos faltantes:')
-      failed.forEach((r) => console.log(`  • #${r.photoId} → ${r.missing.join(', ')}`))
-    } else {
-      console.log('\n✅ Todas las fotos están completas')
     }
     return reports
   }

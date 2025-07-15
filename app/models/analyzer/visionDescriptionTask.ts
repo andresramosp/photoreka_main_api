@@ -24,6 +24,7 @@ export class VisionDescriptionTask extends AnalyzerTask {
   declare data: Record<number, Record<string, string>>
   declare complete: boolean
   declare analyzerProcess: AnalyzerProcess
+  failedRequests: PhotoImage[] = []
 
   async process(pendingPhotos: PhotoImage[], analyzerProcess: AnalyzerProcess): Promise<void> {
     this.analyzerProcess = analyzerProcess
@@ -105,6 +106,13 @@ export class VisionDescriptionTask extends AnalyzerTask {
     )
 
     await Promise.all(batchPromises)
+
+    // Si hay fallos, reprocesar con DirectAPI
+    if (this.failedRequests.length > 0) {
+      logger.warn(`Reprocesando ${this.failedRequests.length} imágenes fallidas con DirectAPI`)
+      await this.processWithDirectAPI(this.failedRequests)
+      this.failedRequests = []
+    }
   }
 
   async commit(batch: PhotoImage[]): Promise<void> {
@@ -194,8 +202,11 @@ export class VisionDescriptionTask extends AnalyzerTask {
 
         const photoIds = res.custom_id.split('-').map(Number)
 
-        if (!Array.isArray(parsed)) {
+        if (!Array.isArray(parsed) || Math.random() < 0.2) {
           logger.error(`Error: la respuesta no es un array para el batch ${res.custom_id}`)
+          // Agregar las imágenes fallidas a failedRequests
+          const failedImages = batchPhotos.filter((img) => photoIds.includes(img.photo.id))
+          this.failedRequests.push(...failedImages)
           return
         }
 
