@@ -75,8 +75,8 @@ export class VisionTopologicalTask extends AnalyzerTask {
     logger.debug(`Llamando a ${this.model} para ${batch.length} imágenes...`)
 
     try {
-      if (this.model === 'GPT') {
-        response = await this.executeGPTTask(injectedPrompts, batch)
+      if (this.model === 'GPT' || this.model === 'Qwen') {
+        response = await this.executeModelTask(injectedPrompts, batch)
       } else if (this.model === 'Molmo') {
         response = await this.executeMolmoTask(injectedPrompts, batch)
       } else {
@@ -133,7 +133,7 @@ export class VisionTopologicalTask extends AnalyzerTask {
       logger.error(`Error guardando datos de VisionTask:`)
     }
   }
-  private async executeGPTTask(prompts: string[], batch: PhotoImage[]): Promise<any> {
+  private async executeModelTask(prompts: string[], batch: PhotoImage[]): Promise<any> {
     const prompt = prompts[0]
     const images = batch.map((pp) => ({
       type: 'image_url',
@@ -142,7 +142,9 @@ export class VisionTopologicalTask extends AnalyzerTask {
         detail: this.resolution,
       },
     }))
-    return await this.modelsService.getGPTResponse(prompt, images, 'gpt-4.1', null, 0)
+    return this.model == 'GPT'
+      ? await this.modelsService.getGPTResponse(prompt, images, 'gpt-4.1', null, 0)
+      : await this.modelsService.getQwenResponse(prompt, images, 'qwen-vl-max', null, 0)
   }
 
   private async executeMolmoTask(prompts: any[], batch: PhotoImage[]): Promise<any> {

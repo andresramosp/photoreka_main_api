@@ -102,7 +102,7 @@ export const packages = [
       {
         name: 'topological_tags',
         type: 'VisionTopologicalTask',
-        model: 'GPT',
+        model: 'Qwen',
         needsImage: true,
         sequential: false,
         resolution: 'high',

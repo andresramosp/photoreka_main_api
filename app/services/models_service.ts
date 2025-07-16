@@ -27,18 +27,15 @@ const PRICES = {
     input_cache_hit: 0.075 / 1_000_000,
     output: 0.6 / 1_000_000, // USD per output token
   },
-  'ft:gpt-4o-mini-2024-07-18:personal:refine:AlpaXAxW': {
-    input: 0.3 / 1_000_000, // USD per input token
-    output: 1.2 / 1_000_000, // USD per output token
-  },
-  'ft:gpt-4o-mini-2024-07-18:personal:curatorlab-term-expansor-v3-lr:AldGdmpv': {
-    input: 0.3 / 1_000_000, // USD per input token
-    output: 1.2 / 1_000_000, // USD per output token
-  },
   'deepseek-chat': {
     input_cache_miss: 0.27 / 1_000_000, // USD per input token
     input_cache_hit: 0.07 / 1_000_000, // USD per input token
     output: 1.1 / 1_000_000, // USD per output token
+  },
+  'qwen-vl-max': {
+    input_cache_miss: 1.6 / 1_000_000, // USD per input token (inventado)
+    input_cache_hit: 0.2 / 1_000_000, // USD per input token (inventado)
+    output: 6.4 / 1_000_000, // USD per output token (inventado)
   },
 }
 
@@ -122,7 +119,110 @@ export default class ModelsService {
     return { url, requestPayload, headers }
   }
 
-  @MeasureExecutionTime
+  public async getQwenResponse(
+    systemContent: string | null,
+    userContent: any,
+    model: string = 'qwen-vl-max',
+    responseFormat: any = { type: 'json_object' },
+    temperature: number = 0.1,
+    useCache: boolean = true
+  ): Promise<any> {
+    const cacheDuration = 60 * 5
+    try {
+      // Construcción del payload compatible con Qwen multimodal
+      let messages: any[] = []
+      if (systemContent) {
+        messages.push({
+          role: 'system',
+          content: [{ type: 'text', text: systemContent }],
+        })
+      }
+      // userContent puede ser string, objeto multimodal, o array de bloques multimodales
+      if (Array.isArray(userContent)) {
+        messages.push({
+          role: 'user',
+          content: userContent,
+        })
+      } else if (typeof userContent === 'object' && userContent !== null && userContent.type) {
+        messages.push({
+          role: 'user',
+          content: [userContent],
+        })
+      } else {
+        messages.push({
+          role: 'user',
+          content: [{ type: 'text', text: userContent }],
+        })
+      }
+
+      const payload: any = {
+        model,
+        temperature,
+        messages,
+      }
+      if (responseFormat) payload.response_format = responseFormat
+
+      const cacheKey = JSON.stringify({ systemContent, userContent, model, responseFormat })
+
+      // Check cache
+      const cachedResponse = cache.get(cacheKey)
+      if (useCache && cachedResponse) {
+        console.log('Cache hit for getQwenResponse')
+        return cachedResponse
+      }
+
+      const { data } = await axios.post(
+        'https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions',
+        payload,
+        {
+          headers: {
+            'Authorization': `Bearer ${process.env.DASHSCOPE_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      )
+
+      const rawResult = data.choices?.[0]?.message?.content
+      let parsedResult
+      try {
+        parsedResult =
+          typeof rawResult === 'string'
+            ? JSON.parse(rawResult.replace(/```(?:json)?\s*/g, '').trim())
+            : rawResult
+      } catch {
+        const jsonArrayMatch = typeof rawResult === 'string' && rawResult.match(/\[.*?\]/s)
+        const jsonObjectMatch = typeof rawResult === 'string' && rawResult.match(/\{.*?\}/s)
+        if (jsonArrayMatch) {
+          parsedResult = JSON.parse(jsonArrayMatch[0])
+        } else if (jsonObjectMatch) {
+          parsedResult = JSON.parse(jsonObjectMatch[0])
+        } else {
+          parsedResult = rawResult
+        }
+      }
+
+      const result = {
+        result: parsedResult?.result
+          ? parsedResult.result
+          : parsedResult?.results
+            ? parsedResult.results
+            : parsedResult,
+        // Qwen puede no devolver uso/coste, así que solo tokens si existen
+        cost: {
+          totalTokens: data.usage?.total_tokens,
+          promptTokens: data.usage?.prompt_tokens,
+          completionTokens: data.usage?.completion_tokens,
+        },
+      }
+
+      if (useCache) cache.set(cacheKey, { ...result, cost: '0 [cached]' }, cacheDuration)
+
+      return result
+    } catch (error) {
+      console.error('Error fetching Qwen response:', error)
+      throw error
+    }
+  }
   async adjustProximitiesByContextInference(
     term,
     texts,

@@ -196,8 +196,10 @@ export default class AnalyzerProcessRunner {
         this.run()
       } else if (hayFallidas) {
         logger.info(
-          `autoRetry: se alcanzó el máximo de intentos (${maxAttempts}). No se lanza retry_process.`
+          `autoRetry: se alcanzó el máximo de intentos (${maxAttempts}). El proceso se marca como 'finished'.`
         )
+        this.process.currentStage = 'finished'
+        await this.process.save()
       } else {
         logger.info('autoRetry activo, pero no hay fotos fallidas. No se lanza retry_process.')
       }

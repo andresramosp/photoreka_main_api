@@ -27,7 +27,7 @@ export default class PhotoManager {
   public async getPhoto(id: string) {
     const photo = await Photo.query()
       .where('id', id)
-      .preload('tags', (q) => q.preload('tag'))
+      .preload('tags', (q) => q.preload('tag').preload('parent'))
       .preload('detections')
       .preload('descriptionChunks')
       .preload('analyzerProcess')
@@ -58,7 +58,7 @@ export default class PhotoManager {
   public async getPhotosByUser(userId: string) {
     const query = Photo.query()
       .where('user_id', userId)
-      .preload('tags', (q) => q.preload('tag'))
+      .preload('tags', (q) => q.preload('tag').preload('parent'))
       .preload('detections')
       .preload('descriptionChunks')
       .preload('analyzerProcess')
@@ -144,7 +144,6 @@ export default class PhotoManager {
 
   public async getPhotosForRemakeProcess(processId: string, userId?: string): Promise<Photo[]> {
     const query = Photo.query()
-      .where('status', 'processed')
       .where('analyzer_process_id', processId)
       .preload('tags', (q) => q.preload('tag'))
       .preload('detections')

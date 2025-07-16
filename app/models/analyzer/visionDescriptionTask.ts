@@ -14,6 +14,8 @@ logger.setLevel(LogLevel.DEBUG)
 type PromptFunction = (photos: Photo[]) => string
 type Prompt = string | PromptFunction
 
+const batchDelay = 1500 // Delay between batches in milliseconds
+
 export class VisionDescriptionTask extends AnalyzerTask {
   declare prompts: Prompt[]
   declare resolution: 'low' | 'high'
@@ -48,15 +50,15 @@ export class VisionDescriptionTask extends AnalyzerTask {
     }
 
     const processBatch = async (batch: PhotoImage[], idx: number) => {
-      await this.sleep(idx * 1500)
+      await this.sleep(idx * batchDelay)
 
       let response: any
       const injectedPrompts: any = await this.injectPromptsDependencies(batch)
       logger.debug(`Llamando a ${this.model} para ${batch.length} imágenes...`)
 
       try {
-        if (this.model === 'GPT') {
-          response = await this.executeGPTTask(injectedPrompts, batch)
+        if (this.model === 'GPT' || this.model === 'Qwen') {
+          response = await this.executeModelTask(injectedPrompts, batch)
         } else if (this.model === 'Molmo') {
           response = await this.executeMolmoTask(injectedPrompts, batch)
         } else {
@@ -245,7 +247,7 @@ export class VisionDescriptionTask extends AnalyzerTask {
     logger.debug(`Datos salvados del batch para ${batchPhotos.length} imágenes`)
   }
 
-  private async executeGPTTask(prompts: string[], batch: PhotoImage[]): Promise<any> {
+  private async executeModelTask(prompts: string[], batch: PhotoImage[]): Promise<any> {
     const prompt = prompts[0]
     const images = batch.map((pp) => ({
       type: 'image_url',
@@ -254,7 +256,9 @@ export class VisionDescriptionTask extends AnalyzerTask {
         detail: this.resolution,
       },
     }))
-    return await this.modelsService.getGPTResponse(prompt, images, 'gpt-4.1', null, 0)
+    return this.model == 'GPT'
+      ? await this.modelsService.getGPTResponse(prompt, images, 'gpt-4.1', null, 0)
+      : await this.modelsService.getQwenResponse(prompt, images, 'qwen-vl-max', null, 0)
   }
 
   private async executeMolmoTask(prompts: any[], batch: PhotoImage[]): Promise<any> {

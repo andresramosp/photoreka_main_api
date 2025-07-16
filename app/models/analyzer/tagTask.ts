@@ -114,15 +114,36 @@ export class TagTask extends AnalyzerTask {
       if (embedding) this.embeddingsMap.set(tag.name, embedding)
     }
 
-    // 5. Obtener embeddings solo para los que no los tienen aún
+    // 5. Obtener embeddings solo para los que no los tienen aún con concurrencia
     const termsWithoutEmbeddings = termsArray.filter((term) => !this.embeddingsMap.has(term))
-    for (let i = 0; i < termsWithoutEmbeddings.length; i += batchEmbeddingsSize) {
-      const batch = termsWithoutEmbeddings.slice(i, i + batchEmbeddingsSize)
-      logger.debug(`Obteniendo embeddings para batch de ${batch.length} tags`)
-      const { embeddings } = await this.modelsService.getEmbeddingsCPU(batch)
-      batch.forEach((name, idx) => {
-        this.embeddingsMap.set(name, embeddings[idx])
-      })
+    if (termsWithoutEmbeddings.length > 0) {
+      const embeddingsConcurrency = 3 // concurrencia para embeddings
+      const embeddingsDelay = 1000 // 1 segundo de demora entre batches de embeddings
+      const embeddingsLimit = pLimit(embeddingsConcurrency)
+      const embeddingTasks: Promise<void>[] = []
+
+      for (let i = 0; i < termsWithoutEmbeddings.length; i += batchEmbeddingsSize) {
+        const batch = termsWithoutEmbeddings.slice(i, i + batchEmbeddingsSize)
+        const taskIndex = Math.floor(i / batchEmbeddingsSize)
+
+        const embeddingTask = embeddingsLimit(async () => {
+          if (taskIndex > 0) {
+            await new Promise((resolve) => setTimeout(resolve, embeddingsDelay))
+          }
+          logger.debug(
+            `Obteniendo embeddings para batch de ${batch.length} tags (${i + 1}-${i + batch.length} de ${termsWithoutEmbeddings.length})`
+          )
+          const { embeddings } = await this.modelsService.getEmbeddingsCPU(batch)
+
+          // Asignar embeddings a los términos
+          batch.forEach((name, idx) => {
+            this.embeddingsMap.set(name, embeddings[idx])
+          })
+        })
+        embeddingTasks.push(embeddingTask)
+      }
+
+      await Promise.all(embeddingTasks)
     }
 
     // 6. Procesar las fotos con concurrencia limitada

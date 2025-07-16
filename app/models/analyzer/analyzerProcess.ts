@@ -16,7 +16,7 @@ export type AnalyzerMode =
   | 'remake_task'
   | 'remake_process'
   | 'retry_process'
-export type ModelType = 'GPT' | 'Molmo'
+export type ModelType = 'GPT' | 'Molmo' | 'Qwen'
 export type StageType =
   | 'init'
   | 'clip_embeddings'

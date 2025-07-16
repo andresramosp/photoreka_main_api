@@ -17,8 +17,17 @@ export default class TagPhoto extends BaseModel {
   @column()
   declare category: string
 
-  @column()
-  declare area: string
+  @column({ columnName: 'area' })
+  declare private _area: string
+
+  @computed()
+  public get area(): string {
+    return this._area || this.parent?.area
+  }
+
+  public set area(value: string) {
+    this._area = value
+  }
 
   @computed()
   public get name() {
