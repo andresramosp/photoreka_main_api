@@ -51,7 +51,7 @@ export function withCache(options: CacheOptions = {}) {
         nodeCache.set(cacheKey, result, ttl)
       } else {
         await redis.set(cacheKey, JSON.stringify(result), 'EX', ttl)
-        console.log(`[withCache] Key added to redis: ${cacheKey}`)
+        // console.log(`[withCache] Key added to redis: ${cacheKey}`)
       }
       return result
     }

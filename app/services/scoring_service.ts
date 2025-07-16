@@ -28,6 +28,23 @@ interface ScoredPhoto {
   matchingChunks?: any[]
 }
 
+// Interfaces para sistema de puntuación absoluta
+interface MatchThresholds {
+  excellent: number // 90-100%
+  good: number // 70-89%
+  fair: number // 50-69%
+  poor: number // 30-49%
+  minimal: number // 10-29%
+}
+
+interface SearchComposition {
+  hasTagsWeight: boolean
+  hasDescWeight: boolean
+  hasFullQuery: boolean
+  hasNuances: boolean
+  segmentCount: number
+}
+
 const MAX_SIMILAR_TAGS = 1250
 const MAX_SIMILAR_CHUNKS = 850
 
@@ -75,6 +92,90 @@ export default class ScoringService {
     this.tagManager = new TagManager()
     this.tagPhotoManager = new TagPhotoManager()
     this.nlpService = new NLPService()
+  }
+
+  // Métodos para sistema de puntuación absoluta
+  private analyzeSearchComposition(
+    structuredQuery: any,
+    weights: any,
+    searchType: string
+  ): SearchComposition {
+    const typeWeights = weights[searchType] || weights.semantic
+
+    return {
+      hasTagsWeight: typeWeights.tags > 0,
+      hasDescWeight: typeWeights.desc > 0,
+      hasFullQuery:
+        structuredQuery.positive_segments.length > 1 &&
+        (typeWeights.fullQuery > 0 || searchType === 'semantic'),
+      hasNuances: structuredQuery.nuances_segments?.length > 0,
+      segmentCount: structuredQuery.positive_segments.length,
+    }
+  }
+
+  private getAbsoluteThresholds(composition: SearchComposition): MatchThresholds {
+    // Umbrales base
+    let base = {
+      excellent: 1.7, // 90-100%
+      good: 1.3, // 70-89%
+      fair: 0.9, // 50-69%
+      poor: 0.6, // 30-49%
+      minimal: 0.3, // 10-29%
+    }
+
+    // Ajustar según composición
+    if (composition.hasTagsWeight && composition.hasDescWeight) {
+      // Búsqueda combinada: más exigente
+      base = {
+        excellent: 2.1,
+        good: 1.6,
+        fair: 1.2,
+        poor: 0.8,
+        minimal: 0.4,
+      }
+    } else if (composition.hasTagsWeight && !composition.hasDescWeight) {
+      // Solo tags: más permisivo
+      base = {
+        excellent: 1.5,
+        good: 1.2,
+        fair: 0.9,
+        poor: 0.5,
+        minimal: 0.25,
+      }
+    }
+
+    // Ajustar si hay fullQuery
+    if (composition.hasFullQuery) {
+      Object.keys(base).forEach((key) => {
+        base[key] *= 1.2 // Aumentar umbrales porque fullQuery añade puntos
+      })
+    }
+
+    // Ajustar por número de segmentos
+    if (composition.segmentCount > 1) {
+      const segmentMultiplier = Math.sqrt(composition.segmentCount)
+      Object.keys(base).forEach((key) => {
+        base[key] *= segmentMultiplier
+      })
+    }
+
+    return base
+  }
+
+  private calculateAbsoluteMatchPercent(totalScore: number, thresholds: MatchThresholds): number {
+    if (totalScore >= thresholds.excellent) {
+      return 100
+    } else if (totalScore >= thresholds.good) {
+      return 70 + (30 * (totalScore - thresholds.good)) / (thresholds.excellent - thresholds.good)
+    } else if (totalScore >= thresholds.fair) {
+      return 50 + (20 * (totalScore - thresholds.fair)) / (thresholds.good - thresholds.fair)
+    } else if (totalScore >= thresholds.poor) {
+      return 30 + (20 * (totalScore - thresholds.poor)) / (thresholds.fair - thresholds.poor)
+    } else if (totalScore >= thresholds.minimal) {
+      return 10 + (20 * (totalScore - thresholds.minimal)) / (thresholds.poor - thresholds.minimal)
+    } else {
+      return Math.max(0, 10 * (totalScore / thresholds.minimal))
+    }
   }
 
   @withCache({
@@ -183,15 +284,18 @@ export default class ScoringService {
       })
     }
 
-    let potentialMaxScore = this.getMaxPotentialScore(structuredQuery, 'semantic', weights)
+    // Nuevo sistema de scoring absoluto
+    const searchComposition = this.analyzeSearchComposition(structuredQuery, weights, 'semantic')
+    const thresholds = this.getAbsoluteThresholds(searchComposition)
 
     const filteredSortedScores = finalScores
       .filter((scores) => scores.totalScore > 0)
       .sort((a, b) => b.totalScore - a.totalScore)
       .map((score) => ({
         ...score,
-        matchPercent: Math.min(100, (score.totalScore * 100) / potentialMaxScore),
+        matchPercent: this.calculateAbsoluteMatchPercent(score.totalScore, thresholds),
       }))
+      .filter((score) => score.matchPercent >= 10) // Opcional: filtrar resultados no relevantes
 
     return filteredSortedScores
   }
@@ -289,15 +393,22 @@ export default class ScoringService {
 
     const [finalScores] = await Promise.all([includedPromise])
 
-    const potentialMaxScore = 10 // O ajusta usando this.getMaxPotentialScore si lo prefieres
+    // Nuevo sistema de scoring absoluto para tags
+    const tagQueryStructure = {
+      positive_segments: included,
+      nuances_segments: [],
+    }
+    const searchComposition = this.analyzeSearchComposition(tagQueryStructure, weights, 'tags')
+    const thresholds = this.getAbsoluteThresholds(searchComposition)
 
     const sortedScores = finalScores
       .filter((scores) => scores.totalScore > 0)
       .sort((a, b) => b.totalScore - a.totalScore)
       .map((score) => ({
         ...score,
-        matchPercent: Math.min(100, (score.totalScore * 100) / potentialMaxScore),
+        matchPercent: this.calculateAbsoluteMatchPercent(score.totalScore, thresholds),
       }))
+      .filter((score) => score.matchPercent >= 10) // Opcional: filtrar resultados no relevantes
 
     return sortedScores
   }
@@ -363,15 +474,27 @@ export default class ScoringService {
     })()
 
     const [finalScores] = await Promise.all([includedPromise])
-    const potentialMaxScore = 10
+
+    // Nuevo sistema de scoring absoluto para topológico
+    const topoQueryStructure = {
+      positive_segments: filledAreas.map((a) => a.content),
+      nuances_segments: [],
+    }
+    const searchComposition = this.analyzeSearchComposition(
+      topoQueryStructure,
+      weights,
+      'topological'
+    )
+    const thresholds = this.getAbsoluteThresholds(searchComposition)
 
     const sortedScores = finalScores
       .filter((scores) => scores.totalScore > 0)
       .sort((a, b) => b.totalScore - a.totalScore)
       .map((score) => ({
         ...score,
-        matchPercent: Math.min(100, (score.totalScore * 100) / potentialMaxScore),
+        matchPercent: this.calculateAbsoluteMatchPercent(score.totalScore, thresholds),
       }))
+      .filter((score) => score.matchPercent >= 10) // Opcional: filtrar resultados no relevantes
 
     const photoModels = await Photo.query().whereIn(
       'id',
