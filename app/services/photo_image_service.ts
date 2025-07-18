@@ -103,7 +103,7 @@ export default class PhotoImageService {
             return pp
           } catch (error) {
             console.warn(`No se pudo obtener la imagen ${photo.name} desde R2`, error)
-            return null
+            throw error // Re-throw to handle it in the calling function
           }
         })
       )
@@ -141,7 +141,7 @@ export default class PhotoImageService {
             return ppGuide
           } catch (error) {
             console.warn(`No se pudo procesar la imagen con guía ${photo.name}`, error)
-            return null
+            throw error // Re-throw to handle it in the calling function
           }
         })
       )

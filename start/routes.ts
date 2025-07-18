@@ -32,6 +32,11 @@ const SearchController = () => import('#controllers/search_controller')
 const TagsController = () => import('#controllers/tags_controller')
 const EmbeddingController = () => import('#controllers/embeddings_controller')
 
+// Endpoints health (sin auth)
+router.get('/api/analyzer/health/user', [AnalyzerController, 'healthForUser'])
+router.get('/api/analyzer/health/photo', [AnalyzerController, 'healthForPhoto'])
+router.get('/api/analyzer/health/process', [AnalyzerController, 'healthForProcess'])
+
 // Protected API routes (require authentication)
 router
   .group(() => {
@@ -47,8 +52,6 @@ router
     router.post('/api/catalog/deleteDuplicates', [CatalogController, 'deleteDuplicates'])
 
     router.post('/api/analyzer/', [AnalyzerController, 'analyze'])
-    router.get('/api/analyzer/health/user', [AnalyzerController, 'healthForUser'])
-    router.get('/api/analyzer/health/process', [AnalyzerController, 'healthForProcess'])
     router.post('/api/embeddings/', [EmbeddingController, 'getEmbeddings'])
 
     router.get('/api/analyzer-process', [AnalyzerProcessController, 'getAll'])

@@ -10,6 +10,7 @@ import { invalidateCache } from '../decorators/withCache.js'
 import chalk from 'chalk' // ← NUEVO
 import PhotoManager from '../managers/photo_manager.js'
 import HealthPhotoService from './health_photo_service.js'
+import { has } from 'lodash'
 
 const logger = Logger.getInstance('AnalyzerProcess')
 logger.setLevel(LogLevel.DEBUG)
@@ -79,8 +80,9 @@ export default class AnalyzerProcessRunner {
    * Ejecuta todas las tasks: primero las no globales, luego las globales
    */
   public async runAll() {
-    await this.run()
+    const { hasFailed } = await this.run()
     await this.runGlobal()
+    return { hasFailed }
   }
 
   /**
@@ -136,6 +138,8 @@ export default class AnalyzerProcessRunner {
     }
 
     this.handleAutoRetry()
+
+    return { hasFailed, processId: this.process.id }
   }
 
   /**

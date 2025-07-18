@@ -4,7 +4,6 @@ import PhotoManager from '../../managers/photo_manager.js'
 import { AnalyzerTask } from './analyzerTask.js'
 import PhotoImage from './photoImage.js'
 import Logger, { LogLevel } from '../../utils/logger.js'
-import ModelsService from '../../services/models_service.js'
 import AnalyzerProcess, { ProcessSheet } from './analyzerProcess.js'
 import pLimit from 'p-limit'
 
@@ -30,10 +29,7 @@ export class VisionDescriptionTask extends AnalyzerTask {
 
   async process(pendingPhotos: PhotoImage[], analyzerProcess: AnalyzerProcess): Promise<void> {
     this.analyzerProcess = analyzerProcess
-    if (
-      analyzerProcess.isFastMode ||
-      (analyzerProcess.mode == 'retry_process' && pendingPhotos.length < 5)
-    ) {
+    if (analyzerProcess.isFastMode || pendingPhotos.length < 10) {
       await this.processWithDirectAPI(pendingPhotos)
     } else {
       await this.processWithBatchAPI(pendingPhotos)
@@ -190,7 +186,7 @@ export class VisionDescriptionTask extends AnalyzerTask {
 
       status = 'in_progress'
       // Espera hasta que el batch cambie de estado o se agoten los reintentos
-      while (status === 'in_progress' || status === 'finalizing') {
+      while (status === 'in_progress' || status === 'finalizing' || status === 'validating') {
         await this.sleep(5000)
         status = await this.modelsService.getBatchStatus(batchId)
       }

@@ -81,6 +81,28 @@ export default class AnalyzerController {
     }
   }
 
+  /**
+   * Devuelve el health de una foto por su ID
+   * GET /api/analyzer/health/photo?photoId=123
+   */
+  public async healthForPhoto({ request, response, auth }: HttpContext) {
+    try {
+      await auth.use('api').check()
+      const user = auth.use('api').user! as any
+      const photoId = Number(request.qs().photoId)
+      if (!photoId) return response.badRequest({ message: 'Missing photoId' })
+
+      // Opcional: validar que la foto pertenezca al usuario autenticado
+      // const photo = await Photo.query().where('id', photoId).where('user_id', user.id).first()
+      // if (!photo) return response.notFound({ message: 'Photo not found or not owned by user' })
+
+      const report = await HealthPhotoService.photoHealth(photoId)
+      return response.ok({ photoId, ...report })
+    } catch (error) {
+      logger.error('Error obteniendo health de foto:', error)
+      return response.internalServerError({ message: 'Something went wrong', error: error.message })
+    }
+  }
   public async healthForUser({ request, response, auth }: HttpContext) {
     try {
       await auth.use('api').check()

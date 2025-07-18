@@ -54,7 +54,7 @@ export default class HealthPhotoService {
     push('photo.color_histogram', !!photo.colorHistogram) // O el campo correcto donde almacenes el histograma
     push(
       'tags.topological',
-      photo.tags.some((t) => t.area !== null && t.area !== '')
+      photo.tags.some((t) => t.area !== null && t.area !== '' && t.area !== undefined)
     )
 
     photo.tags.forEach((t) =>
