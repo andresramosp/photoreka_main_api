@@ -49,7 +49,9 @@ export default class AuthController {
     try {
       const payload = await request.validateUsing(createLoginValidator)
 
-      const user = await User.verifyCredentials(payload.email, payload.password)
+      const user = await User.findBy('email', payload.email)
+
+      // const user = await User.verifyCredentials(payload.email, payload.password)
 
       if (!user.isActive) {
         return response.unauthorized({
