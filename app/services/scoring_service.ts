@@ -864,7 +864,7 @@ export default class ScoringService {
           proximity: ap.embeddingsProximity + scaledBonus,
         }
       })
-      return result.filter((element) => element.proximity > 0)
+      return result.filter((element) => element.proximity > 0.9)
     }
   }
 

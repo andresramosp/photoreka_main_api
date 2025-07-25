@@ -4,7 +4,7 @@ import MeasureExecutionTime from '../decorators/measureExecutionTime.js'
 import { withCache } from '../decorators/withCache.js'
 import withCost from '../decorators/withCost.js'
 import {
-  MESSAGE_QUERY_NO_PREFIX,
+  MESSAGE_QUERY_NO_PREFIX_AND_TRANSLATION,
   MESSAGE_QUERY_STRUCTURE,
   MESSAGE_QUERY_STRUCTURE_CURATION,
 } from '../utils/prompts/query.js'
@@ -66,8 +66,9 @@ export default class QueryService {
 
     const queryStuctureMessage =
       searchMode == 'curation' ? MESSAGE_QUERY_STRUCTURE_CURATION : MESSAGE_QUERY_STRUCTURE
+
     const { result: modelOneResult, cost: modelOneCost } = await this.modelsService.getGPTResponse(
-      MESSAGE_QUERY_NO_PREFIX,
+      MESSAGE_QUERY_NO_PREFIX_AND_TRANSLATION,
       JSON.stringify({ query }),
       'gpt-4o-mini'
     )
@@ -75,7 +76,7 @@ export default class QueryService {
     const { result: modelResult, cost: modelTwoCost } = await this.modelsService.getGPTResponse(
       queryStuctureMessage,
       JSON.stringify({ query: modelOneResult.no_prefix }),
-      'gpt-4o-mini' //'curation' ? 'gpt-4.1' : 'gpt-4o-mini'
+      searchMode == 'curation' ? 'gpt-4.1' : 'gpt-4o-mini'
     )
 
     modelResult.original = query

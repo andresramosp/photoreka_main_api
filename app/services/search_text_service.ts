@@ -35,6 +35,8 @@ export type SearchOptions = {
   pageSize: number
   minMatchScore?: number
   userId?: number
+  maxPageAttempts?: number
+  minResults?: number
 }
 
 export type SearchTagsOptions = SearchOptions & {
@@ -74,7 +76,14 @@ export default class SearchTextService {
       iteration: 1,
     }
   ) {
-    let { searchMode, pageSize, iteration, minMatchScore } = options
+    let {
+      searchMode,
+      pageSize,
+      iteration,
+      minMatchScore,
+      maxPageAttempts = 4,
+      minResults,
+    } = options
 
     const photoIds = await this.photoManager.getPhotosIdsByUser(userId?.toString())
 
@@ -90,7 +99,7 @@ export default class SearchTextService {
     let embeddingScoredPhotos = await this.scoringService.getScoredPhotosByTagsAndDesc(
       photoIds,
       structuredResult,
-      searchMode,
+      searchMode == 'curation' ? 'low_precision' : searchMode,
       userId?.toString()
     )
 
@@ -119,7 +128,6 @@ export default class SearchTextService {
       }
 
       const batchSize = 3
-      const maxPageAttempts = 4
 
       let photoBatches = []
       for (let i = 0; i < paginatedPhotos.length; i += batchSize) {
@@ -162,6 +170,10 @@ export default class SearchTextService {
         data: {
           results: { [iteration - 1]: photosResult },
           hasMore,
+          finished: !(
+            attempts < maxPageAttempts &&
+            photosResult.filter((p) => p.matchScore >= minMatchScore).length === 0
+          ),
           cost: { expansionCost, modelCosts },
           iteration: iteration - 1,
           structuredResult,
@@ -177,7 +189,11 @@ export default class SearchTextService {
       }
 
       await this.sleep(750)
-    } while (!photosResult.some((p) => p.matchScore >= minMatchScore))
+    } while (
+      attempts < maxPageAttempts &&
+      photosResult.filter((p) => p.matchScore >= minMatchScore).length == 0
+      //photosResult.length < minResults
+    )
   }
 
   //   @withCostWS

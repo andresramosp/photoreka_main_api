@@ -53,7 +53,7 @@ export default class AuthController {
 
       // const user = await User.verifyCredentials(payload.email, payload.password)
 
-      if (!user.isActive) {
+      if (!user!.isActive) {
         return response.unauthorized({
           message: 'Account is inactive',
         })
