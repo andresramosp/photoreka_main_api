@@ -33,7 +33,7 @@ non english language, translate it to English.
   #### Example 4:
 **Input**:
 {
-  "query": "someone kidding on someone",
+  "query": "alguien bromeando con alguien",
 }
 **Output**:
 {
