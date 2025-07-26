@@ -111,7 +111,7 @@ export default class SearchTextService {
       )
 
       yield {
-        type: 'matches',
+        type: searchMode !== 'curation' ? 'search-matches' : 'curation-matches',
         data: {
           hasMore,
           results: {
@@ -218,7 +218,7 @@ export default class SearchTextService {
     )
 
     yield {
-      type: 'matches',
+      type: 'search-matches',
       data: {
         hasMore,
         results: {
@@ -255,7 +255,7 @@ export default class SearchTextService {
     )
 
     yield {
-      type: 'matches',
+      type: 'search-matches',
       data: {
         hasMore,
         results: {
