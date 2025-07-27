@@ -1,4 +1,5 @@
 import User from '#models/user'
+import { WHITELIST_EMAILS } from '#config/whitelist_emails'
 import {
   changePasswordValidator,
   createAuthValidator,
@@ -14,6 +15,13 @@ export default class AuthController {
   async register({ request, response }: HttpContext) {
     try {
       const payload = await request.validateUsing(createAuthValidator)
+
+      // Verificar si el email está en la whitelist
+      if (!WHITELIST_EMAILS.includes(payload.email)) {
+        return response.unauthorized({
+          message: 'Unauthorized email for registration. Please request access.',
+        })
+      }
 
       const user = await User.create({
         name: payload.name,
@@ -49,11 +57,25 @@ export default class AuthController {
     try {
       const payload = await request.validateUsing(createLoginValidator)
 
+      // Verificar si el email está en la whitelist
+      if (!WHITELIST_EMAILS.includes(payload.email)) {
+        return response.unauthorized({
+          message: 'Unauthorized email. Please request access.',
+        })
+      }
+
       const user = await User.findBy('email', payload.email)
+
+      // Si el usuario no existe
+      if (!user) {
+        return response.unauthorized({
+          message: 'Credenciales inválidas',
+        })
+      }
 
       // const user = await User.verifyCredentials(payload.email, payload.password)
 
-      if (!user!.isActive) {
+      if (!user.isActive) {
         return response.unauthorized({
           message: 'Account is inactive',
         })

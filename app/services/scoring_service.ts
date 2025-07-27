@@ -57,8 +57,8 @@ const getWeights = (isCuration: boolean) => {
       embeddingsTagsThreshold: 0.15,
     },
     semantic: {
-      tags: isCuration ? 0 : 0.4,
-      desc: isCuration ? 1 : 0.6,
+      tags: isCuration ? 0 : 0.35,
+      desc: isCuration ? 1 : 0.65,
       fullQuery: 2,
       embeddingsTagsThreshold: 0.13,
       embeddingsDescsThreshold: 0.17,
