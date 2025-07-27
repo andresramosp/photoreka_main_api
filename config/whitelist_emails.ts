@@ -4,5 +4,6 @@ export const WHITELIST_EMAILS = [
   'sebko@posteo.de',
   'antoko@telefonica.net',
   'andreschennai@gmail.com',
+  'alfonso.alonso.moreno@protonmail.com',
   // Agrega más emails aquí
 ]
