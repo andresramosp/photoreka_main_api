@@ -114,7 +114,13 @@ export const packages = [
       },
     ],
   },
-
+  // PAYLOAD:
+  // {
+  //     "userId": "1234",
+  //     "packageId": "global_embeddings",
+  //     "mode": "global",
+  //     "isGlobal": true
+  // }
   {
     id: 'global_embeddings',
     isPreprocess: false,

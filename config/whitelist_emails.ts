@@ -6,5 +6,6 @@ export const WHITELIST_EMAILS = [
   'andreschennai@gmail.com',
   'alfonso.alonso.moreno@protonmail.com',
   'emiernest@gmail.com',
+  'pruebas@photoreka.com',
   // Agrega más emails aquí
 ]

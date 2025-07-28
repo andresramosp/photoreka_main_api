@@ -94,7 +94,7 @@ export default class AnalyzerProcessRunner {
     const tasks = this.process.tasks.filter((t) => !t.isGlobal)
     if (tasks.length === 0) {
       logger.info('No hay tareas para ejecutar en este proceso')
-      return
+      return { hasFailed: false, processId: this.process.id }
     }
     // Precargar health en paralelo solo si es retry_process
     if (this.process.mode === 'retry_process') {

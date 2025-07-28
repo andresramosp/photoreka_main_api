@@ -162,7 +162,7 @@ export default class PhotoManager {
     const query = Photo.query()
       .where('analyzer_process_id', processId)
       .preload('tags', (q) => q.preload('tag'))
-      .preload('detections')
+      // .preload('detections')
       .preload('descriptionChunks')
       .preload('analyzerProcess')
       .orderBy('created_at', 'desc')

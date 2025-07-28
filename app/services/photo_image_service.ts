@@ -62,9 +62,9 @@ export default class PhotoImageService {
     process: AnalyzerProcess,
     useGuides: boolean = false
   ): Promise<PhotoImage[]> {
-    if (process.mode == 'retry_process') {
-      this.clearCache(process.id)
-    }
+    // if (process.mode == 'retry_process') {
+    //   this.clearCache(process.id)
+    // }
     const cacheKey = `${process.id}_${useGuides}`
 
     if (!this.imageCache.has(cacheKey)) {
@@ -96,6 +96,21 @@ export default class PhotoImageService {
         limit(async () => {
           try {
             const buffer = await this.getImageBufferFromR2(photo.name)
+            // Obtener tamaño en MB
+            const sizeMB = (buffer.length / (1024 * 1024)).toFixed(2)
+            // Obtener dimensiones con sharp
+            let width = 0,
+              height = 0
+            try {
+              const metadata = await sharp(buffer).metadata()
+              width = metadata.width || 0
+              height = metadata.height || 0
+            } catch (err) {
+              logger.warn(`No se pudo obtener metadata de la imagen ${photo.name}`, err)
+            }
+            logger.info(
+              `Imagen ${photo.name}: tamaño ${sizeMB} MB, dimensiones ${width}x${height} px`
+            )
             const base64Image = buffer.toString('base64')
             const pp = new PhotoImage()
             pp.photo = photo

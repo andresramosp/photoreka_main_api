@@ -19,14 +19,16 @@ export class VisualEmbeddingTask extends AnalyzerTask {
       this.data = {}
     }
 
+    const batchSize = 12
+
     let photosToProcess = pendingPhotos
     if (this.onlyIfNeeded) {
       photosToProcess = pendingPhotos.filter((pi) => pi.photo.embedding == null)
     }
 
-    for (let i = 0; i < photosToProcess.length; i += 16) {
+    for (let i = 0; i < photosToProcess.length; i += batchSize) {
       await this.sleep(250)
-      const batch = photosToProcess.slice(i, i + 16)
+      const batch = photosToProcess.slice(i, i + batchSize)
       const payload = batch.map((pi) => ({ id: pi.photo.id, base64: pi.base64 }))
       const { embeddings } = await this.modelsService.getEmbeddingsImages(payload)
 

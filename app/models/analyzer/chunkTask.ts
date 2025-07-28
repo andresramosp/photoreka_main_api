@@ -106,32 +106,45 @@ export class ChunkTask extends AnalyzerTask {
       // Obtener embeddings para el lote actual
       const allChunks = Object.values(this.data).flat()
       if (allChunks.length > 0) {
-        const limit = pLimit(embeddingsConcurrency)
-        const embeddingTasks: Promise<void>[] = []
+        // Verificar qué chunks ya tienen embeddings
+        const chunksWithoutEmbeddings = await this.filterChunksWithoutEmbeddings(allChunks)
+        const skippedChunks = allChunks.length - chunksWithoutEmbeddings.length
 
-        for (let j = 0; j < allChunks.length; j += batchEmbeddingsSize) {
-          const batch = allChunks.slice(j, j + batchEmbeddingsSize)
-          const taskIndex = Math.floor(j / batchEmbeddingsSize)
-
-          const embeddingTask = limit(async () => {
-            if (taskIndex > 0) {
-              await new Promise((resolve) => setTimeout(resolve, embeddingsDelay))
-            }
-            const texts = batch.map((chunk) => chunk.chunk)
-            logger.info(
-              `Obteniendo embeddings para batch de ${texts.length} chunks (${j + 1}-${j + texts.length} de ${allChunks.length})`
-            )
-            const { embeddings } = await this.modelsService.getEmbeddingsCPU(texts)
-
-            // Asignar embeddings a los chunks
-            batch.forEach((chunk, index) => {
-              chunk.embedding = embeddings[index]
-            })
-          })
-          embeddingTasks.push(embeddingTask)
+        if (skippedChunks > 0) {
+          logger.info(`Omitiendo ${skippedChunks} chunks que ya tienen embeddings`)
         }
 
-        await Promise.all(embeddingTasks)
+        if (chunksWithoutEmbeddings.length > 0) {
+          const limit = pLimit(embeddingsConcurrency)
+          const embeddingTasks: Promise<void>[] = []
+
+          for (let j = 0; j < chunksWithoutEmbeddings.length; j += batchEmbeddingsSize) {
+            const batch = chunksWithoutEmbeddings.slice(j, j + batchEmbeddingsSize)
+            const taskIndex = Math.floor(j / batchEmbeddingsSize)
+
+            const embeddingTask = limit(async () => {
+              if (taskIndex > 0) {
+                await new Promise((resolve) => setTimeout(resolve, embeddingsDelay))
+              }
+              const texts = batch.map((chunk) => chunk.chunk)
+              logger.info(
+                `Obteniendo embeddings para batch de ${texts.length} chunks (${j + 1}-${j + texts.length} de ${chunksWithoutEmbeddings.length})`
+              )
+              const { embeddings } = await this.modelsService.getEmbeddingsCPU(texts)
+
+              // Asignar embeddings a los chunks
+              batch.forEach((chunk, index) => {
+                chunk.embedding = embeddings[index]
+              })
+            })
+            embeddingTasks.push(embeddingTask)
+          }
+
+          await Promise.all(embeddingTasks)
+        } else {
+          logger.info('Todos los chunks ya tienen embeddings, omitiendo cálculo de embeddings')
+        }
+
         // Hacer commit parcial del lote actual
         await this.commit(photoBatch)
       }
@@ -187,5 +200,31 @@ export class ChunkTask extends AnalyzerTask {
     if (currentChunk) chunks.push(currentChunk)
 
     return chunks
+  }
+
+  private async filterChunksWithoutEmbeddings(
+    chunks: DescriptionChunk[]
+  ): Promise<DescriptionChunk[]> {
+    const chunksWithoutEmbeddings: DescriptionChunk[] = []
+
+    for (const chunk of chunks) {
+      // Buscar si existe un chunk idéntico (mismo texto y categoría) que ya tenga embedding
+      const existingChunk = await DescriptionChunk.query()
+        .where('chunk', chunk.chunk)
+        .where('category', chunk.category)
+        .whereNotNull('embedding')
+        .first()
+
+      if (existingChunk) {
+        // Chunk idéntico ya tiene embedding, copiarlo y omitir cálculo
+        chunk.embedding = existingChunk.embedding
+        logger.debug(`Chunk omitido (ya tiene embedding): "${chunk.chunk.substring(0, 50)}..."`)
+      } else {
+        // Chunk no tiene embedding, añadir a la lista para procesamiento
+        chunksWithoutEmbeddings.push(chunk)
+      }
+    }
+
+    return chunksWithoutEmbeddings
   }
 }

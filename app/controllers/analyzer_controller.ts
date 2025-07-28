@@ -29,6 +29,7 @@ export default class AnalyzerController {
         fastMode,
         inmediate = true,
         photoIds,
+        isGlobal = false,
       } = request.body()
 
       // Obtener isPreprocess del package configuration
@@ -46,11 +47,11 @@ export default class AnalyzerController {
       let photos = []
       if (Array.isArray(photoIds) && photoIds.length > 0) {
         photos = await photoManager.getPhotosByIds(photoIds, realUserId)
-      } else {
+      } else if (!isGlobal) {
         photos = await photoManager.getPhotosForAnalysis(mode, processId, realUserId, isPreprocess)
       }
 
-      if (photos.length) {
+      if (photos.length || isGlobal) {
         await analyzerService.initProcess(photos, packageId, mode, fastMode, processId, realUserId)
 
         if (inmediate) {
@@ -60,7 +61,11 @@ export default class AnalyzerController {
             )
             await analyzerService.runAll()
           } else {
-            analyzerService.runAll()
+            if (!isGlobal) {
+              analyzerService.runAll()
+            } else {
+              analyzerService.runGlobal()
+            }
             logger.info(`Análisis ejecutado inmediatamente para usuario ${realUserId}`)
           }
         } else {
@@ -105,11 +110,6 @@ export default class AnalyzerController {
   }
   public async healthForUser({ request, response, auth }: HttpContext) {
     try {
-      await auth.use('api').check()
-      const user = auth.use('api').user! as any
-      const realUserId = user.id
-
-      // Permitir override del userId desde query params para casos específicos
       const queryUserId = request.qs().userId
       const userId = queryUserId ? Number(queryUserId) : realUserId
 

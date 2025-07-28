@@ -158,7 +158,8 @@ export class VisionDescriptionTask extends AnalyzerTask {
         const userContent = batch.map((photoImage) => ({
           type: 'image_url',
           image_url: {
-            url: `data:image/jpeg;base64,${photoImage.base64}`,
+            url: photoImage.photo.originalUrl,
+            // url: `data:image/jpeg;base64,${photoImage.base64}`,
             detail: this.resolution,
           },
         }))
@@ -248,7 +249,7 @@ export class VisionDescriptionTask extends AnalyzerTask {
     const images = batch.map((pp) => ({
       type: 'image_url',
       image_url: {
-        url: `data:image/jpeg;base64,${pp.base64}`,
+        url: pp.photo.originalUrl, //`data:image/jpeg;base64,${pp.base64}`,
         detail: this.resolution,
       },
     }))
