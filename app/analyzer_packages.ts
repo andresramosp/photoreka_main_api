@@ -38,7 +38,6 @@ export const packages = [
   },
 
   {
-    // Context + Story + Accents en una sola llamada GPT
     id: 'process',
     isPreprocess: false, // Package normal de análisis
     tasks: [
@@ -99,19 +98,19 @@ export const packages = [
         needsImage: true,
         checks: ['photo.color_histogram'],
       },
-      // {
-      //   name: 'topological_tags',
-      //   type: 'VisionTopologicalTask',
-      //   model: 'GPT', // probar Qwen con tags de GPT
-      //   needsImage: true,
-      //   sequential: false,
-      //   resolution: 'high',
-      //   prompts: [MESSAGE_ANALYZER_GPT_TOPOLOGIC_TAGS],
-      //   imagesPerBatch: 4,
-      //   useGuideLines: true,
-      //   promptDependentField: null,
-      //   checks: ['tags.topological'],
-      // },
+      {
+        name: 'topological_tags',
+        type: 'VisionTopologicalTask',
+        model: 'GPT', // probar Qwen con tags de GPT
+        needsImage: true,
+        sequential: false,
+        resolution: 'high',
+        prompts: [MESSAGE_ANALYZER_GPT_TOPOLOGIC_TAGS],
+        imagesPerBatch: 4,
+        useGuideLines: true,
+        promptDependentField: null,
+        checks: ['tags.topological'],
+      },
     ],
   },
   // PAYLOAD:

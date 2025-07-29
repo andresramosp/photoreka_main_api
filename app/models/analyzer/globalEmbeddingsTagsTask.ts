@@ -29,7 +29,7 @@ export class GlobalEmbeddingsTagsTask extends AnalyzerTask {
       return
     }
 
-    const batchEmbeddingsSize = 200
+    const batchEmbeddingsSize = 150
     const tagNames = this.tagsToProcess.map((tag) => tag.name)
 
     logger.info(

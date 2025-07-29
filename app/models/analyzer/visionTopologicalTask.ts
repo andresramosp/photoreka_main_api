@@ -203,9 +203,6 @@ export class VisionTopologicalTask extends AnalyzerTask {
   }
 
   private async processSingleBatch(batchPhotos: PhotoImage[]): Promise<void> {
-    const prompts = this.prompts.map((p) =>
-      typeof p === 'function' ? p(batchPhotos.map((b) => b.photo)) : p
-    )
     const imagesPerRequest = 4
     const maxRetries = 3
     let attempt = 0
@@ -220,6 +217,12 @@ export class VisionTopologicalTask extends AnalyzerTask {
       for (let j = 0; j < batchPhotos.length; j += imagesPerRequest) {
         const batch = batchPhotos.slice(j, j + imagesPerRequest)
         const customId = batch.map((p) => p.photo.id).join('-')
+
+        // ✅ Generar prompt específico para este sub-batch de 4 fotos
+        const batchSpecificPrompts = this.prompts.map((p) =>
+          typeof p === 'function' ? p(batch.map((b) => b.photo)) : p
+        )
+
         const userContent = batch.map((photoImage) => ({
           type: 'image_url',
           image_url: {
@@ -238,7 +241,7 @@ export class VisionTopologicalTask extends AnalyzerTask {
             response_format: { type: 'json_object' },
             max_tokens: 15000,
             messages: [
-              { role: 'system', content: prompts[0] },
+              { role: 'system', content: batchSpecificPrompts[0] },
               { role: 'user', content: userContent },
             ],
           },

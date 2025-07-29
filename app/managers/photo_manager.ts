@@ -324,6 +324,9 @@ export default class PhotoManager {
     const photos = await Photo.query().whereIn('id', ids)
     if (!photos.length) throw new Error('No photos found')
 
+    // Elimina de golpe con raw query
+    await db.from('photos').whereIn('id', ids).delete()
+
     const objectsToDelete: string[] = []
     for (const photo of photos) {
       objectsToDelete.push(photo.name)
@@ -331,7 +334,7 @@ export default class PhotoManager {
     }
 
     try {
-      await s3.send(
+      s3.send(
         new DeleteObjectsCommand({
           Bucket: process.env.R2_BUCKET,
           Delete: {
@@ -344,13 +347,8 @@ export default class PhotoManager {
       console.warn('⚠️ Fallo al eliminar archivos en R2:', err)
     }
 
-    // Elimina de golpe con raw query
-    await db.from('photos').whereIn('id', ids).delete()
-
-    // Invalida la caché según tus necesidades
-    const finalUserId = userId // Fallback temporal
-    await invalidateCache(`getPhotos_${finalUserId}`)
-    await invalidateCache(`getPhotosIdsByUser_${finalUserId}`)
+    await invalidateCache(`getPhotos_${userId}`)
+    await invalidateCache(`getPhotosIdsByUser_${userId}`)
 
     return { message: 'Photos deleted successfully', ids }
   }
