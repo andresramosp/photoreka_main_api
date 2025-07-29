@@ -255,8 +255,8 @@ export class TagTask extends AnalyzerTask {
           const progress = Math.floor(((index + 1) / totalPhotos) * 100)
           logger.debug(`Procesada imagen ${photo.id} (${progress}%)`)
         } catch (err) {
-          logger.error(`Error en ${this.name} -> ${err}`)
-          throw err
+          logger.error(`Error procesando foto ${photo.id}: ${err}`)
+          // No hacer throw - continuar con las demás fotos
         }
       })
     )
