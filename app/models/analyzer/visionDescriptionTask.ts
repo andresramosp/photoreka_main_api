@@ -159,7 +159,6 @@ export class VisionDescriptionTask extends AnalyzerTask {
           type: 'image_url',
           image_url: {
             url: photoImage.photo.originalUrl,
-            // url: `data:image/jpeg;base64,${photoImage.base64}`,
             detail: this.resolution,
           },
         }))
@@ -221,7 +220,7 @@ export class VisionDescriptionTask extends AnalyzerTask {
 
         const photoIds = res.custom_id.split('-').map(Number)
 
-        if (!Array.isArray(parsed) || Math.random() < 0.2) {
+        if (!Array.isArray(parsed)) {
           logger.error(`Error: la respuesta no es un array para el batch ${res.custom_id}`)
           // Agregar las imágenes fallidas a failedRequests
           const failedImages = batchPhotos.filter((img) => photoIds.includes(img.photo.id))

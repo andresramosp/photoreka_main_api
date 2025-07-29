@@ -108,9 +108,9 @@ export default class PhotoImageService {
             } catch (err) {
               logger.warn(`No se pudo obtener metadata de la imagen ${photo.name}`, err)
             }
-            logger.info(
-              `Imagen ${photo.name}: tamaño ${sizeMB} MB, dimensiones ${width}x${height} px`
-            )
+            // logger.info(
+            //   `Imagen ${photo.name}: tamaño ${sizeMB} MB, dimensiones ${width}x${height} px`
+            // )
             const base64Image = buffer.toString('base64')
             const pp = new PhotoImage()
             pp.photo = photo

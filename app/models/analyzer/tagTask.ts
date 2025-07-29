@@ -240,12 +240,6 @@ export class TagTask extends AnalyzerTask {
           )
           const { tags: tagList } = extractedTagsResponse
 
-          // Asegurar "no people" si no hay grupo 'person'
-          const hasPerson = tagList.some((t: string) => t.split('|')[1]?.trim() === 'person')
-          if (!hasPerson) {
-            tagList.push('no people | misc')
-          }
-
           this.data[photo.id] = []
 
           tagList.forEach((tagStr: string) => {

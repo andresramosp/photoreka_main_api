@@ -286,7 +286,7 @@ export class VisionTopologicalTask extends AnalyzerTask {
 
         const photoIds = res.custom_id.split('-').map(Number)
 
-        if (!Array.isArray(parsed) || Math.random() < 0.2) {
+        if (!Array.isArray(parsed)) {
           logger.error(`Error: la respuesta no es un array para el batch ${res.custom_id}`)
           // Agregar las imágenes fallidas a failedRequests
           const failedImages = batchPhotos.filter((img) => photoIds.includes(img.photo.id))
