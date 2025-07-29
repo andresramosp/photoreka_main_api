@@ -218,7 +218,7 @@ export class ChunkTask extends AnalyzerTask {
       if (existingChunk) {
         // Chunk idéntico ya tiene embedding, copiarlo y omitir cálculo
         chunk.embedding = existingChunk.embedding
-        logger.debug(`Chunk omitido (ya tiene embedding): "${chunk.chunk.substring(0, 50)}..."`)
+        // logger.debug(`Chunk omitido (ya tiene embedding): "${chunk.chunk.substring(0, 50)}..."`)
       } else {
         // Chunk no tiene embedding, añadir a la lista para procesamiento
         chunksWithoutEmbeddings.push(chunk)

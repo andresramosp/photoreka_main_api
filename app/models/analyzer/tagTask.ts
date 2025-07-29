@@ -223,15 +223,17 @@ export class TagTask extends AnalyzerTask {
   }
 
   private async requestTagsFromGPT(photos: Photo[], cleanedResults: string[]) {
-    const tagRequests: Promise<void>[] = []
     const totalPhotos = photos.length
+    const concurrencyLimit = 10
 
-    logger.debug(`Llamadas individuales a GPT para ${photos.length} imágenes`)
+    logger.debug(
+      `Llamadas individuales a GPT para ${photos.length} imágenes (máximo ${concurrencyLimit} en paralelo)`
+    )
 
-    photos.forEach((photo, index) => {
-      const requestPromise = (async () => {
-        await this.sleep(index * 500)
+    const limit = pLimit(concurrencyLimit)
 
+    const tagRequests = photos.map((photo, index) =>
+      limit(async () => {
         try {
           const { result: extractedTagsResponse } = await this.modelsService.getGPTResponse(
             this.prompt as string,
@@ -249,20 +251,17 @@ export class TagTask extends AnalyzerTask {
             newTag.group = group
             this.data[photo.id].push(newTag)
           })
+
+          const progress = Math.floor(((index + 1) / totalPhotos) * 100)
+          logger.debug(`Procesada imagen ${photo.id} (${progress}%)`)
         } catch (err) {
           logger.error(`Error en ${this.name} -> ${err}`)
           throw err
         }
-
-        const progress = Math.floor(((index + 1) / totalPhotos) * 100)
-        // process.stdout.write(`[${photo.id}] ${progress}% `)
-      })()
-
-      tagRequests.push(requestPromise)
-    })
+      })
+    )
 
     await Promise.all(tagRequests)
-    // process.stdout.write('\n')
   }
 
   private getSourceTextFromPhoto(photo: Photo) {
