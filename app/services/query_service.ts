@@ -7,6 +7,7 @@ import {
   MESSAGE_QUERY_NO_PREFIX_AND_TRANSLATION,
   MESSAGE_QUERY_STRUCTURE,
   MESSAGE_QUERY_STRUCTURE_CURATION,
+  MESSAGE_QUERY_STRUCTURE_CURATION_IMPLICIT_ONLY,
 } from '../utils/prompts/query.js'
 import AnalyzerService from './analyzer_service.js'
 import VectorService from './vector_service.js'
@@ -65,7 +66,9 @@ export default class QueryService {
     let expansionCost = 0
 
     const queryStuctureMessage =
-      searchMode == 'curation' ? MESSAGE_QUERY_STRUCTURE_CURATION : MESSAGE_QUERY_STRUCTURE
+      searchMode == 'curation'
+        ? MESSAGE_QUERY_STRUCTURE_CURATION_IMPLICIT_ONLY
+        : MESSAGE_QUERY_STRUCTURE
 
     const { result: modelOneResult, cost: modelOneCost } = await this.modelsService.getGPTResponse(
       MESSAGE_QUERY_NO_PREFIX_AND_TRANSLATION,
@@ -80,8 +83,7 @@ export default class QueryService {
     )
 
     modelResult.original = query
-    modelResult.positive_segments =
-      searchMode == 'curation' ? [] : [...new Set([...modelResult.positive_segments])]
+    modelResult.positive_segments = [...new Set([...modelResult.positive_segments])]
     modelResult.nuances_segments =
       searchMode == 'curation'
         ? [...new Set(Object.values(modelResult.nuances_segments).flat())]
