@@ -80,7 +80,8 @@ export default class QueryService {
     )
 
     modelResult.original = query
-    modelResult.positive_segments = [...new Set([...modelResult.positive_segments])]
+    modelResult.positive_segments =
+      searchMode == 'curation' ? [] : [...new Set([...modelResult.positive_segments])]
     modelResult.nuances_segments =
       searchMode == 'curation'
         ? [...new Set(Object.values(modelResult.nuances_segments).flat())]

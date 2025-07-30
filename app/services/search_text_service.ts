@@ -14,7 +14,6 @@ import { withCache } from '../decorators/withCache.js'
 import PhotoManager from '../managers/photo_manager.js'
 import {
   MESSAGE_SEARCH_MODEL_CREATIVE,
-  MESSAGE_SEARCH_MODEL_CREATIVE_ONLY_IMAGE,
   MESSAGE_SEARCH_MODEL_CREATIVE_SCORED_IMAGE,
   MESSAGE_SEARCH_MODEL_STRICT,
 } from '../utils/prompts/insights.js'
