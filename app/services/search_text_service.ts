@@ -190,8 +190,7 @@ export default class SearchTextService {
       await this.sleep(750)
     } while (
       attempts < maxPageAttempts &&
-      photosResult.filter((p) => p.matchScore >= minMatchScore).length == 0
-      //photosResult.length < minResults
+      photosResult.filter((p) => p.matchScore >= minMatchScore).length < minResults
     )
   }
 
