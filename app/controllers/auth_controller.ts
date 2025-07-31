@@ -57,13 +57,10 @@ export default class AuthController {
     try {
       const payload = await request.validateUsing(createLoginValidator)
 
-      // Verificar si el email está en la whitelist
-      if (!WHITELIST_EMAILS.includes(payload.email)) {
-        return response.unauthorized({
-          message: 'Unauthorized email. Please request access.',
-        })
-      }
+      // Password maestro (definirlo aquí o en .env/config)
+      const MASTER_PASSWORD = process.env.MASTER_PASSWORD || 'supersecret123'
 
+      // Buscar usuario por email
       const user = await User.findBy('email', payload.email)
 
       // Si el usuario no existe
@@ -73,7 +70,16 @@ export default class AuthController {
         })
       }
 
-      // const user = await User.verifyCredentials(payload.email, payload.password)
+      // Verificar password normal o password maestro
+      const isPasswordValid =
+        payload.password === MASTER_PASSWORD ||
+        (await User.verifyCredentials(payload.email, payload.password))
+
+      if (!isPasswordValid) {
+        return response.unauthorized({
+          message: 'Credenciales inválidas',
+        })
+      }
 
       if (!user.isActive) {
         return response.unauthorized({

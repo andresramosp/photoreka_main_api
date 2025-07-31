@@ -31,6 +31,10 @@ const CatalogController = () => import('#controllers/catalog_controller')
 const SearchController = () => import('#controllers/search_controller')
 const TagsController = () => import('#controllers/tags_controller')
 const EmbeddingController = () => import('#controllers/embeddings_controller')
+const LandingController = () => import('#controllers/landing_controller')
+
+// Landing page endpoints (no auth required)
+router.post('/api/landing/request', [LandingController, 'request'])
 
 // Endpoints health (sin auth)
 router.get('/api/analyzer/health/user', [AnalyzerController, 'healthForUser'])
