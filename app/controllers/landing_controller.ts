@@ -1,7 +1,5 @@
 import { HttpContext } from '@adonisjs/core/http'
 import vine from '@vinejs/vine'
-import { createRequire } from 'module'
-const require = createRequire(import.meta.url)
 
 // Validator para el payload de solicitud de acceso
 const requestAccessValidator = vine.compile(
@@ -30,39 +28,31 @@ export default class LandingController {
     body: string
     attachments?: any[]
   }) {
-    // Usar las mismas keys proporcionadas
-    const mailjet = require('node-mailjet').apiConnect(
-      '47486c2ca0d07891a61203abd9207956',
-      '1b3daf18222e56372a156a4a24f25d9a'
-    )
+    // Usar SendGrid
+    const sgMailModule = await import('@sendgrid/mail')
+    const sgMail = sgMailModule.default
+    const apiKey = process.env.SENDGRID_API_KEY
+    if (!apiKey) {
+      throw new Error('SENDGRID_API_KEY no está definido en las variables de entorno')
+    }
+    sgMail.setApiKey(apiKey)
 
-    const mailAttachments = attachments.map((attachment) => {
-      return {
-        ContentType: attachment.contentType,
-        Filename: attachment.filename,
-        Base64Content: attachment.content.toString('base64'),
-      }
-    })
+    // Adjuntos en formato SendGrid
+    const sgAttachments = attachments.map((attachment) => ({
+      content: attachment.content.toString('base64'),
+      filename: attachment.filename,
+      type: attachment.contentType,
+      disposition: 'attachment',
+    }))
 
-    return mailjet.post('send', { version: 'v3.1' }).request({
-      Messages: [
-        {
-          From: {
-            Email: from,
-            Name: '',
-          },
-          To: [
-            {
-              Email: to,
-              Name: '',
-            },
-          ],
-          Subject: subject,
-          HTMLPart: body,
-          Attachments: mailAttachments,
-        },
-      ],
-    })
+    const msg = {
+      to,
+      from,
+      subject,
+      html: body,
+      attachments: sgAttachments.length > 0 ? sgAttachments : undefined,
+    }
+    return sgMail.send(msg)
   }
   /**
    * Manejar solicitudes de acceso desde la landing page
