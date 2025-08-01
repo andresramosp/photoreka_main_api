@@ -15,7 +15,7 @@ export default class LandingController {
   /**
    * Enviar email usando Mailjet (reutilizable, compatible con adjuntos)
    */
-  async sendMailjetEmail({
+  async sendEmail({
     from,
     to,
     subject,
@@ -72,8 +72,8 @@ export default class LandingController {
       `
 
       // Usar el método reutilizable para enviar el email
-      await this.sendMailjetEmail({
-        from: 'andreschennai@hotmail.com', //'request@photoreka.com',
+      await this.sendEmail({
+        from: 'andreschennai@gmail.com', //'request@photoreka.com',
         to: 'andreschennai@gmail.com',
         subject: `Nueva solicitud de acceso - ${payload.email}`,
         body: emailContent,
