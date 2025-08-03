@@ -48,10 +48,9 @@ router
     router.get('/api/catalog/:id', [CatalogController, 'getPhoto'])
     router.post('/api/catalog/delete', [CatalogController, 'deletePhotos'])
     router.post('/api/catalog/photosByIds', [CatalogController, 'getPhotosByIds'])
-    router.get('/api/catalog/google/sync', [CatalogController, 'syncGooglePhotos'])
-    router.get('/api/catalog/google/callback', [CatalogController, 'callbackGooglePhotos'])
-    router.post('/api/catalog/uploadLocal', [CatalogController, 'uploadLocal'])
-    // router.post('/api/catalog/uploadGooglePhotos', [CatalogController, 'uploadGooglePhotos'])
+
+    router.post('/api/catalog/uploadPhoto', [CatalogController, 'uploadPhoto'])
+
     router.post('/api/catalog/checkDuplicates', [CatalogController, 'checkDuplicates'])
     router.post('/api/catalog/deleteDuplicates', [CatalogController, 'deleteDuplicates'])
 

@@ -21,54 +21,89 @@ const s3 = new S3Client({
 })
 
 export default class CatalogController {
-  public async uploadLocal({ request, response, auth }: HttpContext) {
+  /**
+   * Genera URLs firmadas para subir a R2
+   */
+  private async generateSignedUrls(key: string, thumbnailKey: string, contentType: string) {
+    const originalCommand = new PutObjectCommand({
+      Bucket: process.env.R2_BUCKET,
+      Key: key,
+      ContentType: contentType,
+    })
+
+    const thumbnailCommand = new PutObjectCommand({
+      Bucket: process.env.R2_BUCKET,
+      Key: thumbnailKey,
+      ContentType: contentType,
+    })
+
+    return Promise.all([
+      getSignedUrl(s3, originalCommand, { expiresIn: 3600 }),
+      getSignedUrl(s3, thumbnailCommand, { expiresIn: 3600 }),
+    ])
+  }
+
+  /**
+   * Genera claves únicas para las fotos
+   */
+  private generatePhotoKeys(fileType?: string) {
+    const id = crypto.randomUUID()
+    const extension = fileType?.includes('jpeg')
+      ? '.jpg'
+      : fileType?.includes('png')
+        ? '.png'
+        : '.jpg'
+    const key = `${id}${extension}`
+    const thumbnailKey = `${id}-thumb${extension}`
+    return { key, thumbnailKey, extension }
+  }
+
+  /**
+   * Invalida cache del usuario
+   */
+  private async invalidateUserCache(userId: string) {
+    await invalidateCache(`getPhotosByUser_${userId}`)
+    await invalidateCache(`getPhotosIdsByUser_${userId}`)
+  }
+
+  /**
+   * Unificado: Sube foto local o de Google Photos según el campo 'source'.
+   * Body: { fileType, originalName, source?: 'local' | 'google', googlePhotoId? }
+   */
+  public async uploadPhoto({ request, response, auth }: HttpContext) {
     try {
       await auth.use('api').check()
       const user = auth.use('api').user! as any
       const userId = user.id.toString()
 
-      const { fileType, originalName: originalFileName } = request.only([
-        'fileType',
-        'originalName',
-      ])
+      const {
+        fileType,
+        originalName: originalFileName,
+        source = 'local',
+      } = request.only(['fileType', 'originalName', 'source'])
+
       if (!fileType || !originalFileName) {
         return response.badRequest({ message: 'Faltan datos' })
       }
 
-      const id = crypto.randomUUID()
-      const extension = fileType.includes('jpeg') ? '.jpg' : '.png'
-      const key = `${id}${extension}`
-      const thumbnailKey = `${id}-thumb${extension}`
-
-      // Comando para original
-      const originalCommand = new PutObjectCommand({
-        Bucket: process.env.R2_BUCKET,
-        Key: key,
-        ContentType: fileType,
-      })
-
-      // Comando para thumbnail
-      const thumbnailCommand = new PutObjectCommand({
-        Bucket: process.env.R2_BUCKET,
-        Key: thumbnailKey,
-        ContentType: fileType,
-      })
-
-      const [uploadUrl, thumbnailUploadUrl] = await Promise.all([
-        getSignedUrl(s3, originalCommand, { expiresIn: 3600 }),
-        getSignedUrl(s3, thumbnailCommand, { expiresIn: 3600 }),
-      ])
+      const { key, thumbnailKey } = this.generatePhotoKeys(fileType)
+      const [uploadUrl, thumbnailUploadUrl] = await this.generateSignedUrls(
+        key,
+        thumbnailKey,
+        fileType
+      )
 
       // Guarda en base de datos
+
       const photo = await Photo.create({
         name: key,
         thumbnailName: thumbnailKey,
         originalFileName,
         userId: Number(userId),
+        // source,
       })
 
-      await invalidateCache(`getPhotosByUser_${userId}`)
-      await invalidateCache(`getPhotosIdsByUser_${userId}`)
+      await this.invalidateUserCache(userId)
 
       return response.ok({
         uploadUrl,
@@ -80,60 +115,6 @@ export default class CatalogController {
       return response.internalServerError({ message: 'Error generando URLs' })
     }
   }
-
-  // public async confirmUpload({ request, response }: HttpContext) {
-  //   try {
-  //     const { photoId } = request.only(['photoId'])
-  //     const photo = await Photo.findOrFail(photoId)
-
-  //     // Aquí podrías generar y subir un thumbnail si lo deseas
-  //     // (con sharp desde la URL ya subida o usando otra función)
-
-  //     photo.isUploaded = true // marca como confirmada si tienes este campo
-  //     await photo.save()
-
-  //     return response.ok({ message: 'Subida confirmada' })
-  //   } catch (error) {
-  //     console.error('Error confirmando subida:', error)
-  //     return response.internalServerError({ message: 'Error confirmando subida' })
-  //   }
-  // }
-
-  // public async uploadGooglePhotos({ request, response }: HttpContext) {
-  //   try {
-  //     const photos = request.input('photos')
-  //     if (!photos || photos.length === 0) {
-  //       return response.badRequest({ message: 'No se recibieron fotos de Google Photos' })
-  //     }
-
-  //     const photosData = await Promise.all(
-  //       photos.map(async (photo: Photo) => {
-  //         const res = await fetch(`${photo.baseUrl}=w2000-h2000-no`) // 🔹 Obtiene la mejor calidad disponible
-  //         const buffer = await res.arrayBuffer()
-  //         return {
-  //           buffer: Buffer.from(buffer),
-  //           filename: photo.name,
-  //           url: photo.baseUrl,
-  //         }
-  //       })
-  //     )
-
-  //     const savedPhotos = await this.savePhotos(photosData)
-
-  //     invalidateCache(`getPhotos_${1234}`)
-  //     invalidateCache(`getPhotosIdsByUser_${1234}`)
-
-  //     return response.ok({
-  //       message: 'Fotos de Google Photos guardadas exitosamente',
-  //       savedPhotos,
-  //     })
-  //   } catch (error) {
-  //     console.error('Error guardando fotos de Google Photos:', error)
-  //     return response.internalServerError({
-  //       message: 'Error procesando las imágenes de Google Photos',
-  //     })
-  //   }
-  // }
 
   public async getPhoto({ response, params }: HttpContext) {
     const photoManager = new PhotoManager()
@@ -174,30 +155,7 @@ export default class CatalogController {
     }
   }
 
-  public async syncGooglePhotos({ response }: HttpContext) {
-    try {
-      const authUrl = await GoogleAuthService.getAuthUrl()
-      return response.ok({ authUrl })
-    } catch (error) {
-      console.error('Error en syncGooglePhotos:', error)
-      return response.internalServerError({ message: 'Error sincronizando con Google Photos' })
-    }
-  }
-
-  public async callbackGooglePhotos({ request, response }: HttpContext) {
-    try {
-      const code = request.input('code')
-      if (!code) {
-        return response.badRequest({ message: 'Falta el código de autorización' })
-      }
-
-      const accessToken = await GoogleAuthService.getAccessToken(code)
-      return response.redirect(`http://localhost:3000/catalog/photos?access_token=${accessToken}`)
-    } catch (error) {
-      console.error('Error en el callback de Google:', error)
-      return response.internalServerError({ message: 'Error en la autenticación de Google Photos' })
-    }
-  }
+  // ...existing code...
 
   public async deletePhotos({ request, response, auth }: HttpContext) {
     try {
