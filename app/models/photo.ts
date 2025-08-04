@@ -1,10 +1,19 @@
 import { DateTime } from 'luxon'
-import { BaseModel, beforeSave, belongsTo, column, computed, hasMany } from '@adonisjs/lucid/orm'
-import type { BelongsTo, HasMany } from '@adonisjs/lucid/types/relations'
+import {
+  BaseModel,
+  beforeSave,
+  belongsTo,
+  column,
+  computed,
+  hasMany,
+  manyToMany,
+} from '@adonisjs/lucid/orm'
+import type { BelongsTo, HasMany, ManyToMany } from '@adonisjs/lucid/types/relations'
 import TagPhoto from './tag_photo.js'
 import DescriptionChunk from './descriptionChunk.js'
 import AnalyzerProcess from './analyzer/analyzerProcess.js'
 import DetectionPhoto from './detection_photo.js'
+import Collection from './collection.js'
 
 export type DescriptionType = 'context' | 'story' | 'visual_accents' | 'artistic'
 export type PhotoDescriptions = Record<DescriptionType, string>
@@ -64,6 +73,15 @@ export default class Photo extends BaseModel {
     foreignKey: 'photoId',
   })
   declare detections: HasMany<typeof DetectionPhoto>
+
+  @manyToMany(() => Collection, {
+    pivotTable: 'collection_photos',
+    localKey: 'id',
+    pivotForeignKey: 'photo_id',
+    relatedKey: 'id',
+    pivotRelatedForeignKey: 'collection_id',
+  })
+  declare collections: ManyToMany<typeof Collection>
 
   @column()
   declare analyzerProcessId: string // Clave foránea que conecta con AnalyzerProcess

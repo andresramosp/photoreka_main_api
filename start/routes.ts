@@ -12,6 +12,8 @@ import router from '@adonisjs/core/services/router'
 import { middleware } from './kernel.js'
 import axios from 'axios'
 import archiver from 'archiver'
+import pLimit from 'p-limit'
+import Photo from '#models/photo'
 
 // Auth routes (no middleware needed)
 const AuthController = () => import('#controllers/auth_controller')
@@ -34,6 +36,7 @@ const SearchController = () => import('#controllers/search_controller')
 const TagsController = () => import('#controllers/tags_controller')
 const EmbeddingController = () => import('#controllers/embeddings_controller')
 const LandingController = () => import('#controllers/landing_controller')
+const CollectionsController = () => import('#controllers/collections_controller')
 
 // Landing page endpoints (no auth required)
 router.post('/api/landing/request', [LandingController, 'request'])
@@ -43,7 +46,7 @@ router.get('/api/analyzer/health/user', [AnalyzerController, 'healthForUser'])
 router.get('/api/analyzer/health/photo', [AnalyzerController, 'healthForPhoto'])
 router.get('/api/analyzer/health/process', [AnalyzerController, 'healthForProcess'])
 
-// Protected API routes (require authentication)
+// Protected API routes (require authentication)3
 router
   .group(() => {
     router.get('/api/catalog', [CatalogController, 'getPhotos'])
@@ -69,77 +72,95 @@ router
     router.get('/api/search/warmUp', [SearchController, 'warmUp'])
 
     router.get('/api/tags/search', [TagsController, 'search'])
-  })
-  .use(middleware.auth())
 
-import Photo from '#models/photo'
+    // Collections endpoints
+    router.get('/api/collections', [CollectionsController, 'index'])
+    router.get('/api/collections/:id', [CollectionsController, 'show'])
+    router.post('/api/collections', [CollectionsController, 'store'])
+    router.put('/api/collections/:id', [CollectionsController, 'update'])
+    router.delete('/api/collections/:id', [CollectionsController, 'destroy'])
+    router.post('/api/collections/:id/photos', [CollectionsController, 'addPhotos'])
+    router.delete('/api/collections/:id/photos', [CollectionsController, 'removePhotos'])
 
-router.post('download-photo', async ({ request, response }) => {
-  const ids = request.input('ids')
+    // Download photos endpoint
+    router.post('/download-photo', async ({ request, response }) => {
+      const ids = request.input('ids')
 
-  if (!Array.isArray(ids) || ids.length === 0) {
-    return response.badRequest('Missing ids')
-  }
+      if (!Array.isArray(ids) || ids.length === 0) {
+        return response.badRequest('Missing ids')
+      }
 
-  // Buscar las fotos en la BD
-  const photos = await Photo.query().whereIn('id', ids)
+      // Buscar las fotos en la BD y verificar que pertenecen al usuario
+      const photos = await Photo.query().whereIn('id', ids)
 
-  if (photos.length === 0) {
-    return response.badRequest('No photos found for given ids')
-  }
+      if (photos.length === 0) {
+        return response.badRequest('No photos found for given ids')
+      }
 
-  // Si es solo una foto
-  if (photos.length === 1) {
-    const photo = photos[0]
-    try {
-      const imgResponse = await axios.get(photo.originalUrl, { responseType: 'stream' })
-      const filename = photo.originalFileName || 'photo.jpg'
+      // Si es solo una foto
+      if (photos.length === 1) {
+        const photo = photos[0]
+        try {
+          const imgResponse = await axios.get(photo.originalUrl, { responseType: 'stream' })
+          const filename = photo.originalFileName || 'photo.jpg'
 
+          // CORS headers
+          response.header('Access-Control-Allow-Origin', '*')
+          response.header('Access-Control-Expose-Headers', 'Content-Disposition')
+
+          response.header('Content-Disposition', `attachment; filename="${filename}"`)
+          response.header(
+            'Content-Type',
+            imgResponse.headers['content-type'] || 'application/octet-stream'
+          )
+          return response.stream(imgResponse.data)
+        } catch (err) {
+          response.status(500).send('Error downloading image')
+        }
+        return
+      }
+
+      // Si son varias fotos
       // CORS headers
       response.header('Access-Control-Allow-Origin', '*')
       response.header('Access-Control-Expose-Headers', 'Content-Disposition')
 
-      response.header('Content-Disposition', `attachment; filename="${filename}"`)
-      response.header(
-        'Content-Type',
-        imgResponse.headers['content-type'] || 'application/octet-stream'
+      response.header('Content-Disposition', 'attachment; filename="photos.zip"')
+      response.header('Content-Type', 'application/zip')
+
+      const archive = archiver('zip', { zlib: { level: 9 } })
+      archive.on('error', () => {
+        response.status(500).send('Error creating zip')
+      })
+
+      // Stream the zip archive through AdonisJS response to preserve headers
+      response.stream(archive)
+
+      // Limitar concurrencia de descargas a 3 usando p-limit
+      const limit = pLimit(3)
+      await Promise.all(
+        photos.map((photo, idx) =>
+          limit(async () => {
+            try {
+              console.log(
+                `[ZIP] Descargando foto ${idx + 1}/${photos.length}: ${photo.originalUrl}`
+              )
+              const imgResponse = await axios.get(photo.originalUrl, { responseType: 'stream' })
+              const filename = photo.originalFileName || `photo_${idx + 1}.jpg`
+              archive.append(imgResponse.data, { name: filename })
+            } catch (err) {
+              console.error(`[ZIP] Error descargando o agregando foto:`, err)
+              // Si una imagen falla, la ignoramos
+            }
+          })
+        )
       )
-      return response.stream(imgResponse.data)
-    } catch (err) {
-      response.status(500).send('Error downloading image')
-    }
-    return
-  }
-
-  // Si son varias fotos
-  // CORS headers
-  response.header('Access-Control-Allow-Origin', '*')
-  response.header('Access-Control-Expose-Headers', 'Content-Disposition')
-
-  response.header('Content-Disposition', 'attachment; filename="photos.zip"')
-  response.header('Content-Type', 'application/zip')
-
-  const archive = archiver('zip', { zlib: { level: 9 } })
-  archive.on('error', (err) => {
-    response.status(500).send('Error creating zip')
-  })
-
-  // Stream the zip archive through AdonisJS response to preserve headers
-  response.stream(archive)
-
-  // Descargar y agregar cada imagen al zip
-  await Promise.all(
-    photos.map(async (photo) => {
-      try {
-        const imgResponse = await axios.get(photo.originalUrl, { responseType: 'stream' })
-        const filename = photo.originalFileName || 'photo.jpg'
-        archive.append(imgResponse.data, { name: filename })
-      } catch (err) {
-        // Si una imagen falla, la ignoramos
-      }
+      console.log('[ZIP] Todas las fotos agregadas, finalizando zip...')
+      archive.finalize()
+      response.response.on('close', () => {
+        console.log('[ZIP] Zip finalizado y enviado')
+      })
+      return
     })
-  )
-
-  await archive.finalize()
-  return
-})
+  })
+  .use(middleware.auth())
