@@ -10,6 +10,8 @@
 import AnalyzerProcessController from '#controllers/analyzer_process_controller'
 import router from '@adonisjs/core/services/router'
 import { middleware } from './kernel.js'
+import axios from 'axios'
+import archiver from 'archiver'
 
 // Auth routes (no middleware needed)
 const AuthController = () => import('#controllers/auth_controller')
@@ -69,3 +71,66 @@ router
     router.get('/api/tags/search', [TagsController, 'search'])
   })
   .use(middleware.auth())
+
+router.post('download-photo', async ({ request, response }) => {
+  const urls = request.input('urls')
+
+  // Si se pasa un solo url (string)
+  if (Array.isArray(urls) && urls.length == 1) {
+    try {
+      const imgResponse = await axios.get(urls[0], { responseType: 'stream' })
+      const filename = urls[0].split('/').pop() || 'photo.jpg'
+
+      // CORS headers
+      response.header('Access-Control-Allow-Origin', '*')
+      response.header('Access-Control-Expose-Headers', 'Content-Disposition')
+
+      response.header('Content-Disposition', `attachment; filename="${filename}"`)
+      response.header(
+        'Content-Type',
+        imgResponse.headers['content-type'] || 'application/octet-stream'
+      )
+      return response.stream(imgResponse.data)
+    } catch (err) {
+      response.status(500).send('Error downloading image')
+    }
+    return
+  }
+
+  // Si se pasa un array de urls
+  if (Array.isArray(urls) && urls.length > 0) {
+    // CORS headers
+    response.header('Access-Control-Allow-Origin', '*')
+    response.header('Access-Control-Expose-Headers', 'Content-Disposition')
+
+    response.header('Content-Disposition', 'attachment; filename="photos.zip"')
+    response.header('Content-Type', 'application/zip')
+
+    const archive = archiver('zip', { zlib: { level: 9 } })
+    archive.on('error', (err) => {
+      response.status(500).send('Error creating zip')
+    })
+
+    // Stream the zip archive through AdonisJS response to preserve headers
+    response.stream(archive)
+
+    // Descargar y agregar cada imagen al zip
+    await Promise.all(
+      urls.map(async (imgUrl: string) => {
+        try {
+          const imgResponse = await axios.get(imgUrl, { responseType: 'stream' })
+          const filename = imgUrl.split('/').pop() || 'photo.jpg'
+          archive.append(imgResponse.data, { name: filename })
+        } catch (err) {
+          // Si una imagen falla, la ignoramos
+        }
+      })
+    )
+
+    await archive.finalize()
+    return
+  }
+
+  // Si no se pasa ni url ni urls
+  return response.badRequest('Missing url or urls')
+})

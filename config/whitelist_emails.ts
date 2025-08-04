@@ -9,6 +9,10 @@ export const WHITELIST_EMAILS = [
   'pruebas@photoreka.com',
   'pruebas2@photoreka.com',
   'pruebas3@photoreka.com',
+  'pruebas4@photoreka.com',
+  'pruebas5@photoreka.com',
+  'pruebas6@photoreka.com',
+  'pruebas7@photoreka.com',
 
   // Agrega más emails aquí
 ]
