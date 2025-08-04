@@ -72,14 +72,28 @@ router
   })
   .use(middleware.auth())
 
-router.post('download-photo', async ({ request, response }) => {
-  const urls = request.input('urls')
+import Photo from '#models/photo'
 
-  // Si se pasa un solo url (string)
-  if (Array.isArray(urls) && urls.length == 1) {
+router.post('download-photo', async ({ request, response }) => {
+  const ids = request.input('ids')
+
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return response.badRequest('Missing ids')
+  }
+
+  // Buscar las fotos en la BD
+  const photos = await Photo.query().whereIn('id', ids)
+
+  if (photos.length === 0) {
+    return response.badRequest('No photos found for given ids')
+  }
+
+  // Si es solo una foto
+  if (photos.length === 1) {
+    const photo = photos[0]
     try {
-      const imgResponse = await axios.get(urls[0], { responseType: 'stream' })
-      const filename = urls[0].split('/').pop() || 'photo.jpg'
+      const imgResponse = await axios.get(photo.originalUrl, { responseType: 'stream' })
+      const filename = photo.originalFileName || 'photo.jpg'
 
       // CORS headers
       response.header('Access-Control-Allow-Origin', '*')
@@ -97,40 +111,35 @@ router.post('download-photo', async ({ request, response }) => {
     return
   }
 
-  // Si se pasa un array de urls
-  if (Array.isArray(urls) && urls.length > 0) {
-    // CORS headers
-    response.header('Access-Control-Allow-Origin', '*')
-    response.header('Access-Control-Expose-Headers', 'Content-Disposition')
+  // Si son varias fotos
+  // CORS headers
+  response.header('Access-Control-Allow-Origin', '*')
+  response.header('Access-Control-Expose-Headers', 'Content-Disposition')
 
-    response.header('Content-Disposition', 'attachment; filename="photos.zip"')
-    response.header('Content-Type', 'application/zip')
+  response.header('Content-Disposition', 'attachment; filename="photos.zip"')
+  response.header('Content-Type', 'application/zip')
 
-    const archive = archiver('zip', { zlib: { level: 9 } })
-    archive.on('error', (err) => {
-      response.status(500).send('Error creating zip')
+  const archive = archiver('zip', { zlib: { level: 9 } })
+  archive.on('error', (err) => {
+    response.status(500).send('Error creating zip')
+  })
+
+  // Stream the zip archive through AdonisJS response to preserve headers
+  response.stream(archive)
+
+  // Descargar y agregar cada imagen al zip
+  await Promise.all(
+    photos.map(async (photo) => {
+      try {
+        const imgResponse = await axios.get(photo.originalUrl, { responseType: 'stream' })
+        const filename = photo.originalFileName || 'photo.jpg'
+        archive.append(imgResponse.data, { name: filename })
+      } catch (err) {
+        // Si una imagen falla, la ignoramos
+      }
     })
+  )
 
-    // Stream the zip archive through AdonisJS response to preserve headers
-    response.stream(archive)
-
-    // Descargar y agregar cada imagen al zip
-    await Promise.all(
-      urls.map(async (imgUrl: string) => {
-        try {
-          const imgResponse = await axios.get(imgUrl, { responseType: 'stream' })
-          const filename = imgUrl.split('/').pop() || 'photo.jpg'
-          archive.append(imgResponse.data, { name: filename })
-        } catch (err) {
-          // Si una imagen falla, la ignoramos
-        }
-      })
-    )
-
-    await archive.finalize()
-    return
-  }
-
-  // Si no se pasa ni url ni urls
-  return response.badRequest('Missing url or urls')
+  await archive.finalize()
+  return
 })
