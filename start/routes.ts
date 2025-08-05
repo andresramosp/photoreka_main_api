@@ -58,6 +58,7 @@ router
 
     router.post('/api/catalog/checkDuplicates', [CatalogController, 'checkDuplicates'])
     router.post('/api/catalog/deleteDuplicates', [CatalogController, 'deleteDuplicates'])
+    router.get('/api/catalog/photoInsight/:id?', [CatalogController, 'photoInsight'])
 
     router.post('/api/analyzer/', [AnalyzerController, 'analyze'])
     router.post('/api/embeddings/', [EmbeddingController, 'getEmbeddings'])

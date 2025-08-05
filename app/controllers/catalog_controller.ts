@@ -8,8 +8,10 @@ import PhotoManager from '../managers/photo_manager.js'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { invalidateCache } from '../decorators/withCache.js'
 import VectorService from '#services/vector_service'
+import ModelsService from '#services/models_service'
 
 import HealthPhotoService from '#services/health_photo_service'
+import { MESSAGE_PHOTO_INSIGHTS } from '../utils/prompts/descriptions.js'
 
 const s3 = new S3Client({
   region: 'auto',
@@ -266,6 +268,76 @@ export default class CatalogController {
     } catch (error) {
       console.error('Error eliminando duplicados:', error)
       return response.internalServerError({ message: 'Error eliminando duplicados' })
+    }
+  }
+
+  public async photoInsight({ response, auth, params }: HttpContext) {
+    try {
+      await auth.use('api').check()
+      const user = auth.use('api').user! as any
+      const userId = user.id.toString()
+
+      let photo: Photo
+
+      if (params.id) {
+        // Si se proporciona un ID, buscar esa foto específica
+        const foundPhoto = await Photo.query()
+          .where('id', params.id)
+          .where('user_id', userId)
+          .first()
+
+        if (!foundPhoto) {
+          return response.notFound({ message: 'Foto no encontrada' })
+        }
+        photo = foundPhoto
+      } else {
+        // Si no se proporciona ID, seleccionar una foto aleatoria del usuario
+        const userPhotos = await Photo.query().where('user_id', userId)
+
+        if (userPhotos.length === 0) {
+          return response.notFound({ message: 'No tienes fotos disponibles' })
+        }
+
+        const randomIndex = Math.floor(Math.random() * userPhotos.length)
+        photo = userPhotos[randomIndex]
+      }
+
+      const modelsService = new ModelsService()
+
+      const systemPrompt = MESSAGE_PHOTO_INSIGHTS
+
+      const gptResponse = await modelsService.getGPTResponse(
+        systemPrompt,
+        [
+          {
+            type: 'image_url',
+            image_url: {
+              url: photo.originalUrl,
+            },
+          },
+        ],
+        'gpt-4.1',
+        { type: 'json_object' },
+        0.4,
+        true
+      )
+
+      let insights = []
+
+      insights = gptResponse.result.insights || []
+
+      return response.ok({
+        photo: {
+          id: photo.id,
+          originalFileName: photo.originalFileName,
+          thumbnailUrl: photo.thumbnailUrl,
+          originalUrl: photo.originalUrl,
+        },
+        insights,
+      })
+    } catch (error) {
+      console.error('Error generando insights de foto:', error)
+      return response.internalServerError({ message: 'Error generando insights de la foto' })
     }
   }
 }
