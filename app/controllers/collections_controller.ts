@@ -10,7 +10,8 @@ export default class CollectionsController {
    */
   async index({ auth, response }: HttpContext) {
     try {
-      const user = auth.getUserOrFail()
+      await auth.use('api').check()
+      const user = auth.use('api').user! as any
 
       const collections = await Collection.query()
         .where('userId', user.id)
@@ -43,7 +44,8 @@ export default class CollectionsController {
    */
   async show({ auth, params, response }: HttpContext) {
     try {
-      const user = auth.getUserOrFail()
+      await auth.use('api').check()
+      const user = auth.use('api').user! as any
       const collectionId = params.id
 
       const collection = await Collection.query()
@@ -84,7 +86,8 @@ export default class CollectionsController {
    */
   async store({ auth, request, response }: HttpContext) {
     try {
-      const user = auth.getUserOrFail()
+      await auth.use('api').check()
+      const user = auth.use('api').user! as any
       const { name, description, photoIds } = request.only(['name', 'description', 'photoIds'])
 
       if (!name || name.trim().length === 0) {
@@ -140,7 +143,8 @@ export default class CollectionsController {
    */
   async update({ auth, params, request, response }: HttpContext) {
     try {
-      const user = auth.getUserOrFail()
+      await auth.use('api').check()
+      const user = auth.use('api').user! as any
       const collectionId = params.id
       const { name, description } = request.only(['name', 'description'])
 
@@ -178,7 +182,8 @@ export default class CollectionsController {
    */
   async destroy({ auth, params, response }: HttpContext) {
     try {
-      const user = auth.getUserOrFail()
+      await auth.use('api').check()
+      const user = auth.use('api').user! as any
       const collectionId = params.id
 
       const collection = await Collection.query()
@@ -207,7 +212,8 @@ export default class CollectionsController {
    */
   async addPhotos({ auth, params, request, response }: HttpContext) {
     try {
-      const user = auth.getUserOrFail()
+      await auth.use('api').check()
+      const user = auth.use('api').user! as any
       const collectionId = params.id
       const { photoIds } = request.only(['photoIds'])
 
@@ -258,7 +264,8 @@ export default class CollectionsController {
    */
   async removePhotos({ auth, params, request, response }: HttpContext) {
     try {
-      const user = auth.getUserOrFail()
+      await auth.use('api').check()
+      const user = auth.use('api').user! as any
       const collectionId = params.id
       const { photoIds } = request.only(['photoIds'])
 
