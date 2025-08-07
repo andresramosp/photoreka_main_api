@@ -84,11 +84,17 @@ export default class PhotoManager {
   @withCache({
     provider: 'redis',
     ttl: 60 * 30,
-    key: (userId) => `getPhotosIdsByUser_${userId}`,
+    key: (userId, collections) =>
+      `getPhotosIdsByUser_${userId}_${collections ? collections.join(',') : 'all'}`,
   })
-  public async getPhotosIdsByUser(userId: string): Promise<number[]> {
-    const photos = await Photo.query().where('user_id', userId).select('id')
-
+  public async getPhotosIdsByUser(userId: string, collections?: string[]): Promise<number[]> {
+    let query = Photo.query().where('user_id', userId)
+    if (collections && collections.length > 0) {
+      query = query.whereHas('collections', (collectionQuery) => {
+        collectionQuery.whereIn('collections.id', collections)
+      })
+    }
+    const photos = await query.select('id')
     return photos.map((p) => p.id)
   }
 

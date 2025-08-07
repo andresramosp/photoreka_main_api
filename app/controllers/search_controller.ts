@@ -22,6 +22,7 @@ export default class SearchController {
         iteration: query.options.iteration,
         minMatchScore: query.options.minMatchScore,
         minResults: query.options.minResults,
+        collections: query.options.collections,
       })
 
       for await (const result of stream) {
@@ -50,6 +51,7 @@ export default class SearchController {
           pageSize: query.options.pageSize,
           iteration: query.options.iteration,
           searchMode: query.options.searchMode,
+          collections: query.options.collections,
         },
         user.id
       )
@@ -79,6 +81,7 @@ export default class SearchController {
         pageSize: query.options.pageSize,
         iteration: query.options.iteration,
         searchMode: query.options.searchMode,
+        collections: query.options.collections,
       })
 
       for await (const result of stream) {

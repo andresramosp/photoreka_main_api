@@ -36,6 +36,7 @@ export type SearchOptions = {
   userId?: number
   maxPageAttempts?: number
   minResults?: number
+  collections?: string[]
 }
 
 export type SearchTagsOptions = SearchOptions & {
@@ -82,9 +83,13 @@ export default class SearchTextService {
       minMatchScore,
       maxPageAttempts = 4,
       minResults,
+      collections,
     } = options
 
-    const photoIds = await this.photoManager.getPhotosIdsByUser(userId?.toString())
+    const photoIds = await this.photoManager.getPhotosIdsByUser(
+      userId?.toString(),
+      collections && collections.length > 0 ? collections : undefined
+    )
 
     const { structuredResult, useImage, expansionCost } = await this.queryService.structureQuery(
       query,
@@ -197,9 +202,12 @@ export default class SearchTextService {
   //   @withCostWS
 
   public async *searchByTags(options: SearchTagsOptions, userId: string | number) {
-    const { included, excluded, iteration, pageSize, searchMode } = options
+    const { included, excluded, iteration, pageSize, searchMode, collections } = options
 
-    const photoIds = await this.photoManager.getPhotosIdsByUser(userId?.toString())
+    const photoIds = await this.photoManager.getPhotosIdsByUser(
+      userId?.toString(),
+      collections && collections.length > 0 ? collections : undefined
+    )
 
     let embeddingScoredPhotos = await this.scoringService.getScoredPhotosByTags(
       photoIds,
@@ -232,8 +240,12 @@ export default class SearchTextService {
     userId: string | number,
     options: SearchTopologicalOptions
   ) {
-    const { pageSize, iteration, searchMode } = options
-    const photoIds = await this.photoManager.getPhotosIdsByUser(userId?.toString())
+    const { pageSize, iteration, searchMode, collections } = options
+
+    const photoIds = await this.photoManager.getPhotosIdsByUser(
+      userId?.toString(),
+      collections && collections.length > 0 ? collections : undefined
+    )
 
     let embeddingScoredPhotos = await this.scoringService.getScoredPhotosByTopoAreas(
       photoIds,
