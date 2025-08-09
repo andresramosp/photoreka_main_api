@@ -84,18 +84,35 @@ export default class PhotoManager {
   @withCache({
     provider: 'redis',
     ttl: 60 * 30,
-    key: (userId, collections) =>
-      `getPhotosIdsByUser_${userId}_${collections ? collections.join(',') : 'all'}`,
   })
-  public async getPhotosIdsByUser(userId: string, collections?: string[]): Promise<number[]> {
+  public async getPhotosIdsByUser(
+    userId: string,
+    collections?: string[],
+    visualAspects?: string[]
+  ): Promise<number[]> {
     let query = Photo.query().where('user_id', userId)
     if (collections && collections.length > 0) {
       query = query.whereHas('collections', (collectionQuery) => {
         collectionQuery.whereIn('collections.id', collections)
       })
     }
-    const photos = await query.select('id')
-    return photos.map((p) => p.id)
+
+    const photos = await query.select('id', 'descriptions')
+
+    if (!visualAspects || !Array.isArray(visualAspects) || visualAspects.length === 0) {
+      return photos.map((p) => p.id)
+    }
+
+    return photos
+      .filter((p) => {
+        const va = p.descriptions?.visual_aspects
+        if (!va || typeof va !== 'object') return false
+        // Unir todos los valores de todos los arrays en un solo array
+        const allValues = Object.values(va).flat().filter(Boolean)
+        // Verificar que todos los visualAspects estén presentes
+        return visualAspects.every((aspect) => allValues.includes(aspect))
+      })
+      .map((p) => p.id)
   }
 
   /**

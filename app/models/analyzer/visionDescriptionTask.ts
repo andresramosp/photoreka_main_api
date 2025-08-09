@@ -25,6 +25,7 @@ export class VisionDescriptionTask extends AnalyzerTask {
   declare data: Record<number, Record<string, string>>
   declare complete: boolean
   declare analyzerProcess: AnalyzerProcess
+  declare visualAspects: boolean
   failedRequests: PhotoImage[] = []
 
   async process(pendingPhotos: PhotoImage[], analyzerProcess: AnalyzerProcess): Promise<void> {
@@ -120,8 +121,10 @@ export class VisionDescriptionTask extends AnalyzerTask {
 
       await Promise.all(
         photoIds.map((photoId: number) => {
-          const descriptions = this.data[photoId]
-          if (!isNaN(Number(photoId)) && descriptions) {
+          const descriptions = this.visualAspects
+            ? { visual_aspects: this.data[photoId] }
+            : this.data[photoId]
+          if (!isNaN(Number(photoId)) && this.data[photoId]) {
             return photoManager.updatePhotoDescriptions(
               photoId.toString(),
               descriptions as PhotoDescriptions
@@ -169,7 +172,7 @@ export class VisionDescriptionTask extends AnalyzerTask {
           body: {
             model: 'gpt-4.1',
             temperature: 0.1,
-            response_format: { type: 'json_object' },
+            // response_format: { type: 'json_object' },
             max_tokens: 15000,
             messages: [
               { role: 'system', content: prompts[0] },
@@ -215,24 +218,16 @@ export class VisionDescriptionTask extends AnalyzerTask {
 
     results.forEach((res: any) => {
       try {
-        const content = res.response.body.choices[0].message.content
-        const { results: parsed } = JSON.parse(content.replace(/```(?:json)?\s*/g, '').trim())
-
+        const items = res.items || []
         const photoIds = res.custom_id.split('-').map(Number)
-
-        if (!Array.isArray(parsed)) {
-          logger.error(`Error: la respuesta no es un array para el batch ${res.custom_id}`)
-          // Agregar las imágenes fallidas a failedRequests
-          const failedImages = batchPhotos.filter((img) => photoIds.includes(img.photo.id))
-          this.failedRequests.push(...failedImages)
+        if (items.length !== photoIds.length) {
+          logger.error(`Batch mismatch ${res.custom_id}: ${items.length} vs ${photoIds.length}`)
+          this.failedRequests.push(...batchPhotos.filter((img) => photoIds.includes(img.photo.id)))
           return
         }
-
-        parsed.forEach((photoResult: any, idx: number) => {
+        items.forEach((photoResult: any, idx: number) => {
           const photoId = photoIds[idx]
-          if (photoId) {
-            this.data[photoId] = { ...this.data[photoId], ...photoResult }
-          }
+          this.data[photoId] = { ...this.data[photoId], ...photoResult }
         })
       } catch (err) {
         logger.error(`Error procesando resultado del batch para fotos ${res.custom_id}:`, err)

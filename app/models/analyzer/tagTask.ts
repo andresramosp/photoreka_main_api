@@ -46,14 +46,25 @@ export class TagTask extends AnalyzerTask {
     const skippedPhotoIds: string[] = []
 
     for (const photo of photosWithTags) {
-      // Si a la foto le falta al menos uno de los campos requeridos, la saltamos
-      const missing = this.descriptionSourceFields.some(
-        (field) => !photo.descriptions || !photo.descriptions[field]
-      )
-      if (missing) {
-        skippedPhotoIds.push(photo.id)
-      } else {
+      // Validación especial para visual_aspects
+      if (this.descriptionSourceFields.includes('visual_aspects')) {
+        const visualAspectsData = photo.descriptions?.visual_aspects
+        if (!visualAspectsData) {
+          skippedPhotoIds.push(photo.id)
+          continue
+        }
+
         validPhotos.push(photo)
+      } else {
+        // Validación original para otros tipos de descripción
+        const missing = this.descriptionSourceFields.some(
+          (field) => !photo.descriptions || !photo.descriptions[field]
+        )
+        if (missing) {
+          skippedPhotoIds.push(photo.id)
+        } else {
+          validPhotos.push(photo)
+        }
       }
     }
 
@@ -68,10 +79,17 @@ export class TagTask extends AnalyzerTask {
       return
     }
 
-    const cleanedResults = await this.cleanPhotosDescs(validPhotos)
-    logger.debug('Procesando extracción de tags...')
+    // Detectar si estamos procesando visual_aspects
+    const isVisualAspects = this.descriptionSourceFields.includes('visual_aspects')
 
-    await this.requestTagsFromGPT(validPhotos, cleanedResults)
+    if (isVisualAspects) {
+      logger.debug('Procesando extracción de tags de visual_aspects...')
+      await this.extractTagsFromVisualAspects(validPhotos)
+    } else {
+      const cleanedResults = await this.cleanPhotosDescs(validPhotos)
+      logger.debug('Procesando extracción de tags...')
+      await this.requestTagsFromGPT(validPhotos, cleanedResults)
+    }
     logger.debug('Procesando creación de tags...')
   }
 
@@ -96,10 +114,15 @@ export class TagTask extends AnalyzerTask {
 
     // 2. Recolectar todos los sustantivos y preparar la lista de términos para embeddings
     const allTerms = new Set<string>(allTagNames)
-    for (const tagName of allTagNames) {
-      const sustantives = this.nlpService.getSustantives(tagName) ?? []
-      this.tagToSustantivesMap.set(tagName, sustantives)
-      sustantives.forEach((s) => allTerms.add(s))
+    const isVisualAspects = category === 'visual_aspects'
+
+    // Solo calcular sustantivos si no es visual_aspects
+    if (!isVisualAspects) {
+      for (const tagName of allTagNames) {
+        const sustantives = this.nlpService.getSustantives(tagName) ?? []
+        this.tagToSustantivesMap.set(tagName, sustantives)
+        sustantives.forEach((s) => allTerms.add(s))
+      }
     }
 
     // 3. Verificar qué términos ya tienen embeddings
@@ -262,6 +285,52 @@ export class TagTask extends AnalyzerTask {
     )
 
     await Promise.all(tagRequests)
+  }
+
+  private async extractTagsFromVisualAspects(photos: Photo[]) {
+    logger.debug(`Extrayendo tags de visual_aspects para ${photos.length} imágenes`)
+
+    // Keys que usan la regla value + key
+    const keyWithSuffix = ['orientation', 'focus', 'lighting', 'framing', 'genre']
+
+    for (const photo of photos) {
+      try {
+        this.data[photo.id] = []
+        const visualAspectsData = photo.descriptions?.visual_aspects
+        if (!visualAspectsData) {
+          logger.warn(`Foto ${photo.id} no tiene datos de visual_aspects`)
+          continue
+        }
+
+        // visual_aspects ya viene como objeto JSON
+        const aspectsObject = visualAspectsData as Record<string, string[]>
+
+        // Extraer tags de cada aspecto visual
+        for (const [aspectKey, aspectValues] of Object.entries(aspectsObject)) {
+          if (Array.isArray(aspectValues)) {
+            for (const value of aspectValues) {
+              if (value && typeof value === 'string') {
+                let tagName = ''
+                if (keyWithSuffix.includes(aspectKey)) {
+                  tagName = `${value.trim()} ${aspectKey}`
+                } else {
+                  tagName = `${value.trim()} photography`
+                }
+                const newTag = new Tag()
+                newTag.name = tagName
+                newTag.group = 'visual_aspects'
+                this.data[photo.id].push(newTag)
+              }
+            }
+          }
+        }
+
+        logger.debug(`Extraídos ${this.data[photo.id].length} tags para foto ${photo.id}`)
+      } catch (error) {
+        logger.error(`Error procesando visual_aspects para foto ${photo.id}:`, error)
+        // Continuar con las demás fotos
+      }
+    }
   }
 
   private getSourceTextFromPhoto(photo: Photo) {

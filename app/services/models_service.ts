@@ -22,6 +22,26 @@ const PRICES = {
     input_cache_hit: 0.5 / 1_000_000,
     output: 8 / 1_000_000, // USD per output token
   },
+  'gpt-5': {
+    input_cache_miss: 1.25 / 1_000_000, // USD per input token
+    input_cache_hit: 0.125 / 1_000_000, // USD per cached input token
+    output: 10 / 1_000_000, // USD per output token
+  },
+  'gpt-5-mini': {
+    input_cache_miss: 0.25 / 1_000_000, // USD per input token
+    input_cache_hit: 0.025 / 1_000_000, // USD per cached input token
+    output: 2.0 / 1_000_000, // USD per output token
+  },
+  'gpt-5-nano': {
+    input_cache_miss: 0.05 / 1_000_000, // USD per input token
+    input_cache_hit: 0.005 / 1_000_000, // USD per cached input token
+    output: 0.4 / 1_000_000, // USD per output token
+  },
+  'gpt-5-chat-latest': {
+    input_cache_miss: 1.25 / 1_000_000, // USD per input token
+    input_cache_hit: 0.125 / 1_000_000, // USD per cached input token
+    output: 10 / 1_000_000, // USD per output token
+  },
   'gpt-4o-mini': {
     input_cache_miss: 0.15 / 1_000_000, // USD per input token
     input_cache_hit: 0.075 / 1_000_000,
@@ -554,13 +574,9 @@ export default class ModelsService {
   public async getGPTResponse(
     systemContent: string | null,
     userContent: any,
-    model:
-      | 'gpt-4o'
-      | 'gpt-4.1'
-      | 'gpt-4o-mini'
-      | 'ft:gpt-4o-mini-2024-07-18:personal:refine:AlpaXAxW' = 'gpt-4o-mini',
+    model: 'gpt-4o' | 'gpt-4.1' | 'gpt-4o-mini' | 'gpt-5' | 'gpt-5-chat-latest',
     responseFormat: any = { type: 'json_object' },
-    temperature: number = 0.1,
+    temperature: number = 1,
     useCache: boolean = true
   ): Promise<any> {
     let cacheDuration = 60 * 5
@@ -596,6 +612,7 @@ export default class ModelsService {
               },
             ],
         max_tokens: 15000,
+        // max_completion_tokens: 15000,
       }
 
       if (responseFormat) {
@@ -862,7 +879,38 @@ export default class ModelsService {
     // Cada línea del archivo es un JSON individual
     const lines = content.trim().split('\n')
 
-    const results = lines.map((line) => JSON.parse(line))
+    const results = lines.map((line) => {
+      const obj = JSON.parse(line)
+      try {
+        const content = obj?.response?.body?.choices?.[0]?.message?.content || ''
+        const cleaned = content
+          .replace(/```(?:json)?/g, '')
+          .replace(/```/g, '')
+          .trim()
+        let root: any
+        try {
+          root = JSON.parse(cleaned)
+        } catch {
+          root = null
+        }
+        const expected = (obj.custom_id || '').split('-').filter(Boolean).length || 1
+        let items: any[] = []
+        if (Array.isArray(root)) items = root
+        else if (root?.results && Array.isArray(root.results)) items = root.results
+        else if (root?.result && Array.isArray(root.result)) items = root.result
+        else if (root && typeof root === 'object') {
+          // Caso: objeto con claves numéricas ("0", "1", ...) representando índices
+          const numericKeys = Object.keys(root).filter((k) => /^\d+$/.test(k))
+          if (numericKeys.length) {
+            numericKeys.sort((a, b) => Number(a) - Number(b))
+            items = numericKeys.map((k) => root[k])
+          }
+        } else if (root && expected === 1 && typeof root === 'object') items = [root]
+        return { ...obj, items }
+      } catch (e) {
+        return { ...obj, items: [] }
+      }
+    })
 
     return results
   }

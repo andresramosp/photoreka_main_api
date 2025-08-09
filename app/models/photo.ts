@@ -15,7 +15,7 @@ import AnalyzerProcess from './analyzer/analyzerProcess.js'
 import DetectionPhoto from './detection_photo.js'
 import Collection from './collection.js'
 
-export type DescriptionType = 'context' | 'story' | 'visual_accents' | 'artistic'
+export type DescriptionType = 'context' | 'story' | 'visual_accents' | 'visual_aspects'
 export type PhotoDescriptions = Record<DescriptionType, string>
 export type PhotoStatus = 'uploaded' | 'preprocessing' | 'preprocessed' | 'processing' | 'processed'
 
@@ -100,11 +100,12 @@ export default class Photo extends BaseModel {
     }
 
     if (this.analyzerProcess.isPreprocess) {
-      if (this.analyzerProcess.currentStage === 'finished') {
-        return 'preprocessed'
-      } else {
-        return 'preprocessing'
-      }
+      // if (this.analyzerProcess.currentStage === 'finished') {
+      //   return 'preprocessed'
+      // } else {
+      //   return 'preprocessing'
+      // }
+      return 'preprocessed'
     } else {
       if (this.analyzerProcess.currentStage === 'finished') {
         return 'processed'

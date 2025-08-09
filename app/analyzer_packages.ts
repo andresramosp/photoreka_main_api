@@ -13,6 +13,7 @@ import {
   MESSAGE_ANALYZER_GPT_TOPOLOGIC_TAGS,
   MESSAGE_TAGS_TEXT_EXTRACTION,
 } from './utils/prompts/tags.js'
+import { MESSAGE_ANALYZER_VISUAL_ASPECTS } from './utils/prompts/visual_aspects.js'
 
 export const packages = [
   {
@@ -41,6 +42,26 @@ export const packages = [
     id: 'process',
     isPreprocess: false, // Package normal de análisis
     tasks: [
+      {
+        name: 'vision_visual_aspects',
+        type: 'VisionDescriptionTask',
+        model: 'GPT',
+        needsImage: true,
+        sequential: false,
+        prompts: [MESSAGE_ANALYZER_VISUAL_ASPECTS],
+        resolution: 'low',
+        imagesPerBatch: 4,
+        promptDependentField: null,
+        checks: ['descriptions.visual_aspects'],
+        visualAspects: true,
+      },
+      {
+        name: 'tags_visual_aspects',
+        type: 'TagTask',
+        needsImage: false,
+        descriptionSourceFields: ['visual_aspects'],
+        checks: ['tags.any', 'tags.visual_aspects'],
+      },
       {
         name: 'clip_embeddings',
         type: 'VisualEmbeddingTask',

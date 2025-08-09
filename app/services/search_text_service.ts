@@ -37,6 +37,7 @@ export type SearchOptions = {
   maxPageAttempts?: number
   minResults?: number
   collections?: string[]
+  visualAspects?: string[]
 }
 
 export type SearchTagsOptions = SearchOptions & {
@@ -84,11 +85,13 @@ export default class SearchTextService {
       maxPageAttempts = 4,
       minResults,
       collections,
+      visualAspects,
     } = options
 
     const photoIds = await this.photoManager.getPhotosIdsByUser(
       userId?.toString(),
-      collections && collections.length > 0 ? collections : undefined
+      collections && collections.length > 0 ? collections : undefined,
+      visualAspects && visualAspects.length > 0 ? visualAspects : undefined
     )
 
     const { structuredResult, useImage, expansionCost } = await this.queryService.structureQuery(
@@ -202,11 +205,13 @@ export default class SearchTextService {
   //   @withCostWS
 
   public async *searchByTags(options: SearchTagsOptions, userId: string | number) {
-    const { included, excluded, iteration, pageSize, searchMode, collections } = options
+    const { included, excluded, iteration, pageSize, searchMode, collections, visualAspects } =
+      options
 
     const photoIds = await this.photoManager.getPhotosIdsByUser(
       userId?.toString(),
-      collections && collections.length > 0 ? collections : undefined
+      collections && collections.length > 0 ? collections : undefined,
+      visualAspects && visualAspects.length > 0 ? visualAspects : undefined
     )
 
     let embeddingScoredPhotos = await this.scoringService.getScoredPhotosByTags(
@@ -240,11 +245,12 @@ export default class SearchTextService {
     userId: string | number,
     options: SearchTopologicalOptions
   ) {
-    const { pageSize, iteration, searchMode, collections } = options
+    const { pageSize, iteration, searchMode, collections, visualAspects } = options
 
     const photoIds = await this.photoManager.getPhotosIdsByUser(
       userId?.toString(),
-      collections && collections.length > 0 ? collections : undefined
+      collections && collections.length > 0 ? collections : undefined,
+      visualAspects && visualAspects.length > 0 ? visualAspects : undefined
     )
 
     let embeddingScoredPhotos = await this.scoringService.getScoredPhotosByTopoAreas(
@@ -305,7 +311,7 @@ export default class SearchTextService {
         ],
         'gpt-4.1',
         null,
-        1.1,
+        0.7,
         false
       )
 

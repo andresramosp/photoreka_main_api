@@ -35,6 +35,7 @@ export default class HealthPhotoService {
     push('descriptions.context', !!d.context)
     push('descriptions.story', !!d.story)
     push('descriptions.visual_accents', !!d.visual_accents)
+    push('descriptions.visual_aspects', !!d.visual_aspects)
 
     push('tags.any', photo.tags.length > 0)
     push(
@@ -44,6 +45,10 @@ export default class HealthPhotoService {
     push(
       'tags.visual_accents',
       photo.tags.some((t) => t.category === 'visual_accents')
+    )
+    push(
+      'tags.visual_aspects',
+      photo.tags.some((t) => t.category === 'visual_aspects')
     )
 
     push('descriptionChunks.any', photo.descriptionChunks.length > 0)

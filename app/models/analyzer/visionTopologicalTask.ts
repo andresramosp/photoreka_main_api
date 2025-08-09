@@ -238,7 +238,7 @@ export class VisionTopologicalTask extends AnalyzerTask {
           body: {
             model: 'gpt-4.1',
             temperature: 0.1,
-            response_format: { type: 'json_object' },
+            // response_format: { type: 'json_object' },
             max_tokens: 15000,
             messages: [
               { role: 'system', content: batchSpecificPrompts[0] },
@@ -284,25 +284,17 @@ export class VisionTopologicalTask extends AnalyzerTask {
 
     results.forEach((res: any) => {
       try {
-        const content = res.response.body.choices[0].message.content
-        const parsed = JSON.parse(content.replace(/```(?:json)?\s*/g, '').trim())
-
         const photoIds = res.custom_id.split('-').map(Number)
-
-        if (typeof parsed !== 'object' || parsed === null) {
-          logger.error(`Error: la respuesta no es un objeto para el batch ${res.custom_id}`)
-          // Agregar las imágenes fallidas a failedRequests
+        const items = res.items || []
+        if (items.length !== photoIds.length) {
+          logger.error(`Batch mismatch ${res.custom_id}: ${items.length} vs ${photoIds.length}`)
           const failedImages = batchPhotos.filter((img) => photoIds.includes(img.photo.id))
           this.failedRequests.push(...failedImages)
           return
         }
-
-        Object.entries(parsed).forEach(([photoIndex, photoResult]: [string, any]) => {
-          const idx = parseInt(photoIndex)
+        items.forEach((photoResult: any, idx: number) => {
           const photoId = photoIds[idx]
-          if (photoId) {
-            this.data[photoId] = { ...this.data[photoId], ...photoResult }
-          }
+          this.data[photoId] = { ...this.data[photoId], ...photoResult }
         })
       } catch (err) {
         logger.error(`Error procesando resultado del batch para fotos ${res.custom_id}:`, err)

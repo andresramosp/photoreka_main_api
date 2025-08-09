@@ -313,12 +313,13 @@ export default class CatalogController {
             type: 'image_url',
             image_url: {
               url: photo.originalUrl,
+              detail: 'high',
             },
           },
         ],
-        'gpt-4.1',
+        'gpt-5-chat-latest',
         { type: 'json_object' },
-        0.4,
+        0.6,
         true
       )
 

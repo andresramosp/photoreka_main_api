@@ -240,7 +240,7 @@ export default class ScoringService {
               aggregatedScores,
               weights.nuancesTags,
               searchMode,
-              ['context_story', 'visual_accents'],
+              ['context_story', 'visual_accents', 'visual_aspects'],
               ['context', 'story', 'visual_accents'],
               [],
               userId
@@ -257,7 +257,7 @@ export default class ScoringService {
           scores,
           weights.semantic,
           searchMode,
-          ['context_story', 'visual_accents'],
+          ['context_story', 'visual_accents', 'visual_aspects'],
           ['context', 'story'],
           [],
           userId
@@ -304,6 +304,7 @@ export default class ScoringService {
   private async filterExcludedPhotoIdsByTags(
     photoIds: number[],
     excluded: string[],
+    searchMode: SearchMode,
     userId: string
   ): Promise<number[]> {
     const proximityThreshold = 1 + 0.6
@@ -365,7 +366,12 @@ export default class ScoringService {
     await EmbeddingStoreService.calculateEmbeddings([...included, ...excluded])
 
     // Aplicar exclusión directamente a nivel de IDs
-    const filteredPhotoIds = await this.filterExcludedPhotoIdsByTags(photoIds, excluded, userId)
+    const filteredPhotoIds = await this.filterExcludedPhotoIdsByTags(
+      photoIds,
+      excluded,
+      searchMode,
+      userId
+    )
 
     let aggregatedScores: ScoredPhoto[] = filteredPhotoIds.map((id) => ({
       id,
@@ -382,7 +388,7 @@ export default class ScoringService {
           scores,
           weights.tags,
           searchMode,
-          ['context_story', 'visual_accents'],
+          ['context_story', 'visual_accents', 'visual_aspects'],
           ['context', 'story'],
           [],
           userId
