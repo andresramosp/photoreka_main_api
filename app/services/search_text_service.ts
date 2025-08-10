@@ -134,7 +134,7 @@ export default class SearchTextService {
         return
       }
 
-      const batchSize = 3
+      const batchSize = 1
 
       let photoBatches = []
       for (let i = 0; i < paginatedPhotos.length; i += batchSize) {
@@ -142,8 +142,6 @@ export default class SearchTextService {
       }
 
       const batchPromises = photoBatches.map(async (batch, index) => {
-        await this.sleep(100 * index)
-
         const { modelResult, modelCost } = await this.processBatchInsightsImage(
           batch,
           structuredResult,
