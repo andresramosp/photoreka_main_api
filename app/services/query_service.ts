@@ -70,16 +70,17 @@ export default class QueryService {
         ? MESSAGE_QUERY_STRUCTURE_CURATION_IMPLICIT_ONLY
         : MESSAGE_QUERY_STRUCTURE
 
-    const { result: modelOneResult, cost: modelOneCost } = await this.modelsService.getGPTResponse(
-      MESSAGE_QUERY_NO_PREFIX_AND_TRANSLATION,
-      JSON.stringify({ query }),
-      'gpt-5-nano'
-    )
+    const { result: modelOneResult, cost: modelOneCost } =
+      await this.modelsService.getGeminiResponse(
+        MESSAGE_QUERY_NO_PREFIX_AND_TRANSLATION,
+        JSON.stringify({ query }),
+        'gemini-2.0-flash'
+      )
 
-    const { result: modelResult, cost: modelTwoCost } = await this.modelsService.getGPTResponse(
+    const { result: modelResult, cost: modelTwoCost } = await this.modelsService.getGeminiResponse(
       queryStuctureMessage,
       JSON.stringify({ query: modelOneResult.no_prefix }),
-      searchMode == 'curation' ? 'gpt-5-chat-latest' : 'gpt-4o-mini'
+      searchMode == 'curation' ? 'gemini-2.5-flash' : 'gemini-2.0-flash'
     )
 
     modelResult.original = query

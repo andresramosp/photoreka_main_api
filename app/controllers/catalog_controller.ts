@@ -1,6 +1,6 @@
 import type { HttpContext } from '@adonisjs/core/http'
 
-import { S3Client, PutObjectCommand, DeleteObjectsCommand } from '@aws-sdk/client-s3'
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
 import crypto from 'crypto'
 import Photo from '#models/photo'
 import { GoogleAuthService } from '#services/google_photos_service'
@@ -12,6 +12,7 @@ import ModelsService from '#services/models_service'
 
 import HealthPhotoService from '#services/health_photo_service'
 import { MESSAGE_PHOTO_INSIGHTS } from '../utils/prompts/descriptions.js'
+import PhotoImageService from '#services/photo_image_service'
 
 const s3 = new S3Client({
   region: 'auto',
@@ -306,21 +307,23 @@ export default class CatalogController {
 
       const systemPrompt = MESSAGE_PHOTO_INSIGHTS
 
-      const gptResponse = await modelsService.getGPTResponse(
+      const buffer = await PhotoImageService.getInstance().getImageBufferFromR2(photo.name)
+      const base64 = buffer.toString('base64')
+
+      const gptResponse = await modelsService.getGeminiResponse(
         systemPrompt,
         [
           {
-            type: 'image_url',
-            image_url: {
-              url: photo.originalUrl,
-              detail: 'high',
+            inlineData: {
+              mimeType: 'image/png',
+              data: base64,
             },
           },
         ],
-        'gpt-5-chat-latest',
-        { type: 'json_object' },
-        0.6,
-        true
+        'gemini-2.0-flash',
+        {
+          temperature: 0.6,
+        }
       )
 
       let insights = []

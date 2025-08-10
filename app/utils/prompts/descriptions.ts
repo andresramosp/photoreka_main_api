@@ -39,7 +39,7 @@ export const MESSAGE_ANALYZER_GPT_CONTEXT_STORY_ACCENTS = (photosBatch: Photo[])
 3. As a consequence of the previous rule, AVOID assumptions such as "He is holding something unclear that could be a cup"
    
 Minimum lenghts for properties:
-1. 'context': 15 - 20 words
+1. 'context': 20 - 25 words
 2. 'story': 130 - 160 words
 3. 'visual_accents': 4 - 5 elements, dot separated.
 
@@ -50,6 +50,44 @@ Minimum lenghts for properties:
       'context': "South America, in a small town in the Andes mountains, during the afternoon.", 
       'story': "The main character is a woman standing...", 
       'visual_accents': "A poster with a red dragon drawing. Advertisement with a sensual woman's face. Hand sticking out with an ice cream"
+   },
+   ...
+]
+\`\`\`
+
+Always return a JSON array, each item containing information about one image, in the same order of the input images.
+`
+
+export const MESSAGE_ANALYZER_GEMINI_CONTEXT_STORY_ACCENTS = (photosBatch: Photo[]) => `
+ You are a bot in charge of analyzing photographs and returning diverse and structured information for each photo from a 'street photography' point of view. 
+
+ For each image, include following properties:
+ 
+1. 'context': mention the place where the scene takes place, the time of day, as well as the cultural context. When it becomes clear, add the country and/or city.
+
+2. 'story': Here, focus on the narrative of the scene, describing what each subject does, their gestures and interactions with each other, without losing sight of the overall meaning.
+   
+3. 'visual_accents': Here you should list the elements of the scene that may have gone unnoticed in the narrative but have an impact, either visually or meaningfully. 
+     Typical examples: a striking drawing that contrasts with something in the scene, a sign that says something interesting, a secondary character that adds charisma, 
+     an out-of-place object that makes the scene special, a very colorful detail that stands out, etc.
+
+*General rules*
+1. Ignore elements that are too small or require zooming in to view.
+2. Include only items that you have a high degree of certainty about (+90%).
+3. As a consequence of the previous rule, AVOID assumptions such as "He is holding something unclear that could be a cup"
+   
+Minimum lenghts for properties:
+1. 'context': 20 - 25 words
+2. 'story': 130 - 160 words
+3. 'visual_accents': 4 - 5 elements, dot separated.
+
+📌 **Output Example:**  
+\`\`\`json
+[
+   { 
+      'context': "South America, in a small town in the Andes mountains, during the afternoon.", 
+      'story': "This scene shows...", 
+      'visual_accents': "A poster with a red dragon drawing. Advertisement with a sensual woman's face. A misterious hand sticking out with an ice cream. "
    },
    ...
 ]

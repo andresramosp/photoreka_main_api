@@ -8,7 +8,7 @@ import { VisualColorEmbeddingTask } from '#models/analyzer/visualColorEmbeddingT
 import { VisualDetectionTask } from '#models/analyzer/visualDetectionTask'
 import { VisualEmbeddingTask } from '#models/analyzer/visualEmbeddingTask'
 import { GlobalEmbeddingsTagsTask } from '#models/analyzer/globalEmbeddingsTagsTask'
-import { MESSAGE_ANALYZER_GPT_CONTEXT_STORY_ACCENTS } from './utils/prompts/descriptions.js'
+import { MESSAGE_ANALYZER_GEMINI_CONTEXT_STORY_ACCENTS } from './utils/prompts/descriptions.js'
 import {
   MESSAGE_ANALYZER_GPT_TOPOLOGIC_TAGS,
   MESSAGE_TAGS_TEXT_EXTRACTION,
@@ -40,89 +40,96 @@ export const packages = [
 
   {
     id: 'process',
-    isPreprocess: false, // Package normal de análisis
+    isPreprocess: false,
     tasks: [
-      // {
-      //   name: 'vision_visual_aspects',
-      //   type: 'VisionDescriptionTask',
-      //   model: 'GPT',
-      //   needsImage: true,
-      //   sequential: false,
-      //   prompts: [MESSAGE_ANALYZER_VISUAL_ASPECTS],
-      //   resolution: 'low',
-      //   imagesPerBatch: 4,
-      //   promptDependentField: null,
-      //   checks: ['descriptions.visual_aspects'],
-      //   visualAspects: true,
-      // },
-      // {
-      //   name: 'tags_visual_aspects',
-      //   type: 'TagTask',
-      //   needsImage: false,
-      //   descriptionSourceFields: ['visual_aspects'],
-      //   checks: ['tags.any', 'tags.visual_aspects'],
-      // },
-      // {
-      //   name: 'clip_embeddings',
-      //   type: 'VisualEmbeddingTask',
-      //   needsImage: true,
-      //   onlyIfNeeded: true,
-      //   checks: ['photo.embedding'],
-      // },
+      {
+        name: 'vision_visual_aspects', // 0.4 centimos 1000 fotos.
+        type: 'VisionDescriptionTask',
+        model: 'Gemini',
+        modelName: 'gemini-2.5-flash',
+        needsImage: true,
+        sequential: false,
+        prompts: [MESSAGE_ANALYZER_VISUAL_ASPECTS],
+        resolution: 'low',
+        imagesPerBatch: 4,
+        promptDependentField: null,
+        checks: ['descriptions.visual_aspects'],
+        visualAspects: true,
+      },
+      {
+        name: 'tags_visual_aspects',
+        type: 'TagTask',
+        model: 'Gemini',
+        modelName: 'gemini-2.0-flash',
+        needsImage: false,
+        descriptionSourceFields: ['visual_aspects'],
+        checks: ['tags.any', 'tags.visual_aspects'],
+      },
+      {
+        name: 'clip_embeddings',
+        type: 'VisualEmbeddingTask',
+        needsImage: true,
+        onlyIfNeeded: true,
+        checks: ['photo.embedding'],
+      },
       {
         name: 'vision_context_story_accents',
         type: 'VisionDescriptionTask',
         model: 'Gemini',
+        modelName: 'gemini-2.0-flash',
         needsImage: true,
         sequential: false,
-        prompts: [MESSAGE_ANALYZER_GPT_CONTEXT_STORY_ACCENTS],
+        prompts: [MESSAGE_ANALYZER_GEMINI_CONTEXT_STORY_ACCENTS],
         resolution: 'high',
         imagesPerBatch: 1,
         promptDependentField: null,
         checks: ['descriptions.context', 'descriptions.story', 'descriptions.visual_accents'],
       },
-      // {
-      //   name: 'tags_context_story',
-      //   type: 'TagTask',
-      //   model: 'GPT',
-      //   needsImage: false,
-      //   prompt: MESSAGE_TAGS_TEXT_EXTRACTION,
-      //   descriptionSourceFields: ['context', 'story'],
-      //   checks: ['tags.any', 'tags.context_story'], // 'tagPhoto#*.tag#*.embedding' Mejor lanzar el review global que relanzar toda la task completa, al menos hasta que se subdivida
-      // },
-      // {
-      //   name: 'tags_visual_accents',
-      //   type: 'TagTask',
-      //   model: 'GPT',
-      //   needsImage: false,
-      //   prompt: MESSAGE_TAGS_TEXT_EXTRACTION,
-      //   descriptionSourceFields: ['visual_accents'],
-      //   checks: ['tags.visual_accents'],
-      // },
-      // {
-      //   name: 'chunks_context_story_visual_accents',
-      //   type: 'ChunkTask',
-      //   prompt: null,
-      //   model: null,
-      //   needsImage: false,
-      //   descriptionSourceFields: ['context', 'story', 'visual_accents'],
-      //   descriptionsChunksMethod: {
-      //     context: { type: 'split_by_size', maxLength: 250 },
-      //     story: { type: 'split_by_size', maxLength: 250 },
-      //     visual_accents: { type: 'split_by_size', maxLength: 15 },
-      //   },
-      //   checks: ['descriptionChunks.any', 'descriptionChunk#*.embedding'],
-      // },
-      // {
-      //   name: 'visual_color_embedding_task',
-      //   type: 'VisualColorEmbeddingTask',
-      //   needsImage: true,
-      //   checks: ['photo.color_histogram'],
-      // },
+      {
+        name: 'tags_context_story',
+        type: 'TagTask',
+        model: 'Gemini',
+        modelName: 'gemini-2.0-flash',
+        needsImage: false,
+        prompt: MESSAGE_TAGS_TEXT_EXTRACTION,
+        descriptionSourceFields: ['context', 'story'],
+        checks: ['tags.any', 'tags.context_story'], // 'tagPhoto#*.tag#*.embedding' Mejor lanzar el review global que relanzar toda la task completa, al menos hasta que se subdivida
+      },
+      {
+        name: 'tags_visual_accents',
+        type: 'TagTask',
+        model: 'Gemini',
+        modelName: 'gemini-2.0-flash',
+        needsImage: false,
+        prompt: MESSAGE_TAGS_TEXT_EXTRACTION,
+        descriptionSourceFields: ['visual_accents'],
+        checks: ['tags.visual_accents'],
+      },
+      {
+        name: 'chunks_context_story_visual_accents',
+        type: 'ChunkTask',
+        prompt: null,
+        model: null,
+        needsImage: false,
+        descriptionSourceFields: ['context', 'story', 'visual_accents'],
+        descriptionsChunksMethod: {
+          context: { type: 'split_by_size', maxLength: 250 },
+          story: { type: 'split_by_size', maxLength: 250 },
+          visual_accents: { type: 'split_by_size', maxLength: 15 },
+        },
+        checks: ['descriptionChunks.any', 'descriptionChunk#*.embedding'],
+      },
+      {
+        name: 'visual_color_embedding_task',
+        type: 'VisualColorEmbeddingTask',
+        needsImage: true,
+        checks: ['photo.color_histogram'],
+      },
       // {
       //   name: 'topological_tags',
       //   type: 'VisionTopologicalTask',
       //   model: 'Gemini', // probar Qwen con tags de GPT
+      //   modelName: 'gemini-2.0-flash',
       //   needsImage: true,
       //   sequential: false,
       //   resolution: 'high',

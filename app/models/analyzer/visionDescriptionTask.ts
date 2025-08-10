@@ -6,7 +6,7 @@ import PhotoImage from './photoImage.js'
 import Logger, { LogLevel } from '../../utils/logger.js'
 import AnalyzerProcess, { ProcessSheet } from './analyzerProcess.js'
 import pLimit from 'p-limit'
-import { createUserContent } from '@google/genai'
+import { createUserContent, MediaResolution } from '@google/genai'
 
 const logger = Logger.getInstance('AnalyzerProcess', 'VisionDescriptionTask')
 logger.setLevel(LogLevel.DEBUG)
@@ -18,7 +18,7 @@ const batchDelay = 1500 // Delay between batches in milliseconds
 
 export class VisionDescriptionTask extends AnalyzerTask {
   declare prompts: Prompt[]
-  declare resolution: 'low' | 'high'
+  declare resolution: 'low' | 'high' | 'medium'
   declare sequential: boolean
   declare imagesPerBatch: number
   declare promptDependentField: DescriptionType
@@ -39,6 +39,55 @@ export class VisionDescriptionTask extends AnalyzerTask {
   }
 
   private async processWithDirectAPI(pendingPhotos: PhotoImage[]): Promise<void> {
+    if (!this.data) this.data = {}
+
+    const batches: PhotoImage[][] = []
+    for (let i = 0; i < pendingPhotos.length; i += this.imagesPerBatch) {
+      const batch = pendingPhotos.slice(i, i + this.imagesPerBatch)
+      batches.push(batch)
+    }
+
+    const maxConcurrency = 5 // Número de batches simultáneos
+    const limit = pLimit(maxConcurrency)
+
+    const processBatch = async (batch: PhotoImage[]) => {
+      let response: any
+      const injectedPrompts: any = await this.injectPromptsDependencies(batch)
+      logger.debug(`Llamando a ${this.model} para ${batch.length} imágenes...`)
+
+      try {
+        if (this.model === 'GPT' || this.model === 'Qwen' || this.model === 'Gemini') {
+          response = await this.executeModelTask(injectedPrompts, batch)
+        } else if (this.model === 'Molmo') {
+          response = await this.executeMolmoTask(injectedPrompts, batch)
+        } else {
+          throw new Error(`Modelo no soportado: ${this.model}`)
+        }
+      } catch (err) {
+        logger.error(`Error en ${this.model} para ${batch.length} imágenes:`, err)
+        return
+      }
+
+      response.result.forEach((res: any, photoIndex: number) => {
+        const { ...results } = res
+        const photoId = batch[photoIndex].photo.id
+        this.data[photoId] = { ...this.data[photoId], ...results }
+      })
+
+      await this.commit(batch)
+      logger.debug(`Datos salvados ${this.model} para ${batch.length} imágenes`)
+    }
+
+    if (this.sequential) {
+      for (let i = 0; i < batches.length; i++) {
+        await processBatch(batches[i])
+      }
+    } else {
+      await Promise.all(batches.map((batch) => limit(() => processBatch(batch))))
+    }
+  }
+
+  private async processWithDirectAPIDelayed(pendingPhotos: PhotoImage[]): Promise<void> {
     if (!this.data) this.data = {}
 
     const batches: PhotoImage[][] = []
@@ -268,13 +317,13 @@ export class VisionDescriptionTask extends AnalyzerTask {
         },
       }))
 
-      return await this.modelsService.getGeminiResponse(
-        prompt,
-        images,
-        'gemini-2.0-flash',
-        'application/json',
-        0.1
-      )
+      return await this.modelsService.getGeminiResponse(prompt, images, this.modelName, {
+        temperature: 0.1,
+        mediaResolution:
+          this.resolution == 'high'
+            ? MediaResolution.MEDIA_RESOLUTION_HIGH
+            : MediaResolution.MEDIA_RESOLUTION_MEDIUM,
+      })
     } else {
       throw new Error(`Modelo no soportado: ${this.model}`)
     }

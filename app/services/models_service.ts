@@ -30,6 +30,7 @@ export type ModelName =
   | 'deepseek-chat'
   | 'qwen-vl-max'
   | 'gemini-2.0-flash'
+  | 'gemini-2.5-flash'
 
 const PRICES = {
   'gpt-4o': {
@@ -79,8 +80,13 @@ const PRICES = {
   },
   'gemini-2.0-flash': {
     input_cache_miss: 0.1 / 1_000_000, // USD per input token
-    input_cache_hit: 0.01875 / 1_000_000, // USD per cached input token
+    input_cache_hit: 0.05 / 1_000_000, // USD per cached input token
     output: 0.4 / 1_000_000, // USD per output token
+  },
+  'gemini-2.5-flash': {
+    input_cache_miss: 0.3 / 1_000_000, // USD per input token
+    input_cache_hit: 0.15 / 1_000_000, // USD per cached input token
+    output: 2.5 / 1_000_000, // USD per output token
   },
 }
 
@@ -711,17 +717,16 @@ export default class ModelsService {
 
   @MeasureExecutionTime
   public async getGeminiResponse(
-    prompt: string,
-    images: any[],
-    model: 'gemini-2.0-flash' = 'gemini-2.0-flash',
-    responseMimeType: string,
-    temperature: number = 0.1,
+    systemPrompt: string,
+    userMessages: any[],
+    model: ModelName,
+    generationConfig: any = { temperature: 0.1 },
     useCache: boolean = true
   ): Promise<any> {
     let cacheDuration = 60 * 5
     let finalResult, parsedResult, rawResult
     try {
-      const contents = createUserContent([prompt, ...images])
+      const contents = createUserContent([systemPrompt, ...userMessages])
 
       const cacheKey = JSON.stringify({ contents, model })
 
@@ -732,25 +737,17 @@ export default class ModelsService {
         return cachedResponse
       }
 
-      // Initialize the Google GenAI client
-
       const ai = new GoogleGenAI({
         apiKey: env.get('GEMINI_API_KEY'),
       })
 
       // Configure generation options
-      const generationConfig: GenerateContentConfig = {
-        temperature,
-        maxOutputTokens: 15000,
+      generationConfig = {
+        ...generationConfig,
         topP: 1,
-        topK: 40,
-        mediaResolution: MediaResolution.MEDIA_RESOLUTION_HIGH,
+        topK: 30,
         thinkingConfig: { includeThoughts: false, thinkingBudget: 0 },
-      }
-
-      // Set JSON response format if requested
-      if (responseMimeType) {
-        generationConfig.responseMimeType = responseMimeType
+        maxOutputTokens: 2500,
       }
 
       // Generate content using the client

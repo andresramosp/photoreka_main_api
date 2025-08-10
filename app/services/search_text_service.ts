@@ -300,7 +300,7 @@ export default class SearchTextService {
     let modelCost = 0
 
     if (imagesPayload.length) {
-      const response = await this.modelsService.getGPTResponse(
+      const response = await this.modelsService.getGeminiResponse(
         searchModelMessage(),
         [
           {
@@ -309,10 +309,11 @@ export default class SearchTextService {
           },
           ...imagesPayload,
         ],
-        'gpt-5-chat-latest',
-        null,
-        0.7,
-        false
+        'gemini-2.0-flash',
+        { temperature: 0.7 }
+        // null,
+        // 0.7,
+        // false
       )
 
       modelResult = response.result || []
@@ -466,11 +467,17 @@ export default class SearchTextService {
     }
 
     return validImages.map(({ base64 }) => ({
-      type: 'image_url',
-      image_url: {
-        url: `data:image/jpeg;base64,${base64}`,
-        detail: 'low',
+      inlineData: {
+        mimeType: 'image/png',
+        data: base64,
       },
     }))
+    // return validImages.map(({ base64 }) => ({
+    //   type: 'image_url',
+    //   image_url: {
+    //     url: `data:image/jpeg;base64,${base64}`,
+    //     detail: 'low',
+    //   },
+    // }))
   }
 }

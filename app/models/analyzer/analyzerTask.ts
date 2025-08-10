@@ -5,7 +5,7 @@ import PhotoImage from './photoImage.js'
 import _ from 'lodash'
 import PhotoImageService from '#services/photo_image_service'
 import Logger, { LogLevel } from '../../utils/logger.js'
-import ModelsService from '#services/models_service'
+import ModelsService, { ModelName } from '#services/models_service'
 
 const logger = Logger.getInstance('AnalyzerProcess')
 logger.setLevel(LogLevel.DEBUG)
@@ -13,6 +13,7 @@ logger.setLevel(LogLevel.DEBUG)
 export abstract class AnalyzerTask {
   declare name: string
   declare model: ModelType
+  declare modelName: ModelName
   declare data: any
   declare needsImage: boolean
   declare useGuideLines: boolean

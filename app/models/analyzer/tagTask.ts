@@ -88,7 +88,7 @@ export class TagTask extends AnalyzerTask {
     } else {
       const cleanedResults = await this.cleanPhotosDescs(validPhotos)
       logger.debug('Procesando extracción de tags...')
-      await this.requestTagsFromGPT(validPhotos, cleanedResults)
+      await this.requestTagsFromLLM(validPhotos, cleanedResults)
     }
     logger.debug('Procesando creación de tags...')
   }
@@ -245,12 +245,12 @@ export class TagTask extends AnalyzerTask {
     return results
   }
 
-  private async requestTagsFromGPT(photos: Photo[], cleanedResults: string[]) {
+  private async requestTagsFromLLM(photos: Photo[], cleanedResults: string[]) {
     const totalPhotos = photos.length
     const concurrencyLimit = 10
 
     logger.debug(
-      `Llamadas individuales a GPT para ${photos.length} imágenes (máximo ${concurrencyLimit} en paralelo)`
+      `Llamadas individuales a ${this.model.toUpperCase()} para ${photos.length} imágenes (máximo ${concurrencyLimit} en paralelo)`
     )
 
     const limit = pLimit(concurrencyLimit)
@@ -258,11 +258,26 @@ export class TagTask extends AnalyzerTask {
     const tagRequests = photos.map((photo, index) =>
       limit(async () => {
         try {
-          const { result: extractedTagsResponse } = await this.modelsService.getGPTResponse(
-            this.prompt as string,
-            JSON.stringify({ description: cleanedResults[index] }),
-            'gpt-5-nano'
-          )
+          let extractedTagsResponse
+
+          if (this.model === 'GPT') {
+            const { result } = await this.modelsService.getGPTResponse(
+              this.prompt as string,
+              JSON.stringify({ description: cleanedResults[index] }),
+              'gpt-5-nano'
+            )
+            extractedTagsResponse = result
+          } else if (this.model === 'Gemini') {
+            const { result } = await this.modelsService.getGeminiResponse(
+              this.prompt as string,
+              [JSON.stringify({ description: cleanedResults[index] })],
+              'gemini-2.0-flash'
+            )
+            extractedTagsResponse = result
+          } else {
+            throw new Error(`Modelo no soportado: ${this.model}`)
+          }
+
           const { tags: tagList } = extractedTagsResponse
 
           this.data[photo.id] = []
@@ -291,7 +306,16 @@ export class TagTask extends AnalyzerTask {
     logger.debug(`Extrayendo tags de visual_aspects para ${photos.length} imágenes`)
 
     // Keys que usan la regla value + key
-    const keyWithSuffix = ['orientation', 'focus', 'lighting', 'framing', 'genre']
+    const keyWithSuffix = [
+      'orientation',
+      'focus',
+      'lighting',
+      'framing',
+      'genre',
+      'perspective',
+      'temperature',
+      'stylistic',
+    ]
 
     for (const photo of photos) {
       try {
