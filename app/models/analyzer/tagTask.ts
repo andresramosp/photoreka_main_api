@@ -261,7 +261,7 @@ export class TagTask extends AnalyzerTask {
           const { result: extractedTagsResponse } = await this.modelsService.getGPTResponse(
             this.prompt as string,
             JSON.stringify({ description: cleanedResults[index] }),
-            'gpt-4o-mini'
+            'gpt-5-nano'
           )
           const { tags: tagList } = extractedTagsResponse
 

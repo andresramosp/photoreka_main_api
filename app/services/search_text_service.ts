@@ -309,7 +309,7 @@ export default class SearchTextService {
           },
           ...imagesPayload,
         ],
-        'gpt-4.1',
+        'gpt-5-chat-latest',
         null,
         0.7,
         false

@@ -6,6 +6,7 @@ import PhotoImage from './photoImage.js'
 import Logger, { LogLevel } from '../../utils/logger.js'
 import AnalyzerProcess, { ProcessSheet } from './analyzerProcess.js'
 import pLimit from 'p-limit'
+import { createUserContent } from '@google/genai'
 
 const logger = Logger.getInstance('AnalyzerProcess', 'VisionDescriptionTask')
 logger.setLevel(LogLevel.DEBUG)
@@ -54,7 +55,7 @@ export class VisionDescriptionTask extends AnalyzerTask {
       logger.debug(`Llamando a ${this.model} para ${batch.length} imágenes...`)
 
       try {
-        if (this.model === 'GPT' || this.model === 'Qwen') {
+        if (this.model === 'GPT' || this.model === 'Qwen' || this.model === 'Gemini') {
           response = await this.executeModelTask(injectedPrompts, batch)
         } else if (this.model === 'Molmo') {
           response = await this.executeMolmoTask(injectedPrompts, batch)
@@ -170,7 +171,7 @@ export class VisionDescriptionTask extends AnalyzerTask {
           method: 'POST',
           url: '/v1/chat/completions',
           body: {
-            model: 'gpt-4.1',
+            model: 'gpt-4.1', // 'gpt-5-chat-latest' no soporta aun Batch API y el gpt-5 desvaría.
             temperature: 0.1,
             // response_format: { type: 'json_object' },
             max_tokens: 15000,
@@ -240,18 +241,44 @@ export class VisionDescriptionTask extends AnalyzerTask {
 
   private async executeModelTask(prompts: string[], batch: PhotoImage[]): Promise<any> {
     const prompt = prompts[0]
-    const images = batch.map((pp) => ({
-      type: 'image_url',
-      image_url: {
-        url: pp.photo.originalUrl, //`data:image/jpeg;base64,${pp.base64}`,
-        detail: this.resolution,
-      },
-    }))
-    return this.model == 'GPT'
-      ? await this.modelsService.getGPTResponse(prompt, images, 'gpt-4.1', null, 0)
-      : await this.modelsService.getQwenResponse(prompt, images, 'qwen-vl-max', null, 0)
-  }
 
+    if (this.model === 'GPT') {
+      const images = batch.map((pp) => ({
+        type: 'image_url',
+        image_url: {
+          url: pp.photo.originalUrl,
+          detail: this.resolution,
+        },
+      }))
+      return await this.modelsService.getGPTResponse(prompt, images, 'gpt-5-chat-latest', null, 0)
+    } else if (this.model === 'Qwen') {
+      const images = batch.map((pp) => ({
+        type: 'image_url',
+        image_url: {
+          url: pp.photo.originalUrl,
+          detail: this.resolution,
+        },
+      }))
+      return await this.modelsService.getQwenResponse(prompt, images, 'qwen-vl-max', null, 0)
+    } else if (this.model === 'Gemini') {
+      let images = batch.map((pp) => ({
+        inlineData: {
+          mimeType: 'image/png',
+          data: pp.base64,
+        },
+      }))
+
+      return await this.modelsService.getGeminiResponse(
+        prompt,
+        images,
+        'gemini-2.0-flash',
+        'application/json',
+        0.1
+      )
+    } else {
+      throw new Error(`Modelo no soportado: ${this.model}`)
+    }
+  }
   private async executeMolmoTask(prompts: any[], batch: PhotoImage[]): Promise<any> {
     const response = await this.modelsService.getMolmoResponse(
       batch.map((pp) => ({ id: pp.photo.id, base64: pp.base64 })),

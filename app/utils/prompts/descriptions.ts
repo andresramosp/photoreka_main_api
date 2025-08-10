@@ -39,15 +39,15 @@ export const MESSAGE_ANALYZER_GPT_CONTEXT_STORY_ACCENTS = (photosBatch: Photo[])
 3. As a consequence of the previous rule, AVOID assumptions such as "He is holding something unclear that could be a cup"
    
 Minimum lenghts for properties:
-1. 'context': 25 - 30 words
+1. 'context': 15 - 20 words
 2. 'story': 130 - 160 words
-3. 'visual_accents': 5 - 6 elements, dot separated.
+3. 'visual_accents': 4 - 5 elements, dot separated.
 
 📌 **Output Example:**  
 \`\`\`json
 [
    { 
-      'context': "This image features a bustling city...", 
+      'context': "South America, in a small town in the Andes mountains, during the afternoon.", 
       'story': "The main character is a woman standing...", 
       'visual_accents': "A poster with a red dragon drawing. Advertisement with a sensual woman's face. Hand sticking out with an ice cream"
    },

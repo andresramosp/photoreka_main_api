@@ -73,7 +73,7 @@ export default class QueryService {
     const { result: modelOneResult, cost: modelOneCost } = await this.modelsService.getGPTResponse(
       MESSAGE_QUERY_NO_PREFIX_AND_TRANSLATION,
       JSON.stringify({ query }),
-      'gpt-4o-mini'
+      'gpt-5-nano'
     )
 
     const { result: modelResult, cost: modelTwoCost } = await this.modelsService.getGPTResponse(

@@ -236,7 +236,7 @@ export class VisionTopologicalTask extends AnalyzerTask {
           method: 'POST',
           url: '/v1/chat/completions',
           body: {
-            model: 'gpt-4.1',
+            model: 'gpt-4.1', // 'gpt-5-chat-latest' no soporta aun Batch API y el gpt-5 desvaría.
             temperature: 0.1,
             // response_format: { type: 'json_object' },
             max_tokens: 15000,
@@ -315,7 +315,7 @@ export class VisionTopologicalTask extends AnalyzerTask {
       },
     }))
     return this.model == 'GPT'
-      ? await this.modelsService.getGPTResponse(prompt, images, 'gpt-4.1', null, 0)
+      ? await this.modelsService.getGPTResponse(prompt, images, 'gpt-5-chat-latest', null, 0)
       : await this.modelsService.getQwenResponse(prompt, images, 'qwen-vl-max', null, 0)
   }
 

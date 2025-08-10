@@ -7,11 +7,11 @@ For each image, extract a JSON object where each field is a technical-stylistic 
 
 The aspects and possible values include (but are not limited to):
 
-1. 'color': 'black and white', 'color', 'vivid colors', 'muted colors', 'warm colors', 'cold colors'.
+1. 'color': 'black and white', 'color', 'vivid colors', 'warm colors', 'cold colors'.
 2. 'orientation': 'vertical', 'horizontal', 'square'.
-3. 'focus': 'blurry', 'nitid', 'average'.
-4. 'stylistic': 'long exposure', 'bokeh', 'high contrast', 'silhouettes', 'reflections', 'crooked'
-5. 'lighting': 'natural', 'artificial', 'backlit', 'side-lit', 'dramatic'.
+3. 'focus': 'blurry', 'nitid'.
+4. 'stylistic': 'long exposure', 'bokeh', 'silhouettes', 'reflections', 'crooked'
+5. 'lighting': 'natural', 'artificial', 'backlit', 'dramatic'
 6. 'framing': 'close-up', 'medium shot', 'wide shot'.
 7. 'genre': 'abstract', 'documentary', 'street', 'travel', 'landscape', 'portrait'
 

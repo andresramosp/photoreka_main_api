@@ -5,11 +5,31 @@ import axios from 'axios'
 import NodeCache from 'node-cache'
 import MeasureExecutionTime from '../decorators/measureExecutionTime.js'
 import withWarmUp from '../decorators/withWarmUp.js'
-import { withCache } from '../decorators/withCache.js'
-import { Readable } from 'stream'
+import { robustJsonParse } from '../utils/jsonUtils.js'
+const { GoogleGenAI } = await import('@google/genai')
+
 import FormData from 'form-data'
+import {
+  Content,
+  createUserContent,
+  GenerateContentConfig,
+  GenerateContentResponse,
+  MediaResolution,
+} from '@google/genai'
 
 const cache = new NodeCache() // Simple in-memory cache
+
+export type ModelName =
+  | 'gpt-4o'
+  | 'gpt-4.1'
+  | 'gpt-5'
+  | 'gpt-5-mini'
+  | 'gpt-5-nano'
+  | 'gpt-5-chat-latest'
+  | 'gpt-4o-mini'
+  | 'deepseek-chat'
+  | 'qwen-vl-max'
+  | 'gemini-2.0-flash'
 
 const PRICES = {
   'gpt-4o': {
@@ -56,6 +76,11 @@ const PRICES = {
     input_cache_miss: 1.6 / 1_000_000, // USD per input token (inventado)
     input_cache_hit: 0.2 / 1_000_000, // USD per input token (inventado)
     output: 6.4 / 1_000_000, // USD per output token (inventado)
+  },
+  'gemini-2.0-flash': {
+    input_cache_miss: 0.1 / 1_000_000, // USD per input token
+    input_cache_hit: 0.01875 / 1_000_000, // USD per cached input token
+    output: 0.4 / 1_000_000, // USD per output token
   },
 }
 
@@ -574,24 +599,18 @@ export default class ModelsService {
   public async getGPTResponse(
     systemContent: string | null,
     userContent: any,
-    model: 'gpt-4o' | 'gpt-4.1' | 'gpt-4o-mini' | 'gpt-5' | 'gpt-5-chat-latest',
+    model: ModelName,
     responseFormat: any = { type: 'json_object' },
     temperature: number = 1,
     useCache: boolean = true
   ): Promise<any> {
     let cacheDuration = 60 * 5
     try {
-      const simulateErrorRate: number = model == 'gpt-4o-mini' ? 0 : 0
-
-      // Simular fallo aleatorio si está activado
-      if (simulateErrorRate > 0 && Math.random() < simulateErrorRate) {
-        console.warn('Simulando error artificial en getGPTResponse()')
-        throw new Error('Simulated GPT request failure')
-      }
+      // Si el modelo es gpt-5, gpt-5-mini o gpt-5-nano (pero NO gpt-5-chat-latest), no pasar temperature y usar max_completion_tokens
+      const isGpt5NonChat = ['gpt-5', 'gpt-5-mini', 'gpt-5-nano'].includes(model)
 
       let payload: any = {
         model,
-        temperature,
         frequency_penalty: 0,
         top_p: 1,
         messages: systemContent
@@ -611,8 +630,16 @@ export default class ModelsService {
                 content: userContent,
               },
             ],
-        max_tokens: 15000,
-        // max_completion_tokens: 15000,
+      }
+
+      if (isGpt5NonChat) {
+        payload.max_completion_tokens = 15000
+        // payload.reasoning = {
+        //   effort: 'minimal',
+        // }
+      } else {
+        payload.temperature = temperature
+        payload.max_tokens = 15000
       }
 
       if (responseFormat) {
@@ -655,21 +682,7 @@ export default class ModelsService {
       const totalCostInEur = inputCost + outputCost
 
       const rawResult = data.choices[0].message.content
-      let parsedResult
-
-      try {
-        parsedResult = JSON.parse(rawResult.replace(/```(?:json)?\s*/g, '').trim())
-      } catch {
-        const jsonArrayMatch = rawResult.match(/\[.*?\]/s)
-        const jsonObjectMatch = rawResult.match(/\{.*?\}/s)
-        if (jsonArrayMatch) {
-          parsedResult = JSON.parse(jsonArrayMatch[0])
-        } else if (jsonObjectMatch) {
-          parsedResult = JSON.parse(jsonObjectMatch[0])
-        } else {
-          parsedResult = {}
-        }
-      }
+      const parsedResult = robustJsonParse(rawResult)
 
       const result = {
         result: parsedResult.result
@@ -692,6 +705,98 @@ export default class ModelsService {
       return result
     } catch (error) {
       console.error('Error fetching GPT response:', error)
+      throw error
+    }
+  }
+
+  @MeasureExecutionTime
+  public async getGeminiResponse(
+    prompt: string,
+    images: any[],
+    model: 'gemini-2.0-flash' = 'gemini-2.0-flash',
+    responseMimeType: string,
+    temperature: number = 0.1,
+    useCache: boolean = true
+  ): Promise<any> {
+    let cacheDuration = 60 * 5
+    let finalResult, parsedResult, rawResult
+    try {
+      const contents = createUserContent([prompt, ...images])
+
+      const cacheKey = JSON.stringify({ contents, model })
+
+      // Check cache
+      const cachedResponse = cache.get(cacheKey)
+      if (useCache && cachedResponse) {
+        console.log('Cache hit for getGeminiResponse')
+        return cachedResponse
+      }
+
+      // Initialize the Google GenAI client
+
+      const ai = new GoogleGenAI({
+        apiKey: env.get('GEMINI_API_KEY'),
+      })
+
+      // Configure generation options
+      const generationConfig: GenerateContentConfig = {
+        temperature,
+        maxOutputTokens: 15000,
+        topP: 1,
+        topK: 40,
+        mediaResolution: MediaResolution.MEDIA_RESOLUTION_HIGH,
+        thinkingConfig: { includeThoughts: false, thinkingBudget: 0 },
+      }
+
+      // Set JSON response format if requested
+      if (responseMimeType) {
+        generationConfig.responseMimeType = responseMimeType
+      }
+
+      // Generate content using the client
+      const result = await ai.models.generateContent({
+        model,
+        contents,
+        generationConfig,
+      })
+
+      // Extract usage metadata
+      const usageMetadata = result.usageMetadata || {}
+      const promptTokens = usageMetadata.promptTokenCount || 0
+      const completionTokens = usageMetadata.candidatesTokenCount || 0
+      const totalTokens = usageMetadata.totalTokenCount || promptTokens + completionTokens
+
+      // Calculate costs
+      const inputCost = promptTokens * PRICES[model].input_cache_miss * USD_TO_EUR
+      const outputCost = completionTokens * PRICES[model].output * USD_TO_EUR
+      const totalCostInEur = inputCost + outputCost
+
+      rawResult = result.text || ''
+      parsedResult = robustJsonParse(rawResult)
+
+      finalResult = {
+        result: parsedResult.result
+          ? parsedResult.result
+          : parsedResult.results
+            ? parsedResult.results
+            : parsedResult,
+        cost: {
+          totalCostInEur,
+          totalTokens,
+          promptTokens,
+          completionTokens,
+          // Gemini no reporta cached tokens de la misma manera
+          promptCacheMissTokens: promptTokens,
+          promptCacheHitTokens: 0,
+        },
+      }
+
+      // Cache the result
+      if (useCache) cache.set(cacheKey, { ...finalResult, cost: '0 [cached]' }, cacheDuration)
+
+      return finalResult
+    } catch (error) {
+      console.error('Error fetching Gemini response:', error)
       throw error
     }
   }
