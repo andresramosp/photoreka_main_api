@@ -6,6 +6,7 @@ import PhotoImage from './photoImage.js'
 import Logger, { LogLevel } from '../../utils/logger.js'
 import AnalyzerProcess from './analyzerProcess.js'
 import pLimit from 'p-limit'
+import { MediaResolution } from '@google/genai'
 
 const logger = Logger.getInstance('AnalyzerProcess', 'VisionTopologicalTask')
 logger.setLevel(LogLevel.DEBUG)
@@ -27,10 +28,12 @@ export class VisionTopologicalTask extends AnalyzerTask {
 
   async process(pendingPhotos: PhotoImage[], analyzerProcess: AnalyzerProcess): Promise<void> {
     this.analyzerProcess = analyzerProcess
-    if (analyzerProcess.isFastMode || pendingPhotos.length < 10) {
-      await this.processWithDirectAPI(pendingPhotos)
+
+    const filteredPhotos: PhotoImage[] = await this.filterNonVerticalPhotos(pendingPhotos)
+    if (analyzerProcess.isFastMode || filteredPhotos.length < 10) {
+      await this.processWithDirectAPI(filteredPhotos)
     } else {
-      await this.processWithBatchAPI(pendingPhotos)
+      await this.processWithBatchAPI(filteredPhotos)
     }
   }
 
@@ -143,7 +146,7 @@ export class VisionTopologicalTask extends AnalyzerTask {
     logger.debug(`Llamando a ${this.model} para ${batch.length} imágenes...`)
 
     try {
-      if (this.model === 'GPT' || this.model === 'Qwen') {
+      if (this.model === 'GPT' || this.model === 'Qwen' || this.model === 'Gemini') {
         response = await this.executeModelTask(injectedPrompts, batch)
       } else if (this.model === 'Molmo') {
         response = await this.executeMolmoTask(injectedPrompts, batch)
@@ -306,17 +309,43 @@ export class VisionTopologicalTask extends AnalyzerTask {
   }
   private async executeModelTask(prompts: string[], batch: PhotoImage[]): Promise<any> {
     const prompt = prompts[0]
-    const images = batch.map((pp) => ({
-      type: 'image_url',
-      image_url: {
-        url: pp.photo.originalUrl,
-        // url: `data:image/jpeg;base64,${pp.base64}`,
-        detail: this.resolution,
-      },
-    }))
-    return this.model == 'GPT'
-      ? await this.modelsService.getGPTResponse(prompt, images, 'gpt-5-chat-latest', null, 0)
-      : await this.modelsService.getQwenResponse(prompt, images, 'qwen-vl-max', null, 0)
+
+    if (this.model === 'GPT') {
+      const images = batch.map((pp) => ({
+        type: 'image_url',
+        image_url: {
+          url: pp.photo.originalUrl,
+          detail: this.resolution,
+        },
+      }))
+      return await this.modelsService.getGPTResponse(prompt, images, 'gpt-5-chat-latest', null, 0)
+    } else if (this.model === 'Qwen') {
+      const images = batch.map((pp) => ({
+        type: 'image_url',
+        image_url: {
+          url: pp.photo.originalUrl,
+          detail: this.resolution,
+        },
+      }))
+      return await this.modelsService.getQwenResponse(prompt, images, 'qwen-vl-max', null, 0)
+    } else if (this.model === 'Gemini') {
+      let images = batch.map((pp) => ({
+        inlineData: {
+          mimeType: 'image/png',
+          data: pp.base64,
+        },
+      }))
+
+      return await this.modelsService.getGeminiResponse(prompt, images, this.modelName, {
+        temperature: 0.1,
+        mediaResolution:
+          this.resolution == 'high'
+            ? MediaResolution.MEDIA_RESOLUTION_HIGH
+            : MediaResolution.MEDIA_RESOLUTION_MEDIUM,
+      })
+    } else {
+      throw new Error(`Modelo no soportado: ${this.model}`)
+    }
   }
 
   private async executeMolmoTask(prompts: any[], batch: PhotoImage[]): Promise<any> {
@@ -344,6 +373,30 @@ export class VisionTopologicalTask extends AnalyzerTask {
         }
       }),
     }
+  }
+
+  private async filterNonVerticalPhotos(pendingPhotos: PhotoImage[]): Promise<PhotoImage[]> {
+    const filteredPhotos: PhotoImage[] = []
+    for (const photoImage of pendingPhotos) {
+      // Refrescar la foto para asegurar que descriptions esté actualizado
+      if (typeof photoImage.photo.refresh === 'function') {
+        await photoImage.photo.refresh()
+      }
+      const descriptions = photoImage.photo.descriptions
+      if (!descriptions || !descriptions.visual_aspects) continue
+      const visualAspects = descriptions.visual_aspects
+      if (typeof visualAspects !== 'object' || Array.isArray(visualAspects)) continue
+      const orientation = (visualAspects as any)?.orientation
+      if (!orientation) continue
+      if (Array.isArray(orientation)) {
+        if (orientation.includes('horizontal')) {
+          filteredPhotos.push(photoImage)
+        }
+      } else if (orientation === 'horizontal') {
+        filteredPhotos.push(photoImage)
+      }
+    }
+    return filteredPhotos
   }
 
   private sleep(ms: number) {

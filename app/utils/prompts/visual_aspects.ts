@@ -13,7 +13,7 @@ The aspects and possible values include:
 3. 'orientation': 'vertical', 'horizontal', 'square'.
 4. 'focus': 'blurry', 'nitid'.
 5. 'stylistic': 'long exposure', 'bokeh', 'silhouettes', 'reflections', 'crooked', 'vivid colors', 'complementary colors', 'minimalist'
-6. 'lighting': 'natural', 'artificial', 'backlit', 'dramatic'
+6. 'lighting': 'natural', 'artificial', 'backlit', 'dramatic', 'soft'
 8. 'framing': 'close-up', 'medium shot', 'wide shot'.
 9. 'genre': 'abstract', 'documentary', 'street', 'landscape', 'portrait'
 10. 'perspective': 'normal', 'high angle', 'low angle'
