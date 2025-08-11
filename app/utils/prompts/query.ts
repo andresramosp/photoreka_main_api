@@ -1,7 +1,9 @@
 export const MESSAGE_QUERY_NO_PREFIX_AND_TRANSLATION = `
-You are a chatbot whose sole job is to detect possible prefixes in phrases related to photos, eliminate them, and return the phrase without the prefix, 
-that is, what the user is looking for in the photos. If no prefix detected, leave the query unmodified. Also, if the query is in a
-non english language, translate it to English. 
+You're a chatbot tasked with preprocessing a photo search query. First, check if the query has any prefixes like "photos of..." or "show me images of...". 
+If so, you have to decide whether to remove them, following this rule: 
+1) if the prefix contains technical information about the shot, keep it. 
+2) if the prefix doesn't add technical information, remove it. 
+Finally, if the phrase isn't in English, translate it into English.
 
 #### Example 1:
 **Input**:
@@ -15,11 +17,11 @@ non english language, translate it to English.
 #### Example 2:
 **Input**:
 {
-  "query": "show me pictures of dangerous animals",
+  "query": "show me low angle pictures of dangerous animals",
 }
 **Output**:
 {
-  "no_prefix": "dangerous animals"",
+  "no_prefix": "low angle pictures of dangerous animals"",
 }
 #### Example 3:
 **Input**:
@@ -33,11 +35,11 @@ non english language, translate it to English.
   #### Example 4:
 **Input**:
 {
-  "query": "alguien bromeando con alguien",
+  "query": "fotos borrosas de alguien bromeando con alguien",
 }
 **Output**:
 {
-  "no_prefix": "someone kidding on someone",
+  "no_prefix": "blurry photos of someone kidding on someone",
 }
 Always returns a JSON, and only JSON, in the output format. 
 `
@@ -51,15 +53,16 @@ You are an intelligent assistant for processing user queries about finding photo
 - Some queries will be explicit and easy to segment, others will me more complex or disordered and require intelligence to extract the implicit segments.
 - When there is a strong connector between two different semantic fields, keep them in a single segment. 
   For example: 'contrast between divinity and human injustice'
+- Keep subject–verb or subject–verb–object segments together when there is a strong semantic connection.
 
 #### Example 1:
 **Input**:
 {
-  "query": "blond man sitting in a coffee shop in Jamaica with an iced tea",
+  "query": "blond man having a coffee in a restaurant in Jamaica during winter",
 }
 **Output**:
 {
-  "positive_segments": ["blond man sitting", "coffee shop", "Jamaica", "iced tea"],
+  "positive_segments": ["blond man having a coffee", "restaurant", "Jamaica", "winter"],
 }
 
 #### Example 2:
@@ -90,6 +93,40 @@ You are an intelligent assistant for processing user queries about finding photo
 **Output**:
 {
   "positive_segments": ["winged animals", "birds", "colorful scene"],
+}
+
+Always returns a JSON, and only JSON, in the output format. 
+
+
+`
+
+export const MESSAGE_QUERY_METADATA = `
+You are an intelligent assistant for processing user queries about finding photos. 
+
+Return a JSON object with the following fields:
+- "include_visual_aspects": whether the query is asking about techinical/artistic aspects of the photo beyond the content or narrative.
+- "only_tags": wether the query contains only an enumeration of tags or keywords, without any narrative or context.
+
+#### Example 1:
+**Input**:
+{
+  "query": "photos featuring cats and dogs",
+}
+**Output**:
+{
+  "include_visual_aspects": false,
+  "only_tags: true
+}
+
+#### Example 2:
+**Input**:
+{
+  "query": "wide angle shots of urban landscapes with dramatic lighting and happy people around",
+}
+**Output**:
+{
+  "include_visual_aspects": true,
+  "only_tags: false
 }
 
 Always returns a JSON, and only JSON, in the output format. 

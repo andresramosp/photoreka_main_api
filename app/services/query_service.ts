@@ -4,6 +4,7 @@ import MeasureExecutionTime from '../decorators/measureExecutionTime.js'
 import { withCache } from '../decorators/withCache.js'
 import withCost from '../decorators/withCost.js'
 import {
+  MESSAGE_QUERY_METADATA,
   MESSAGE_QUERY_NO_PREFIX_AND_TRANSLATION,
   MESSAGE_QUERY_STRUCTURE,
   MESSAGE_QUERY_STRUCTURE_CURATION,
@@ -70,13 +71,25 @@ export default class QueryService {
         ? MESSAGE_QUERY_STRUCTURE_CURATION_IMPLICIT_ONLY
         : MESSAGE_QUERY_STRUCTURE
 
-    const { result: modelOneResult, cost: modelOneCost } =
-      await this.modelsService.getGeminiResponse(
-        MESSAGE_QUERY_NO_PREFIX_AND_TRANSLATION,
-        JSON.stringify({ query }),
-        'gemini-2.0-flash'
-      )
+    // Lanzar ambas promesas en paralelo
+    const modelOnePromise = this.modelsService.getGeminiResponse(
+      MESSAGE_QUERY_NO_PREFIX_AND_TRANSLATION,
+      JSON.stringify({ query }),
+      'gemini-2.0-flash'
+    )
 
+    // Nueva llamada para metadatos
+    const metadataPromise = this.modelsService.getGeminiResponse(
+      MESSAGE_QUERY_METADATA,
+      JSON.stringify({ query }),
+      'gemini-2.0-flash'
+    )
+
+    // Esperar ambas respuestas
+    const [{ result: modelOneResult, cost: modelOneCost }, { result: metadataResult }] =
+      await Promise.all([modelOnePromise, metadataPromise])
+
+    // Segunda llamada, depende de modelOneResult
     const { result: modelResult, cost: modelTwoCost } = await this.modelsService.getGeminiResponse(
       queryStuctureMessage,
       JSON.stringify({ query: modelOneResult.no_prefix }),
@@ -90,6 +103,12 @@ export default class QueryService {
         ? [...new Set(Object.values(modelResult.nuances_segments).flat())]
         : []
     modelResult.no_prefix = modelOneResult.no_prefix
+
+    // Añadir los campos de metadata
+    if (metadataResult) {
+      modelResult.include_visual_aspects = metadataResult.include_visual_aspects
+      modelResult.only_tags = metadataResult.only_tags
+    }
 
     console.log(
       `[processQuery]: Result for ${query} -> ${JSON.stringify(modelResult.positive_segments)} | ${JSON.stringify(modelResult.nuances_segments)}`
