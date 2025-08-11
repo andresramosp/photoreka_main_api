@@ -178,10 +178,10 @@ export default class ScoringService {
     }
   }
 
-  @withCache({
-    provider: 'redis',
-    ttl: 60 * 5,
-  })
+  // @withCache({
+  //   provider: 'redis',
+  //   ttl: 60 * 5,
+  // })
   public async getScoredPhotosByTagsAndDesc(
     photoIds: number[],
     structuredQuery: any,
@@ -299,7 +299,7 @@ export default class ScoringService {
         ...score,
         matchPercent: this.calculateAbsoluteMatchPercent(score.totalScore, thresholds),
       }))
-      .filter((score) => score.matchPercent >= 10) // Opcional: filtrar resultados no relevantes
+    //.filter((score) => score.matchPercent >= 10) // Opcional: filtrar resultados no relevantes
 
     return filteredSortedScores
   }
@@ -634,10 +634,10 @@ export default class ScoringService {
     return updatedScores.filter((score) => matchingSegmentPhotoIds.has(score.id))
   }
 
-  @withCache({
-    provider: 'redis',
-    ttl: 60 * 30,
-  })
+  // @withCache({
+  //   provider: 'redis',
+  //   ttl: 60 * 30,
+  // })
   private async getScoredPhotoDescBySegment(
     photoIds: number[],
     segment: { name: string; index: number },

@@ -10,13 +10,36 @@ export default class SearchController {
    * Handle the upload of multiple photos
    */
 
-  public async searchSemantic({ request, response, auth }: HttpContext) {
+  public async searchSemanticSync({ request, response, auth }: HttpContext) {
     const user = auth.use('api').user!
     try {
       const searchService = new SearchTextService()
       const query = request.body()
 
-      const stream = searchService.searchSemantic(query.description, user.id, {
+      const result = await searchService.searchSemanticSync(query.description, user.id, {
+        searchMode: query.options.searchMode,
+        pageSize: query.options.pageSize,
+        iteration: query.options.iteration,
+        minMatchScore: query.options.minMatchScore,
+        minResults: query.options.minResults,
+        collections: query.options.collections,
+        visualAspects: query.options.visualAspects,
+      })
+
+      return response.ok(result)
+    } catch (error) {
+      console.error('Error fetching photos:', error)
+      return response.internalServerError({ message: 'Error fetching photos' })
+    }
+  }
+
+  public async searchSemanticStream({ request, response, auth }: HttpContext) {
+    const user = auth.use('api').user!
+    try {
+      const searchService = new SearchTextService()
+      const query = request.body()
+
+      const stream = searchService.searchSemanticStream(query.description, user.id, {
         searchMode: query.options.searchMode,
         pageSize: query.options.pageSize,
         iteration: query.options.iteration,

@@ -66,7 +66,8 @@ router
     router.get('/api/analyzer-process', [AnalyzerProcessController, 'getAll'])
     router.get('/api/analyzer-process/:id', [AnalyzerProcessController, 'getById'])
 
-    router.post('/api/search/semantic', [SearchController, 'searchSemantic'])
+    router.post('/api/search/semantic/stream', [SearchController, 'searchSemanticStream'])
+    router.post('/api/search/semantic/sync', [SearchController, 'searchSemanticSync'])
     router.post('/api/search/tags', [SearchController, 'searchByTags'])
     router.post('/api/search/topological', [SearchController, 'searchTopological'])
     router.post('/api/search/byPhotos', [SearchController, 'searchByPhotos'])

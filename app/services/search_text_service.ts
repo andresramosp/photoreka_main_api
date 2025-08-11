@@ -68,7 +68,7 @@ export default class SearchTextService {
 
   sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-  public async *searchSemantic(
+  public async *searchSemanticStream(
     query: string,
     userId: string | number,
     options: SearchOptions = {
@@ -198,6 +198,69 @@ export default class SearchTextService {
       attempts < maxPageAttempts &&
       photosResult.filter((p) => p.matchScore >= minMatchScore).length < minResults
     )
+  }
+
+  /**
+   * Versión síncrona/paginada de searchSemantic, sin soporte para 'curation'.
+   * Devuelve solo la página correspondiente a la iteración solicitada.
+   */
+  public async searchSemanticSync(
+    query: string,
+    userId: string | number,
+    options: SearchOptions = {
+      searchMode: 'logical',
+      pageSize: 18,
+      iteration: 1,
+    }
+  ) {
+    const {
+      searchMode = 'logical',
+      pageSize = 18,
+      iteration = 1,
+      collections,
+      visualAspects,
+    } = options
+
+    if (searchMode === 'curation') {
+      throw new Error('searchSemanticSync no soporta el modo curation')
+    }
+
+    const photoIds = await this.photoManager.getPhotosIdsByUser(
+      userId?.toString(),
+      collections && collections.length > 0 ? collections : undefined,
+      visualAspects && visualAspects.length > 0 ? visualAspects : undefined
+    )
+
+    const { structuredResult, useImage, expansionCost } = await this.queryService.structureQuery(
+      query,
+      searchMode
+    )
+
+    const embeddingScoredPhotos = await this.scoringService.getScoredPhotosByTagsAndDesc(
+      photoIds,
+      structuredResult,
+      searchMode,
+      userId?.toString()
+    )
+
+    const { paginatedPhotos, hasMore } = await this.getPaginatedPhotosByPage(
+      embeddingScoredPhotos,
+      pageSize,
+      iteration
+    )
+
+    return {
+      type: 'search-matches',
+      data: {
+        hasMore,
+        results: {
+          [iteration]: paginatedPhotos,
+        },
+        cost: { expansionCost },
+        iteration: iteration,
+        structuredResult,
+      },
+    }
   }
 
   //   @withCostWS
