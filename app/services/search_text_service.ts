@@ -22,7 +22,6 @@ import DescriptionChunk from '#models/descriptionChunk'
 import VectorService from './vector_service.js'
 import Tag from '#models/tag'
 import { getUploadPath } from '../utils/dataPath.js'
-import PhotoImage from '#models/analyzer/photoImage'
 import PhotoImageService from './photo_image_service.js'
 import MeasureExecutionTime from '../decorators/measureExecutionTime.js'
 
@@ -516,22 +515,28 @@ export default class SearchTextService {
 
     for (const photo of photos) {
       try {
-        const buffer = await PhotoImageService.getInstance().getImageBufferFromR2(photo.name)
+        const base64 = await PhotoImageService.getInstance().getImageBase64FromR2(photo.name, false)
 
         validImages.push({
-          base64: buffer.toString('base64'),
+          base64,
         })
       } catch (error) {
         console.warn(`No se pudo obtener la imagen ${photo.name} desde R2`, error)
       }
     }
 
-    return validImages.map(({ base64 }) => ({
+    const payload = validImages.map(({ base64 }) => ({
       inlineData: {
         mimeType: 'image/png',
         data: base64,
       },
     }))
+
+    // Limpiar validImages para liberar memoria
+    validImages.forEach((img) => (img.base64 = ''))
+    validImages.length = 0
+
+    return payload
     // return validImages.map(({ base64 }) => ({
     //   type: 'image_url',
     //   image_url: {

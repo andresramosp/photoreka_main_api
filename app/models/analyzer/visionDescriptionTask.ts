@@ -2,19 +2,17 @@ import { DescriptionType, PhotoDescriptions } from '#models/photo'
 import Photo from '#models/photo'
 import PhotoManager from '../../managers/photo_manager.js'
 import { AnalyzerTask } from './analyzerTask.js'
-import PhotoImage from './photoImage.js'
 import Logger, { LogLevel } from '../../utils/logger.js'
-import AnalyzerProcess, { ProcessSheet } from './analyzerProcess.js'
+import AnalyzerProcess from './analyzerProcess.js'
 import pLimit from 'p-limit'
-import { createUserContent, MediaResolution } from '@google/genai'
+import { MediaResolution } from '@google/genai'
+import PhotoImageService from '../../services/photo_image_service.js'
 
 const logger = Logger.getInstance('AnalyzerProcess', 'VisionDescriptionTask')
 logger.setLevel(LogLevel.DEBUG)
 
 type PromptFunction = (photos: Photo[]) => string
 type Prompt = string | PromptFunction
-
-const batchDelay = 1500 // Delay between batches in milliseconds
 
 export class VisionDescriptionTask extends AnalyzerTask {
   declare prompts: Prompt[]
@@ -27,21 +25,27 @@ export class VisionDescriptionTask extends AnalyzerTask {
   declare complete: boolean
   declare analyzerProcess: AnalyzerProcess
   declare visualAspects: boolean
-  failedRequests: PhotoImage[] = []
+  failedRequests: Photo[] = []
 
-  async process(pendingPhotos: PhotoImage[], analyzerProcess: AnalyzerProcess): Promise<void> {
+  async process(pendingPhotos: Photo[], analyzerProcess: AnalyzerProcess): Promise<void> {
     this.analyzerProcess = analyzerProcess
+    // Limpiar requests fallidos al inicio del proceso
+    this.failedRequests = []
+
     if (this.model == 'Gemini' || analyzerProcess.isFastMode || pendingPhotos.length < 10) {
       await this.processWithDirectAPI(pendingPhotos)
     } else {
       await this.processWithBatchAPI(pendingPhotos)
     }
+
+    // Limpiar al final del proceso completo
+    this.failedRequests = []
   }
 
-  private async processWithDirectAPI(pendingPhotos: PhotoImage[]): Promise<void> {
+  private async processWithDirectAPI(pendingPhotos: Photo[]): Promise<void> {
     if (!this.data) this.data = {}
 
-    const batches: PhotoImage[][] = []
+    const batches: Photo[][] = []
     for (let i = 0; i < pendingPhotos.length; i += this.imagesPerBatch) {
       const batch = pendingPhotos.slice(i, i + this.imagesPerBatch)
       batches.push(batch)
@@ -50,7 +54,7 @@ export class VisionDescriptionTask extends AnalyzerTask {
     const maxConcurrency = 5 // Número de batches simultáneos
     const limit = pLimit(maxConcurrency)
 
-    const processBatch = async (batch: PhotoImage[]) => {
+    const processBatch = async (batch: Photo[]) => {
       let response: any
       const injectedPrompts: any = await this.injectPromptsDependencies(batch)
       logger.debug(`Llamando a ${this.model} para ${batch.length} imágenes...`)
@@ -70,7 +74,7 @@ export class VisionDescriptionTask extends AnalyzerTask {
 
       response.result.forEach((res: any, photoIndex: number) => {
         const { ...results } = res
-        const photoId = batch[photoIndex].photo.id
+        const photoId = batch[photoIndex].id
         this.data[photoId] = { ...this.data[photoId], ...results }
       })
 
@@ -81,68 +85,25 @@ export class VisionDescriptionTask extends AnalyzerTask {
     if (this.sequential) {
       for (let i = 0; i < batches.length; i++) {
         await processBatch(batches[i])
+        // Limpiar la referencia del batch procesado
+        batches[i] = []
       }
     } else {
       await Promise.all(batches.map((batch) => limit(() => processBatch(batch))))
     }
+
+    // Limpiar array de batches
+    batches.length = 0
   }
 
-  private async processWithDirectAPIDelayed(pendingPhotos: PhotoImage[]): Promise<void> {
-    if (!this.data) this.data = {}
-
-    const batches: PhotoImage[][] = []
-    for (let i = 0; i < pendingPhotos.length; i += this.imagesPerBatch) {
-      const batch = pendingPhotos.slice(i, i + this.imagesPerBatch)
-      batches.push(batch)
-    }
-
-    const processBatch = async (batch: PhotoImage[], idx: number) => {
-      await this.sleep(idx * batchDelay)
-
-      let response: any
-      const injectedPrompts: any = await this.injectPromptsDependencies(batch)
-      logger.debug(`Llamando a ${this.model} para ${batch.length} imágenes...`)
-
-      try {
-        if (this.model === 'GPT' || this.model === 'Qwen' || this.model === 'Gemini') {
-          response = await this.executeModelTask(injectedPrompts, batch)
-        } else if (this.model === 'Molmo') {
-          response = await this.executeMolmoTask(injectedPrompts, batch)
-        } else {
-          throw new Error(`Modelo no soportado: ${this.model}`)
-        }
-      } catch (err) {
-        logger.error(`Error en ${this.model} para ${batch.length} imágenes:`, err)
-        return
-      }
-
-      response.result.forEach((res: any, photoIndex: number) => {
-        const { ...results } = res
-        const photoId = batch[photoIndex].photo.id
-        this.data[photoId] = { ...this.data[photoId], ...results }
-      })
-
-      await this.commit(batch)
-      logger.debug(`Datos salvados ${this.model} para ${batch.length} imágenes`)
-    }
-
-    if (this.sequential) {
-      for (let i = 0; i < batches.length; i++) {
-        await processBatch(batches[i], i)
-      }
-    } else {
-      await Promise.all(batches.map((batch, idx) => processBatch(batch, idx)))
-    }
-  }
-
-  private async processWithBatchAPI(pendingPhotos: PhotoImage[]): Promise<void> {
+  private async processWithBatchAPI(pendingPhotos: Photo[]): Promise<void> {
     if (!this.data) this.data = {}
 
     const imagesPerBatch = 200
     const maxConcurrency = 5 // Número de batches simultáneos
 
     // Divide las fotos en batches de 200
-    const batches: PhotoImage[][] = []
+    const batches: Photo[][] = []
     for (let i = 0; i < pendingPhotos.length; i += imagesPerBatch) {
       batches.push(pendingPhotos.slice(i, i + imagesPerBatch))
     }
@@ -156,6 +117,9 @@ export class VisionDescriptionTask extends AnalyzerTask {
 
     await Promise.all(batchPromises)
 
+    // Limpiar array de batches
+    batches.length = 0
+
     // Si hay fallos, reprocesar con DirectAPI
     if (this.failedRequests.length > 0) {
       logger.warn(`Reprocesando ${this.failedRequests.length} imágenes fallidas con DirectAPI`)
@@ -164,10 +128,10 @@ export class VisionDescriptionTask extends AnalyzerTask {
     }
   }
 
-  async commit(batch: PhotoImage[]): Promise<void> {
+  async commit(batch: Photo[]): Promise<void> {
     try {
       const photoManager = new PhotoManager()
-      const photoIds = batch.map((p) => p.photo.id)
+      const photoIds = batch.map((p) => p.id)
 
       await Promise.all(
         photoIds.map((photoId: number) => {
@@ -192,7 +156,7 @@ export class VisionDescriptionTask extends AnalyzerTask {
     }
   }
 
-  private async processSingleBatch(batchPhotos: PhotoImage[]): Promise<void> {
+  private async processSingleBatch(batchPhotos: Photo[]): Promise<void> {
     const prompts = await this.injectPromptsDependencies(batchPhotos)
     const imagesPerRequest = 4
     const maxRetries = 3
@@ -207,11 +171,11 @@ export class VisionDescriptionTask extends AnalyzerTask {
       requests = []
       for (let j = 0; j < batchPhotos.length; j += imagesPerRequest) {
         const batch = batchPhotos.slice(j, j + imagesPerRequest)
-        const customId = batch.map((p) => p.photo.id).join('-')
-        const userContent = batch.map((photoImage) => ({
+        const customId = batch.map((p) => p.id).join('-')
+        const userContent = batch.map((photo) => ({
           type: 'image_url',
           image_url: {
-            url: photoImage.photo.originalUrl,
+            url: photo.originalUrl,
             detail: this.resolution,
           },
         }))
@@ -272,7 +236,7 @@ export class VisionDescriptionTask extends AnalyzerTask {
         const photoIds = res.custom_id.split('-').map(Number)
         if (items.length !== photoIds.length) {
           logger.error(`Batch mismatch ${res.custom_id}: ${items.length} vs ${photoIds.length}`)
-          this.failedRequests.push(...batchPhotos.filter((img) => photoIds.includes(img.photo.id)))
+          this.failedRequests.push(...batchPhotos.filter((photo) => photoIds.includes(photo.id)))
           return
         }
         items.forEach((photoResult: any, idx: number) => {
@@ -284,56 +248,87 @@ export class VisionDescriptionTask extends AnalyzerTask {
       }
     })
 
+    // Limpiar results para liberar memoria
+    results.length = 0
+
     await this.commit(batchPhotos)
     logger.debug(`Datos salvados del batch para ${batchPhotos.length} imágenes`)
   }
 
-  private async executeModelTask(prompts: string[], batch: PhotoImage[]): Promise<any> {
+  private async executeModelTask(prompts: string[], batch: Photo[]): Promise<any> {
     const prompt = prompts[0]
 
     if (this.model === 'GPT') {
-      const images = batch.map((pp) => ({
+      const images = batch.map((photo) => ({
         type: 'image_url',
         image_url: {
-          url: pp.photo.originalUrl,
+          url: photo.originalUrl,
           detail: this.resolution,
         },
       }))
       return await this.modelsService.getGPTResponse(prompt, images, 'gpt-5-chat-latest', null, 0)
     } else if (this.model === 'Qwen') {
-      const images = batch.map((pp) => ({
+      const images = batch.map((photo) => ({
         type: 'image_url',
         image_url: {
-          url: pp.photo.originalUrl,
+          url: photo.originalUrl,
           detail: this.resolution,
         },
       }))
       return await this.modelsService.getQwenResponse(prompt, images, 'qwen-vl-max', null, 0)
     } else if (this.model === 'Gemini') {
-      let images = batch.map((pp) => ({
-        inlineData: {
-          mimeType: 'image/png',
-          data: pp.base64,
-        },
-      }))
+      const photoImageService = PhotoImageService.getInstance()
 
-      return await this.modelsService.getGeminiResponse(prompt, images, this.modelName, {
+      // Generar base64 para cada foto y luego limpiar memoria
+      const images = await Promise.all(
+        batch.map(async (photo) => {
+          const base64 = await photoImageService.getImageBase64FromR2(photo.name, false)
+          // El buffer se libera automáticamente por garbage collector
+          return {
+            inlineData: {
+              mimeType: 'image/png',
+              data: base64,
+            },
+          }
+        })
+      )
+
+      const result = await this.modelsService.getGeminiResponse(prompt, images, this.modelName, {
         temperature: 0.1,
         mediaResolution:
           this.resolution == 'high'
             ? MediaResolution.MEDIA_RESOLUTION_HIGH
             : MediaResolution.MEDIA_RESOLUTION_MEDIUM,
       })
+
+      // Limpiar las imágenes de memoria de forma más agresiva
+      images.forEach((img) => (img.inlineData.data = ''))
+      images.length = 0
+
+      return result
     } else {
       throw new Error(`Modelo no soportado: ${this.model}`)
     }
   }
-  private async executeMolmoTask(prompts: any[], batch: PhotoImage[]): Promise<any> {
-    const response = await this.modelsService.getMolmoResponse(
-      batch.map((pp) => ({ id: pp.photo.id, base64: pp.base64 })),
-      [],
-      prompts
+  private async executeMolmoTask(prompts: any[], batch: Photo[]): Promise<any> {
+    const photoImageService = PhotoImageService.getInstance()
+
+    // Generar base64 para cada foto
+    const photosWithBase64 = await Promise.all(
+      batch.map(async (photo) => {
+        const base64 = await photoImageService.getImageBase64FromR2(photo.name, false)
+
+        // El buffer se libera automáticamente por garbage collector
+        return { id: photo.id, base64 }
+      })
     )
+
+    const response = await this.modelsService.getMolmoResponse(photosWithBase64, [], prompts)
+
+    // Limpiar base64 de memoria de forma más agresiva
+    photosWithBase64.forEach((p) => (p.base64 = ''))
+    photosWithBase64.length = 0
+
     if (!response) return { result: [] }
 
     const { result } = response
@@ -355,7 +350,7 @@ export class VisionDescriptionTask extends AnalyzerTask {
     }
   }
 
-  private async injectPromptsDependencies(batch: PhotoImage[]): Promise<any> {
+  private async injectPromptsDependencies(batch: Photo[]): Promise<any> {
     if (this.promptDependentField || this.model === 'Molmo') {
       const promptList = this.promptsNames.map((target: DescriptionType, index: number) => ({
         id: target,
@@ -363,19 +358,19 @@ export class VisionDescriptionTask extends AnalyzerTask {
       }))
 
       return await Promise.all(
-        batch.map(async (photoImage: PhotoImage) => {
-          await photoImage.photo.refresh()
+        batch.map(async (photo: Photo) => {
+          await photo.refresh()
           return {
-            id: photoImage.photo.id,
+            id: photo.id,
             prompts: promptList.map((p) => ({
               id: p.id,
-              text: typeof p.prompt === 'function' ? p.prompt([photoImage.photo]) : p.prompt,
+              text: typeof p.prompt === 'function' ? p.prompt([photo]) : p.prompt,
             })),
           }
         })
       )
     } else {
-      return this.prompts.map((p) => (typeof p === 'function' ? p(batch.map((b) => b.photo)) : p))
+      return this.prompts.map((p) => (typeof p === 'function' ? p(batch) : p))
     }
   }
 

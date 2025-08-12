@@ -1,9 +1,7 @@
 import { ModelType, ProcessSheet } from './analyzerProcess.js'
 import AnalyzerProcess from './analyzerProcess.js'
 import Photo from '../photo.js'
-import PhotoImage from './photoImage.js'
 import _ from 'lodash'
-import PhotoImageService from '#services/photo_image_service'
 import Logger, { LogLevel } from '../../utils/logger.js'
 import ModelsService, { ModelName } from '#services/models_service'
 
@@ -16,7 +14,6 @@ export abstract class AnalyzerTask {
   declare modelName: ModelName
   declare data: any
   declare needsImage: boolean
-  declare useGuideLines: boolean
   declare analyzerProcess: AnalyzerProcess
   declare onlyIfNeeded: boolean
   declare isGlobal: boolean
@@ -29,7 +26,7 @@ export abstract class AnalyzerTask {
     this.modelsService = new ModelsService()
   }
 
-  async prepare(process: AnalyzerProcess): Promise<Photo[] | PhotoImage[]> {
+  async prepare(process: AnalyzerProcess): Promise<Photo[]> {
     let targetPhotos: Photo[]
 
     if (process.mode === 'retry_process') {
@@ -60,18 +57,20 @@ export abstract class AnalyzerTask {
 
     if (targetPhotos.length === 0) return []
 
-    if (this.needsImage) {
-      const photoImages = await PhotoImageService.getInstance().getPhotoImages(
-        process,
-        this.useGuideLines
-      )
-      return photoImages.filter((pi) => targetPhotos.some((p) => p.id === pi.photo.id))
-    } else {
-      return targetPhotos
-    }
+    return targetPhotos
+
+    // if (this.needsImage) {
+    //   const photoImages = await PhotoImageService.getInstance().getPhotoImages(
+    //     process,
+    //     this.useGuideLines
+    //   )
+    //   return photoImages.filter((pi) => targetPhotos.some((p) => p.id === pi.photo.id))
+    // } else {
+    //   return targetPhotos
+    // }
   }
 
-  abstract process(pendingPhotos: Photo[] | PhotoImage[], process?: AnalyzerProcess): Promise<void>
+  abstract process(pendingPhotos: Photo[], process?: AnalyzerProcess): Promise<void>
   abstract commit(batch?: any[]): Promise<void>
 
   getName() {

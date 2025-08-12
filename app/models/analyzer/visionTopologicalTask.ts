@@ -2,11 +2,11 @@ import { DescriptionType } from '#models/photo'
 import Photo from '#models/photo'
 import TagPhotoManager from '../../managers/tag_photo_manager.js'
 import { AnalyzerTask } from './analyzerTask.js'
-import PhotoImage from './photoImage.js'
 import Logger, { LogLevel } from '../../utils/logger.js'
 import AnalyzerProcess from './analyzerProcess.js'
 import pLimit from 'p-limit'
 import { MediaResolution } from '@google/genai'
+import PhotoImageService from '../../services/photo_image_service.js'
 
 const logger = Logger.getInstance('AnalyzerProcess', 'VisionTopologicalTask')
 logger.setLevel(LogLevel.DEBUG)
@@ -21,15 +21,16 @@ export class VisionTopologicalTask extends AnalyzerTask {
   declare imagesPerBatch: number
   declare promptDependentField: DescriptionType
   declare promptsNames: DescriptionType[]
+  declare useGuideLines: boolean
   declare data: Record<string, Record<string, string>>
   declare complete: boolean
   declare analyzerProcess: AnalyzerProcess
-  failedRequests: PhotoImage[] = []
+  failedRequests: Photo[] = []
 
-  async process(pendingPhotos: PhotoImage[], analyzerProcess: AnalyzerProcess): Promise<void> {
+  async process(pendingPhotos: Photo[], analyzerProcess: AnalyzerProcess): Promise<void> {
     this.analyzerProcess = analyzerProcess
 
-    const filteredPhotos: PhotoImage[] = await this.filterNonVerticalPhotos(pendingPhotos)
+    const filteredPhotos: Photo[] = await this.filterNonVerticalPhotos(pendingPhotos)
     if (this.model == 'Gemini' || analyzerProcess.isFastMode || pendingPhotos.length < 10) {
       await this.processWithDirectAPI(filteredPhotos)
     } else {
@@ -37,22 +38,22 @@ export class VisionTopologicalTask extends AnalyzerTask {
     }
   }
 
-  private async processWithDirectAPI(pendingPhotos: PhotoImage[]): Promise<void> {
+  private async processWithDirectAPI(pendingPhotos: Photo[]): Promise<void> {
     if (!this.data) {
       this.data = {}
     }
 
     // Cargar tags y filtrar solo fotos con tags
-    const validPhotos: PhotoImage[] = []
+    const validPhotos: Photo[] = []
     const skippedPhotoIds: number[] = []
 
-    for (const photoImage of pendingPhotos) {
-      await photoImage.photo.load('tags', (query) => query.preload('tag'))
+    for (const photo of pendingPhotos) {
+      await photo.load('tags', (query) => query.preload('tag'))
       // Saltar si no hay tags
-      if (!photoImage.photo.tags || photoImage.photo.tags.length === 0) {
-        skippedPhotoIds.push(photoImage.photo.id)
+      if (!photo.tags || photo.tags.length === 0) {
+        skippedPhotoIds.push(photo.id)
       } else {
-        validPhotos.push(photoImage)
+        validPhotos.push(photo)
       }
     }
 
@@ -66,7 +67,7 @@ export class VisionTopologicalTask extends AnalyzerTask {
       return
     }
 
-    const batches: PhotoImage[][] = []
+    const batches: Photo[][] = []
     for (let i = 0; i < validPhotos.length; i += this.imagesPerBatch) {
       const batch = validPhotos.slice(i, i + this.imagesPerBatch)
       batches.push(batch)
@@ -81,22 +82,22 @@ export class VisionTopologicalTask extends AnalyzerTask {
     }
   }
 
-  private async processWithBatchAPI(pendingPhotos: PhotoImage[]): Promise<void> {
+  private async processWithBatchAPI(pendingPhotos: Photo[]): Promise<void> {
     if (!this.data) {
       this.data = {}
     }
 
     // Cargar tags y filtrar solo fotos con tags
-    const validPhotos: PhotoImage[] = []
+    const validPhotos: Photo[] = []
     const skippedPhotoIds: number[] = []
 
-    for (const photoImage of pendingPhotos) {
-      await photoImage.photo.load('tags', (query) => query.preload('tag'))
+    for (const photo of pendingPhotos) {
+      await photo.load('tags', (query) => query.preload('tag'))
       // Saltar si no hay tags
-      if (!photoImage.photo.tags || photoImage.photo.tags.length === 0) {
-        skippedPhotoIds.push(photoImage.photo.id)
+      if (!photo.tags || photo.tags.length === 0) {
+        skippedPhotoIds.push(photo.id)
       } else {
-        validPhotos.push(photoImage)
+        validPhotos.push(photo)
       }
     }
 
@@ -114,7 +115,7 @@ export class VisionTopologicalTask extends AnalyzerTask {
     const maxConcurrency = 5 // Número de batches simultáneos
 
     // Divide las fotos en batches de 200
-    const batches: PhotoImage[][] = []
+    const batches: Photo[][] = []
     for (let i = 0; i < validPhotos.length; i += imagesPerBatch) {
       batches.push(validPhotos.slice(i, i + imagesPerBatch))
     }
@@ -136,13 +137,11 @@ export class VisionTopologicalTask extends AnalyzerTask {
     }
   }
 
-  async processBatch(batch: PhotoImage[], idx: number) {
+  async processBatch(batch: Photo[], idx: number) {
     await this.sleep(idx * 1500)
 
     let response: any
-    const injectedPrompts: any = this.prompts.map((p) =>
-      typeof p === 'function' ? p(batch.map((b) => b.photo)) : p
-    )
+    const injectedPrompts: any = this.prompts.map((p) => (typeof p === 'function' ? p(batch) : p))
     logger.debug(`Llamando a ${this.model} para ${batch.length} imágenes...`)
 
     try {
@@ -160,14 +159,14 @@ export class VisionTopologicalTask extends AnalyzerTask {
 
     response.result.forEach((res: any, photoIndex: number) => {
       const { ...results } = res
-      const photoId = batch[photoIndex].photo.id
+      const photoId = batch[photoIndex].id
       this.data[photoId] = { ...this.data[photoId], ...results }
     })
 
     await this.commit(batch)
   }
 
-  async commit(batch: PhotoImage[]): Promise<void> {
+  async commit(batch: Photo[]): Promise<void> {
     try {
       const tagPhotoManager = new TagPhotoManager()
 
@@ -192,7 +191,7 @@ export class VisionTopologicalTask extends AnalyzerTask {
           .flat()
       )
 
-      const photoIds = batch.map((p) => p.photo.id)
+      const photoIds = batch.map((p) => p.id)
       await this.analyzerProcess.markPhotosCompleted(this.name, photoIds)
 
       for (const photoId of photoIds) {
@@ -205,7 +204,7 @@ export class VisionTopologicalTask extends AnalyzerTask {
     }
   }
 
-  private async processSingleBatch(batchPhotos: PhotoImage[]): Promise<void> {
+  private async processSingleBatch(batchPhotos: Photo[]): Promise<void> {
     const imagesPerRequest = 4
     const maxRetries = 3
     let attempt = 0
@@ -219,17 +218,17 @@ export class VisionTopologicalTask extends AnalyzerTask {
       requests = []
       for (let j = 0; j < batchPhotos.length; j += imagesPerRequest) {
         const batch = batchPhotos.slice(j, j + imagesPerRequest)
-        const customId = batch.map((p) => p.photo.id).join('-')
+        const customId = batch.map((p) => p.id).join('-')
 
         // ✅ Generar prompt específico para este sub-batch de 4 fotos
         const batchSpecificPrompts = this.prompts.map((p) =>
-          typeof p === 'function' ? p(batch.map((b) => b.photo)) : p
+          typeof p === 'function' ? p(batch) : p
         )
 
-        const userContent = batch.map((photoImage) => ({
+        const userContent = batch.map((photo) => ({
           type: 'image_url',
           image_url: {
-            url: photoImage.photo.originalUrl,
+            url: photo.originalUrl,
             // url: `data:image/jpeg;base64,${photoImage.base64}`,
             detail: this.resolution,
           },
@@ -291,7 +290,7 @@ export class VisionTopologicalTask extends AnalyzerTask {
         const items = res.items || []
         if (items.length !== photoIds.length) {
           logger.error(`Batch mismatch ${res.custom_id}: ${items.length} vs ${photoIds.length}`)
-          const failedImages = batchPhotos.filter((img) => photoIds.includes(img.photo.id))
+          const failedImages = batchPhotos.filter((photo) => photoIds.includes(photo.id))
           this.failedRequests.push(...failedImages)
           return
         }
@@ -307,53 +306,82 @@ export class VisionTopologicalTask extends AnalyzerTask {
     await this.commit(batchPhotos)
     logger.debug(`Datos salvados del batch para ${batchPhotos.length} imágenes`)
   }
-  private async executeModelTask(prompts: string[], batch: PhotoImage[]): Promise<any> {
+  private async executeModelTask(prompts: string[], batch: Photo[]): Promise<any> {
     const prompt = prompts[0]
 
     if (this.model === 'GPT') {
-      const images = batch.map((pp) => ({
+      const images = batch.map((photo) => ({
         type: 'image_url',
         image_url: {
-          url: pp.photo.originalUrl,
+          url: photo.originalUrl,
           detail: this.resolution,
         },
       }))
       return await this.modelsService.getGPTResponse(prompt, images, 'gpt-5-chat-latest', null, 0)
     } else if (this.model === 'Qwen') {
-      const images = batch.map((pp) => ({
+      const images = batch.map((photo) => ({
         type: 'image_url',
         image_url: {
-          url: pp.photo.originalUrl,
+          url: photo.originalUrl,
           detail: this.resolution,
         },
       }))
       return await this.modelsService.getQwenResponse(prompt, images, 'qwen-vl-max', null, 0)
     } else if (this.model === 'Gemini') {
-      let images = batch.map((pp) => ({
-        inlineData: {
-          mimeType: 'image/png',
-          data: pp.base64,
-        },
-      }))
+      const photoImageService = PhotoImageService.getInstance()
 
-      return await this.modelsService.getGeminiResponse(prompt, images, this.modelName, {
+      // Generar base64 para cada foto con líneas guía si es necesario
+      const images = await Promise.all(
+        batch.map(async (photo) => {
+          const base64 = await photoImageService.getImageBase64FromR2(
+            photo.name,
+            this.useGuideLines
+          )
+
+          return {
+            inlineData: {
+              mimeType: 'image/png',
+              data: base64,
+            },
+          }
+        })
+      )
+
+      const result = await this.modelsService.getGeminiResponse(prompt, images, this.modelName, {
         temperature: 0.1,
         mediaResolution:
           this.resolution == 'high'
             ? MediaResolution.MEDIA_RESOLUTION_HIGH
             : MediaResolution.MEDIA_RESOLUTION_MEDIUM,
       })
+
+      // Limpiar las imágenes de memoria
+      images.forEach((img) => (img.inlineData.data = ''))
+      images.length = 0
+
+      return result
     } else {
       throw new Error(`Modelo no soportado: ${this.model}`)
     }
   }
 
-  private async executeMolmoTask(prompts: any[], batch: PhotoImage[]): Promise<any> {
-    const response = await this.modelsService.getMolmoResponse(
-      batch.map((pp) => ({ id: pp.photo.id, base64: pp.base64 })),
-      [],
-      prompts
+  private async executeMolmoTask(prompts: any[], batch: Photo[]): Promise<any> {
+    const photoImageService = PhotoImageService.getInstance()
+
+    // Generar base64 para cada foto con líneas guía si es necesario
+    const photosWithBase64 = await Promise.all(
+      batch.map(async (photo) => {
+        const base64 = await photoImageService.getImageBase64FromR2(photo.name, this.useGuideLines)
+        return { id: photo.id, base64 }
+      })
     )
+
+    const response = await this.modelsService.getMolmoResponse(photosWithBase64, [], prompts)
+
+    // Limpiar base64 de memoria
+    photosWithBase64.forEach((p) => (p.base64 = ''))
+    photosWithBase64.length = 0
+
     if (!response) return { result: [] }
 
     const { result } = response
@@ -375,14 +403,14 @@ export class VisionTopologicalTask extends AnalyzerTask {
     }
   }
 
-  private async filterNonVerticalPhotos(pendingPhotos: PhotoImage[]): Promise<PhotoImage[]> {
-    const filteredPhotos: PhotoImage[] = []
-    for (const photoImage of pendingPhotos) {
+  private async filterNonVerticalPhotos(pendingPhotos: Photo[]): Promise<Photo[]> {
+    const filteredPhotos: Photo[] = []
+    for (const photo of pendingPhotos) {
       // Refrescar la foto para asegurar que descriptions esté actualizado
-      if (typeof photoImage.photo.refresh === 'function') {
-        await photoImage.photo.refresh()
+      if (typeof photo.refresh === 'function') {
+        await photo.refresh()
       }
-      const descriptions = photoImage.photo.descriptions
+      const descriptions = photo.descriptions
       if (!descriptions || !descriptions.visual_aspects) continue
       const visualAspects = descriptions.visual_aspects
       if (typeof visualAspects !== 'object' || Array.isArray(visualAspects)) continue
@@ -390,10 +418,10 @@ export class VisionTopologicalTask extends AnalyzerTask {
       if (!orientation) continue
       if (Array.isArray(orientation)) {
         if (orientation.includes('horizontal')) {
-          filteredPhotos.push(photoImage)
+          filteredPhotos.push(photo)
         }
       } else if (orientation === 'horizontal') {
-        filteredPhotos.push(photoImage)
+        filteredPhotos.push(photo)
       }
     }
     return filteredPhotos

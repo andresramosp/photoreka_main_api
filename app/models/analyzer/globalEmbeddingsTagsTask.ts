@@ -5,7 +5,6 @@ import VectorService from '#services/vector_service'
 import { AnalyzerTask } from './analyzerTask.js'
 import Logger, { LogLevel } from '../../utils/logger.js'
 import Photo from '#models/photo'
-import PhotoImage from './photoImage.js'
 import AnalyzerProcess from './analyzerProcess.js'
 
 const logger = Logger.getInstance('AnalyzerProcess', 'GlobalEmbeddingsTagsTask')

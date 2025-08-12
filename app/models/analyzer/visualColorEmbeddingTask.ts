@@ -1,6 +1,7 @@
 import { AnalyzerTask } from './analyzerTask.js'
-import PhotoImage from './photoImage.js'
 import Logger, { LogLevel } from '../../utils/logger.js'
+import Photo from '#models/photo'
+import PhotoImageService from '#services/photo_image_service'
 
 const logger = Logger.getInstance('AnalyzerProcess', 'VisualColorEmbeddingTask')
 logger.setLevel(LogLevel.DEBUG)
@@ -12,27 +13,30 @@ type EmbeddingResponse = {
 }
 
 export class VisualColorEmbeddingTask extends AnalyzerTask {
-  // Map photoId to its PhotoImage instance and embedding array
   declare data: Record<
     string,
-    { pi: PhotoImage; embedding_full: number[]; embedding_dominant: number[] }
+    { pi: Photo; embedding_full: number[]; embedding_dominant: number[] }
   >
 
-  async process(pendingPhotos: PhotoImage[]): Promise<void> {
+  async process(pendingPhotos: Photo[]): Promise<void> {
     if (!this.data) {
       this.data = {}
     }
-
+    const photoImageService = PhotoImageService.getInstance()
     for (let i = 0; i < pendingPhotos.length; i += 64) {
       await this.sleep(250)
       const batch = pendingPhotos.slice(i, i + 64)
-      const payload = batch.map((pi) => ({ id: pi.photo.id, base64: pi.base64 }))
+      const payload = await Promise.all(
+        batch.map(async (pi) => ({
+          id: pi.id,
+          base64: await photoImageService.getImageBase64FromR2(pi.name, false),
+        }))
+      )
       const { embeddings } = await this.modelsService.getHistogramColor(payload)
 
-      // Store PhotoImage and embedding for later save
       embeddings.forEach((item: EmbeddingResponse) => {
         const key = item.id
-        const pi = batch.find((p) => p.photo.id === Number(item.id))
+        const pi = batch.find((p) => p.id === Number(item.id))
         if (pi) {
           this.data[key] = {
             pi,
@@ -49,7 +53,7 @@ export class VisualColorEmbeddingTask extends AnalyzerTask {
 
     await Promise.all(
       Object.values(this.data).map(({ pi, embedding_full, embedding_dominant }) => {
-        const photo = pi.photo
+        const photo = pi
         photo.colorHistogram = embedding_full
         photo.colorHistogramDominant = embedding_dominant
         return photo.save()
@@ -57,6 +61,12 @@ export class VisualColorEmbeddingTask extends AnalyzerTask {
     )
 
     await this.analyzerProcess.markPhotosCompleted(this.name, photoIds)
+
+    // Limpiar data para liberar memoria
+    for (const key of Object.keys(this.data)) {
+      delete this.data[key]
+    }
+
     logger.debug(`Guardadas embeddings para ${photoIds.length} imágenes`)
   }
 

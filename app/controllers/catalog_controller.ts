@@ -3,7 +3,6 @@ import type { HttpContext } from '@adonisjs/core/http'
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
 import crypto from 'crypto'
 import Photo from '#models/photo'
-import { GoogleAuthService } from '#services/google_photos_service'
 import PhotoManager from '../managers/photo_manager.js'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { invalidateCache } from '../decorators/withCache.js'
@@ -307,24 +306,26 @@ export default class CatalogController {
 
       const systemPrompt = MESSAGE_PHOTO_INSIGHTS
 
-      const buffer = await PhotoImageService.getInstance().getImageBufferFromR2(photo.name)
-      const base64 = buffer.toString('base64')
+      const base64 = await PhotoImageService.getInstance().getImageBase64FromR2(photo.name, false)
+
+      const imagePayload = {
+        inlineData: {
+          mimeType: 'image/png',
+          data: base64,
+        },
+      }
 
       const gptResponse = await modelsService.getGeminiResponse(
         systemPrompt,
-        [
-          {
-            inlineData: {
-              mimeType: 'image/png',
-              data: base64,
-            },
-          },
-        ],
+        [imagePayload],
         'gemini-2.0-flash',
         {
           temperature: 0.6,
         }
       )
+
+      // Limpiar imagen de memoria
+      imagePayload.inlineData.data = ''
 
       let insights = []
 

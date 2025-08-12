@@ -357,7 +357,7 @@ export default class ModelsService {
   }
 
   @withWarmUp('image')
-  async getEmbeddingsImages(images: { id: number; base64: string }[]) {
+  async getEmbeddingsImages(images: { id: number; base64: any }[]) {
     const batchSize = 16
     let allEmbeddings: any[] = []
 
