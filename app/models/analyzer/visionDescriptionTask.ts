@@ -31,7 +31,7 @@ export class VisionDescriptionTask extends AnalyzerTask {
 
   async process(pendingPhotos: PhotoImage[], analyzerProcess: AnalyzerProcess): Promise<void> {
     this.analyzerProcess = analyzerProcess
-    if (analyzerProcess.isFastMode || pendingPhotos.length < 10) {
+    if (this.model == 'Gemini' || analyzerProcess.isFastMode || pendingPhotos.length < 10) {
       await this.processWithDirectAPI(pendingPhotos)
     } else {
       await this.processWithBatchAPI(pendingPhotos)

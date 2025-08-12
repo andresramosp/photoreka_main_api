@@ -19,10 +19,14 @@ export default class AnalyzerController {
     try {
       await auth.use('api').check()
       const user = auth.use('api').user! as any
-      const realUserId = user.id.toString()
+      if (!user) {
+        return response.unauthorized({
+          message: 'Credenciales inválidas',
+        })
+      }
 
       const {
-        userId,
+        userId: targetUserId,
         packageId,
         processId,
         mode,
@@ -40,24 +44,36 @@ export default class AnalyzerController {
       const isPreprocess = selectedPackage.isPreprocess || false
 
       logger.info(
-        `Iniciando análisis para usuario ${realUserId} - Paquete: ${packageId} - Modo: ${mode} - Inmediato: ${inmediate}`
+        `Iniciando análisis para usuario ${targetUserId} - Paquete: ${packageId} - Modo: ${mode} - Inmediato: ${inmediate}`
       )
 
       // Si photoIds está presente y es un array, usar getPhotosByIds, si no, getPhotosForAnalysis
       let photos = []
       if (Array.isArray(photoIds) && photoIds.length > 0) {
-        photos = await photoManager.getPhotosByIds(photoIds, realUserId)
+        photos = await photoManager.getPhotosByIds(photoIds, targetUserId)
       } else if (!isGlobal) {
-        photos = await photoManager.getPhotosForAnalysis(mode, processId, realUserId, isPreprocess)
+        photos = await photoManager.getPhotosForAnalysis(
+          mode,
+          processId,
+          targetUserId,
+          isPreprocess
+        )
       }
 
       if (photos.length || isGlobal) {
-        await analyzerService.initProcess(photos, packageId, mode, fastMode, processId, realUserId)
+        await analyzerService.initProcess(
+          photos,
+          packageId,
+          mode,
+          fastMode,
+          processId,
+          targetUserId
+        )
 
         if (inmediate) {
           if (isPreprocess) {
             logger.info(
-              `Ejecutando análisis de forma síncrona (preprocess) para usuario ${realUserId}`
+              `Ejecutando análisis de forma síncrona (preprocess) para usuario ${targetUserId}`
             )
             await analyzerService.runAll()
           } else {
@@ -66,20 +82,22 @@ export default class AnalyzerController {
             } else {
               analyzerService.runGlobal()
             }
-            logger.info(`Análisis ejecutado inmediatamente para usuario ${realUserId}`)
+            logger.info(`Análisis ejecutado inmediatamente para usuario ${targetUserId}`)
           }
         } else {
-          logger.info(`Análisis inicializado pero diferido para usuario ${realUserId}`)
+          logger.info(
+            `Análisis inicializado pero diferido para usuario ${targetUserIdtargetUserId}`
+          )
         }
 
         return response.ok({
           message: inmediate ? 'Analysis started' : 'Analysis initialized',
-          userId: realUserId,
+          userId: targetUserId,
         })
       }
 
-      logger.info(`No hay fotos para analizar para el usuario ${realUserId}`)
-      return response.ok({ message: 'Nothing to analyze', userId: realUserId })
+      logger.info(`No hay fotos para analizar para el usuario ${targetUserId}`)
+      return response.ok({ message: 'Nothing to analyze', userId: targetUserId })
     } catch (error) {
       logger.error('Error en el proceso de análisis:', error)
       return response.internalServerError({ message: 'Something went wrong', error: error.message })
@@ -111,7 +129,7 @@ export default class AnalyzerController {
   public async healthForUser({ request, response, auth }: HttpContext) {
     try {
       const queryUserId = request.qs().userId
-      const userId = queryUserId ? Number(queryUserId) : realUserId
+      const userId = Number(queryUserId)
 
       if (!userId) return response.badRequest({ message: 'Missing userId' })
 

@@ -30,7 +30,7 @@ export class VisionTopologicalTask extends AnalyzerTask {
     this.analyzerProcess = analyzerProcess
 
     const filteredPhotos: PhotoImage[] = await this.filterNonVerticalPhotos(pendingPhotos)
-    if (analyzerProcess.isFastMode || filteredPhotos.length < 10) {
+    if (this.model == 'Gemini' || analyzerProcess.isFastMode || pendingPhotos.length < 10) {
       await this.processWithDirectAPI(filteredPhotos)
     } else {
       await this.processWithBatchAPI(filteredPhotos)
