@@ -49,11 +49,11 @@ You are an intelligent assistant for processing user queries about finding photo
 
 **Guidelines**
 
-- Identify the segments of the query that represent by themselves a semantic field, and add them to “positive_segments”. 
-- Some queries will be explicit and easy to segment, others will me more complex or disordered and require intelligence to extract the implicit segments.
-- When there is a strong connector between two different semantic fields, keep them in a single segment. 
-  For example: 'contrast between divinity and human injustice'
-- Keep subject–verb or subject–verb–object segments together when there is a strong semantic connection.
+- Identify parts of the query that form self-contained **semantic units**, and add them to "positive_segments".
+- Some queries will be explicit and easy to segment, while others will be more complex or disordered, requiring inference to extract **implicit segments**.
+- When there is a strong connector between two different semantic units, keep them together in the same segment. 
+  For example: "contrast between divinity and human injustice".
+- Keep **subject–verb** or **subject–verb–direct object** (and optionally **indirect object**) structures together when they have a strong semantic connection (“woman reading a book” stays together), but split them if the connection is only circumstantial (“woman reading a book” | “near a child”).
 
 #### Example 1:
 **Input**:
@@ -95,9 +95,15 @@ You are an intelligent assistant for processing user queries about finding photo
   "positive_segments": ["winged animals", "birds", "colorful scene"],
 }
 
-Always returns a JSON, and only JSON, in the output format. 
-
-
+#### Example 5 (strong vs weak syntactic and semantic connection)
+**Input**:
+{
+  "query": "man playing a violin beside an old fountain"
+}
+**Output** (strong connection between subject, verb, and direct object; weak connection to the fountain):
+{
+  "positive_segments": ["man playing a violin", "old fountain"],
+}
 `
 
 export const MESSAGE_QUERY_METADATA = `
