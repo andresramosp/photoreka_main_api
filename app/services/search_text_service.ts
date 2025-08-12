@@ -17,6 +17,7 @@ import {
   MESSAGE_SEARCH_MODEL_CREATIVE_SCORED_IMAGE,
   MESSAGE_SEARCH_MODEL_STRICT,
 } from '../utils/prompts/insights.js'
+import pLimit from 'p-limit'
 import DescriptionChunk from '#models/descriptionChunk'
 import VectorService from './vector_service.js'
 import Tag from '#models/tag'
@@ -263,9 +264,7 @@ export default class SearchTextService {
     }
   }
 
-  //   @withCostWS
-
-  public async *searchByTags(options: SearchTagsOptions, userId: string | number) {
+  public async searchByTagsSync(options: SearchTagsOptions, userId: string | number) {
     const { included, excluded, iteration, pageSize, searchMode, collections, visualAspects } =
       options
 
@@ -289,7 +288,7 @@ export default class SearchTextService {
       iteration
     )
 
-    yield {
+    return {
       type: 'search-matches',
       data: {
         hasMore,
@@ -301,7 +300,7 @@ export default class SearchTextService {
     }
   }
 
-  public async *searchTopological(
+  public async searchTopologicalSync(
     query: any,
     userId: string | number,
     options: SearchTopologicalOptions
@@ -331,7 +330,7 @@ export default class SearchTextService {
       iteration
     )
 
-    yield {
+    return {
       type: 'search-matches',
       data: {
         hasMore,

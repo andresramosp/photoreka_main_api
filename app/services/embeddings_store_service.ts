@@ -16,7 +16,7 @@ export class EmbeddingStoreService {
   public static getEmbedding(key: string): number[] | null {
     const found = this.embeddingsMap[key]
     if (found) {
-      console.log(`[EmbeddingStoreService] Recuperado embedding para clave '${key}'`)
+      // console.log(`[EmbeddingStoreService] Recuperado embedding para clave '${key}'`)
       return found
     } else {
       console.warn(`[EmbeddingStoreService] No se encontró embedding para la clave '${key}'`)

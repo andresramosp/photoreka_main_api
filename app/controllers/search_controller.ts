@@ -61,14 +61,14 @@ export default class SearchController {
     }
   }
 
-  public async searchByTags({ response, request, auth }: HttpContext) {
+  public async searchByTagsSync({ response, request, auth }: HttpContext) {
     try {
       const user = auth.use('api').user!
       const searchService = new SearchTextService()
 
       const query = request.body()
 
-      const stream = searchService.searchByTags(
+      const result = await searchService.searchByTagsSync(
         {
           included: query.included,
           excluded: query.excluded,
@@ -81,25 +81,21 @@ export default class SearchController {
         user.id
       )
 
-      for await (const result of stream) {
-        ws.io?.to(user.id.toString()).emit(result.type, result.data)
-      }
-
-      return response.ok({ message: 'Search process initiated' })
+      return response.ok(result)
     } catch (error) {
       console.error('Error fetching photos:', error)
       return response.internalServerError({ message: 'Error fetching photos' })
     }
   }
 
-  public async searchTopological({ response, request, auth }: HttpContext) {
+  public async searchTopologicalSync({ response, request, auth }: HttpContext) {
     try {
       const user = auth.use('api').user!
       const searchService = new SearchTextService()
 
       const query = request.body()
 
-      const stream = searchService.searchTopological(query, user.id, {
+      const result = await searchService.searchTopologicalSync(query, user.id, {
         left: query.left,
         right: query.right,
         middle: query.middle,
@@ -110,11 +106,7 @@ export default class SearchController {
         visualAspects: query.options.visualAspects,
       })
 
-      for await (const result of stream) {
-        ws.io?.to(user.id.toString()).emit(result.type, result.data)
-      }
-
-      return response.ok({ message: 'Search process initiated' })
+      return response.ok(result)
     } catch (error) {
       console.error('Error fetching photos:', error)
       return response.internalServerError({ message: 'Error fetching photos' })

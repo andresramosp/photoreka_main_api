@@ -151,15 +151,12 @@ export default class ModelsService {
       if (endpointType == 'image') {
         url = this.remoteBaseUrlImage
       }
-      requestPayload =
-        endpointType == 'embeddings_gpu'
-          ? { input: { input: payload } }
-          : {
-              input: {
-                operation,
-                data: payload,
-              },
-            }
+      requestPayload = {
+        input: {
+          operation,
+          data: payload,
+        },
+      }
       if (this.runpodApiKey) {
         headers['Authorization'] = `Bearer ${this.runpodApiKey}`
       }
@@ -324,40 +321,40 @@ export default class ModelsService {
     }
   }
 
-  // async getEmbeddingsGPU(tags) {
-  //   const isRemoteGPU = this.apiMode === 'REMOTE'
+  async getEmbeddingsGPU(tags) {
+    const isRemoteGPU = this.apiMode === 'REMOTE'
 
-  //   if (this.apiMode === 'REMOTE') await this.ensureRunPodWarm('embeddings_gpu')
+    if (this.apiMode === 'REMOTE') await this.ensureRunPodWarm('embeddings_gpu')
 
-  //   try {
-  //     const { url, requestPayload, headers } = this.buildRequestConfig(
-  //       'get_embeddings',
-  //       isRemoteGPU
-  //         ? tags
-  //         : {
-  //             tags,
-  //           },
-  //       'embeddings_gpu'
-  //     )
+    try {
+      const { url, requestPayload, headers } = this.buildRequestConfig(
+        'get_embeddings',
+        isRemoteGPU
+          ? tags
+          : {
+              tags,
+            },
+        'embeddings_gpu'
+      )
 
-  //     const { data } = await axios.post(url, requestPayload, { headers })
+      const { data } = await axios.post(url, requestPayload, { headers })
 
-  //     if (this.apiMode === 'LOCAL') {
-  //       return data
-  //     } else {
-  //       return data.output
-  //         ? {
-  //             embeddings: isRemoteGPU
-  //               ? data.output.data.map((d) => d.embedding)
-  //               : data.output.embeddings,
-  //           }
-  //         : { embeddings: [] }
-  //     }
-  //   } catch (error) {
-  //     console.error('Error en getEmbeddings:', error.message, JSON.stringify(tags))
-  //     return { embeddings: [] }
-  //   }
-  // }
+      if (this.apiMode === 'LOCAL') {
+        return data
+      } else {
+        return data.output
+          ? {
+              embeddings: isRemoteGPU
+                ? data.output.data.map((d) => d.embedding)
+                : data.output.embeddings,
+            }
+          : { embeddings: [] }
+      }
+    } catch (error) {
+      console.error('Error en getEmbeddings:', error.message, JSON.stringify(tags))
+      return { embeddings: [] }
+    }
+  }
 
   @withWarmUp('image')
   async getEmbeddingsImages(images: { id: number; base64: string }[]) {

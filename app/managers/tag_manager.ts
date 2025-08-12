@@ -35,7 +35,13 @@ export default class TagManager {
     ttl: 60 * 5,
   })
   public async getTagsByUser(userId: string): Promise<Tag[]> {
-    const tags = await Tag.all()
+    // Busca los tags asociados a las fotos del usuario, sin duplicados
+    const tags = await Tag.query()
+      .join('tags_photos', 'tags_photos.tag_id', 'tags.id')
+      .join('photos', 'photos.id', 'tags_photos.photo_id')
+      .where('photos.user_id', userId)
+      .distinct('tags.id')
+      .select('tags.*')
     return tags
   }
 
