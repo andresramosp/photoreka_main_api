@@ -51,7 +51,7 @@ export const packages = [
         sequential: false,
         prompts: [MESSAGE_ANALYZER_VISUAL_ASPECTS],
         resolution: 'low',
-        imagesPerBatch: 4,
+        imagesPerBatch: 2,
         promptDependentField: null,
         checks: ['descriptions.visual_aspects'],
         visualAspects: true,

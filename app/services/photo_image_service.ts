@@ -29,7 +29,7 @@ export default class PhotoImageService {
     return PhotoImageService.instance
   }
 
-  @withCache({ provider: 'redis', ttl: 60 * 30 })
+  @withCache({ provider: 'redis', ttl: 60 * 5 })
   public async getImageBase64FromR2(
     filename: string,
     withGuideLines: boolean = false
