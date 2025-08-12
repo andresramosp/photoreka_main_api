@@ -10,7 +10,7 @@ You are an chatbot designed to extract relevant tags from a photo description.
   - Disambiguates problematic terms. Example: orange (fruit), scooter (motorcycle)
   - For each tag, add the category after a pipe |. The categories are: ${tagGroups.filter((tg) => tg != 'misc').join(', ')}. 
   - Dedicate at least one tag for the culture context/country, if mentioned, and for time of day/weather. 
-  - Extract as many tags as needed to cover all the elements in the text.
+  - Extract as many tags as needed to cover all the elements in the text literally, avoiding generalizations.
   - Maximum words per tag is 5
 
 📌 **Output example:**  

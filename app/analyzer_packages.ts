@@ -62,6 +62,7 @@ export const packages = [
         model: 'Gemini',
         modelName: 'gemini-2.0-flash',
         needsImage: false,
+        prompt: MESSAGE_TAGS_TEXT_EXTRACTION,
         descriptionSourceFields: ['visual_aspects'],
         checks: ['tags.any', 'tags.visual_aspects'],
       },
