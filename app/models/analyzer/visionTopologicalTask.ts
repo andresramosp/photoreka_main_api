@@ -29,6 +29,8 @@ export class VisionTopologicalTask extends AnalyzerTask {
 
   async process(pendingPhotos: Photo[], analyzerProcess: AnalyzerProcess): Promise<void> {
     this.analyzerProcess = analyzerProcess
+    // Limpiar requests fallidos al inicio del proceso
+    this.failedRequests = []
 
     const filteredPhotos: Photo[] = await this.filterNonVerticalPhotos(pendingPhotos)
     if (this.model == 'Gemini' || analyzerProcess.isFastMode || pendingPhotos.length < 10) {
@@ -36,6 +38,9 @@ export class VisionTopologicalTask extends AnalyzerTask {
     } else {
       await this.processWithBatchAPI(filteredPhotos)
     }
+
+    // Limpiar al final del proceso completo
+    this.failedRequests = []
   }
 
   private async processWithDirectAPI(pendingPhotos: Photo[]): Promise<void> {
@@ -64,6 +69,9 @@ export class VisionTopologicalTask extends AnalyzerTask {
     }
     if (validPhotos.length === 0) {
       logger.warn('No hay fotos válidas para procesar.')
+      // Limpiar arrays antes de retornar
+      validPhotos.length = 0
+      skippedPhotoIds.length = 0
       return
     }
 
@@ -73,13 +81,22 @@ export class VisionTopologicalTask extends AnalyzerTask {
       batches.push(batch)
     }
 
+    // Limpiar arrays después de crear batches
+    validPhotos.length = 0
+    skippedPhotoIds.length = 0
+
     if (this.sequential) {
       for (let i = 0; i < batches.length; i++) {
         await this.processBatch(batches[i], i)
+        // Limpiar la referencia del batch procesado
+        batches[i] = []
       }
     } else {
       await Promise.all(batches.map((batch, idx) => this.processBatch(batch, idx)))
     }
+
+    // Limpiar array de batches
+    batches.length = 0
   }
 
   private async processWithBatchAPI(pendingPhotos: Photo[]): Promise<void> {
@@ -108,6 +125,9 @@ export class VisionTopologicalTask extends AnalyzerTask {
     }
     if (validPhotos.length === 0) {
       logger.warn('No hay fotos válidas para procesar.')
+      // Limpiar arrays antes de retornar
+      validPhotos.length = 0
+      skippedPhotoIds.length = 0
       return
     }
 
@@ -120,6 +140,10 @@ export class VisionTopologicalTask extends AnalyzerTask {
       batches.push(validPhotos.slice(i, i + imagesPerBatch))
     }
 
+    // Limpiar arrays después de crear batches
+    validPhotos.length = 0
+    skippedPhotoIds.length = 0
+
     const limit = pLimit(maxConcurrency)
 
     // Ejecuta todos los batches con concurrencia limitada
@@ -128,6 +152,9 @@ export class VisionTopologicalTask extends AnalyzerTask {
     )
 
     await Promise.all(batchPromises)
+
+    // Limpiar array de batches
+    batches.length = 0
 
     // Si hay fallos, reprocesar con DirectAPI
     if (this.failedRequests.length > 0) {
@@ -162,6 +189,9 @@ export class VisionTopologicalTask extends AnalyzerTask {
       const photoId = batch[photoIndex].id
       this.data[photoId] = { ...this.data[photoId], ...results }
     })
+
+    // Limpiar prompts inyectados después del uso
+    injectedPrompts.length = 0
 
     await this.commit(batch)
   }
@@ -248,6 +278,10 @@ export class VisionTopologicalTask extends AnalyzerTask {
             ],
           },
         })
+
+        // Limpiar arrays temporales después de crear cada request
+        batchSpecificPrompts.length = 0
+        userContent.length = 0
       }
 
       batchId = await this.modelsService.submitGPTBatch(requests)
@@ -303,6 +337,9 @@ export class VisionTopologicalTask extends AnalyzerTask {
       }
     })
 
+    // Limpiar results para liberar memoria
+    results.length = 0
+
     await this.commit(batchPhotos)
     logger.debug(`Datos salvados del batch para ${batchPhotos.length} imágenes`)
   }
@@ -317,7 +354,17 @@ export class VisionTopologicalTask extends AnalyzerTask {
           detail: this.resolution,
         },
       }))
-      return await this.modelsService.getGPTResponse(prompt, images, 'gpt-5-chat-latest', null, 0)
+      const result = await this.modelsService.getGPTResponse(
+        prompt,
+        images,
+        'gpt-5-chat-latest',
+        null,
+        0
+      )
+
+      // Limpiar array de imágenes
+      images.length = 0
+      return result
     } else if (this.model === 'Qwen') {
       const images = batch.map((photo) => ({
         type: 'image_url',
@@ -326,7 +373,17 @@ export class VisionTopologicalTask extends AnalyzerTask {
           detail: this.resolution,
         },
       }))
-      return await this.modelsService.getQwenResponse(prompt, images, 'qwen-vl-max', null, 0)
+      const result = await this.modelsService.getQwenResponse(
+        prompt,
+        images,
+        'qwen-vl-max',
+        null,
+        0
+      )
+
+      // Limpiar array de imágenes
+      images.length = 0
+      return result
     } else if (this.model === 'Gemini') {
       const photoImageService = PhotoImageService.getInstance()
 
@@ -337,7 +394,7 @@ export class VisionTopologicalTask extends AnalyzerTask {
             photo.name,
             this.useGuideLines
           )
-
+          // El buffer se libera automáticamente por garbage collector
           return {
             inlineData: {
               mimeType: 'image/png',
@@ -355,7 +412,7 @@ export class VisionTopologicalTask extends AnalyzerTask {
             : MediaResolution.MEDIA_RESOLUTION_MEDIUM,
       })
 
-      // Limpiar las imágenes de memoria
+      // Limpiar las imágenes de memoria de forma más agresiva
       images.forEach((img) => (img.inlineData.data = ''))
       images.length = 0
 
@@ -372,13 +429,15 @@ export class VisionTopologicalTask extends AnalyzerTask {
     const photosWithBase64 = await Promise.all(
       batch.map(async (photo) => {
         const base64 = await photoImageService.getImageBase64FromR2(photo.name, this.useGuideLines)
+
+        // El buffer se libera automáticamente por garbage collector
         return { id: photo.id, base64 }
       })
     )
 
     const response = await this.modelsService.getMolmoResponse(photosWithBase64, [], prompts)
 
-    // Limpiar base64 de memoria
+    // Limpiar base64 de memoria de forma más agresiva
     photosWithBase64.forEach((p) => (p.base64 = ''))
     photosWithBase64.length = 0
 
@@ -424,6 +483,10 @@ export class VisionTopologicalTask extends AnalyzerTask {
         filteredPhotos.push(photo)
       }
     }
+
+    // Limpiar el array original después del filtrado
+    pendingPhotos.length = 0
+
     return filteredPhotos
   }
 

@@ -72,14 +72,29 @@ export class VisionDescriptionTask extends AnalyzerTask {
         return
       }
 
-      response.result.forEach((res: any, photoIndex: number) => {
-        const { ...results } = res
-        const photoId = batch[photoIndex].id
-        this.data[photoId] = { ...this.data[photoId], ...results }
-      })
-
-      await this.commit(batch)
-      logger.debug(`Datos salvados ${this.model} para ${batch.length} imágenes`)
+      // Manejar el caso donde response puede tener menos resultados debido a errores
+      if (response && response.result && response.result.length > 0) {
+        if (this.model === 'Gemini' && response.validPhotos) {
+          // Para Gemini, usamos las fotos válidas identificadas
+          response.result.forEach((res: any, photoIndex: number) => {
+            const { ...results } = res
+            const photoId = response.validPhotos[photoIndex].id
+            this.data[photoId] = { ...this.data[photoId], ...results }
+          })
+          await this.commit(response.validPhotos)
+        } else {
+          // Para otros modelos o cuando no hay validPhotos, usar la lógica original
+          response.result.forEach((res: any, photoIndex: number) => {
+            const { ...results } = res
+            const photoId = batch[photoIndex].id
+            this.data[photoId] = { ...this.data[photoId], ...results }
+          })
+          await this.commit(batch)
+        }
+        logger.debug(`Datos salvados ${this.model} para ${response.result.length} imágenes`)
+      } else {
+        logger.warn(`No se obtuvieron resultados válidos para el batch de ${batch.length} imágenes`)
+      }
     }
 
     if (this.sequential) {
@@ -258,108 +273,167 @@ export class VisionDescriptionTask extends AnalyzerTask {
   private async executeModelTask(prompts: string[], batch: Photo[]): Promise<any> {
     const prompt = prompts[0]
 
-    if (this.model === 'GPT') {
-      const images = batch.map((photo) => ({
-        type: 'image_url',
-        image_url: {
-          url: photo.originalUrl,
-          detail: this.resolution,
-        },
-      }))
-      return await this.modelsService.getGPTResponse(
-        prompt,
-        images,
-        'gpt-5-chat-latest',
-        null,
-        0,
-        false
-      )
-    } else if (this.model === 'Qwen') {
-      const images = batch.map((photo) => ({
-        type: 'image_url',
-        image_url: {
-          url: photo.originalUrl,
-          detail: this.resolution,
-        },
-      }))
-      return await this.modelsService.getQwenResponse(prompt, images, 'qwen-vl-max', null, 0, false)
-    } else if (this.model === 'Gemini') {
-      const photoImageService = PhotoImageService.getInstance()
+    try {
+      if (this.model === 'GPT') {
+        const images = batch.map((photo) => ({
+          type: 'image_url',
+          image_url: {
+            url: photo.originalUrl,
+            detail: this.resolution,
+          },
+        }))
+        return await this.modelsService.getGPTResponse(
+          prompt,
+          images,
+          'gpt-5-chat-latest',
+          null,
+          0,
+          false
+        )
+      } else if (this.model === 'Qwen') {
+        const images = batch.map((photo) => ({
+          type: 'image_url',
+          image_url: {
+            url: photo.originalUrl,
+            detail: this.resolution,
+          },
+        }))
+        return await this.modelsService.getQwenResponse(
+          prompt,
+          images,
+          'qwen-vl-max',
+          null,
+          0,
+          false
+        )
+      } else if (this.model === 'Gemini') {
+        const photoImageService = PhotoImageService.getInstance()
 
-      // Generar base64 para cada foto y luego limpiar memoria
-      const images = await Promise.all(
-        batch.map(async (photo) => {
-          const base64 = await photoImageService.getImageBase64FromR2(photo.name, false)
-          // El buffer se libera automáticamente por garbage collector
-          return {
-            inlineData: {
-              mimeType: 'image/png',
-              data: base64,
-            },
-          }
-        })
-      )
+        // Generar base64 para cada foto y luego limpiar memoria
+        const imagesWithIds: { photo: Photo; imageData: any }[] = []
 
-      const result = await this.modelsService.getGeminiResponse(
-        prompt,
-        images,
-        this.modelName,
-        {
-          temperature: 0.1,
-          mediaResolution:
-            this.resolution == 'high'
-              ? MediaResolution.MEDIA_RESOLUTION_HIGH
-              : MediaResolution.MEDIA_RESOLUTION_MEDIUM,
-        },
-        false
-      )
+        await Promise.all(
+          batch.map(async (photo) => {
+            try {
+              const base64 = await photoImageService.getImageBase64FromR2(photo.name, false)
+              imagesWithIds.push({
+                photo: photo,
+                imageData: {
+                  inlineData: {
+                    mimeType: 'image/png',
+                    data: base64,
+                  },
+                },
+              })
+            } catch (imageError) {
+              logger.error(
+                `Error obteniendo imagen para foto ${photo.id} (${photo.name}), saltando foto:`,
+                imageError
+              )
+              // No agregamos esta foto al array, simplemente continuamos
+            }
+          })
+        )
 
-      // Limpiar las imágenes de memoria de forma más agresiva
-      images.forEach((img) => (img.inlineData.data = ''))
-      images.length = 0
+        if (imagesWithIds.length === 0) {
+          logger.warn('No se pudieron obtener imágenes para ninguna foto del batch')
+          return { result: [] }
+        }
 
-      return result
-    } else {
-      throw new Error(`Modelo no soportado: ${this.model}`)
+        const images = imagesWithIds.map((item) => item.imageData)
+        const validPhotos = imagesWithIds.map((item) => item.photo)
+
+        const result = await this.modelsService.getGeminiResponse(
+          prompt,
+          images,
+          this.modelName,
+          {
+            temperature: 0.1,
+            mediaResolution:
+              this.resolution == 'high'
+                ? MediaResolution.MEDIA_RESOLUTION_HIGH
+                : MediaResolution.MEDIA_RESOLUTION_MEDIUM,
+          },
+          false
+        )
+
+        // Limpiar las imágenes de memoria de forma más agresiva
+        images.forEach((img) => (img.inlineData.data = ''))
+        images.length = 0
+
+        // Ajustar el resultado para que coincida con las fotos válidas
+        if (result && result.result) {
+          result.validPhotos = validPhotos // Agregar info de qué fotos son válidas
+        }
+
+        return result
+      } else {
+        throw new Error(`Modelo no soportado: ${this.model}`)
+      }
+    } catch (error) {
+      logger.error(`Error en executeModelTask para modelo ${this.model}:`, error)
+      // En lugar de lanzar el error, retornamos un resultado vacío para continuar
+      return { result: [] }
     }
   }
   private async executeMolmoTask(prompts: any[], batch: Photo[]): Promise<any> {
     const photoImageService = PhotoImageService.getInstance()
 
-    // Generar base64 para cada foto
-    const photosWithBase64 = await Promise.all(
-      batch.map(async (photo) => {
-        const base64 = await photoImageService.getImageBase64FromR2(photo.name, false)
+    try {
+      // Generar base64 para cada foto
+      const photosWithBase64: { id: number; base64: string }[] = []
 
-        // El buffer se libera automáticamente por garbage collector
-        return { id: photo.id, base64 }
-      })
-    )
-
-    const response = await this.modelsService.getMolmoResponse(photosWithBase64, [], prompts)
-
-    // Limpiar base64 de memoria de forma más agresiva
-    photosWithBase64.forEach((p) => (p.base64 = ''))
-    photosWithBase64.length = 0
-
-    if (!response) return { result: [] }
-
-    const { result } = response
-    return {
-      result: result.map((photoResult: any) => {
-        let descriptionsByPrompt: { [key: string]: any } = {}
-        this.promptsNames.forEach((targetPrompt) => {
+      await Promise.all(
+        batch.map(async (photo) => {
           try {
-            const descObj = photoResult.descriptions.find((d: any) => d.id_prompt === targetPrompt)
-            descriptionsByPrompt = descObj.description
-          } catch (err) {
-            logger.error(`Error en Molmo para foto ${photoResult.id}:`, err)
+            const base64 = await photoImageService.getImageBase64FromR2(photo.name, false)
+            photosWithBase64.push({ id: photo.id, base64: base64.toString() })
+          } catch (imageError) {
+            logger.error(
+              `Error obteniendo imagen para foto ${photo.id} (${photo.name}) en Molmo, saltando foto:`,
+              imageError
+            )
+            // No agregamos esta foto al array, simplemente continuamos
           }
         })
-        return {
-          [this.promptsNames[0]]: descriptionsByPrompt,
-        }
-      }),
+      )
+
+      if (photosWithBase64.length === 0) {
+        logger.warn('No se pudieron obtener imágenes para ninguna foto del batch en Molmo')
+        return { result: [] }
+      }
+
+      const response = await this.modelsService.getMolmoResponse(photosWithBase64, [], prompts)
+
+      // Limpiar base64 de memoria de forma más agresiva
+      photosWithBase64.forEach((p) => (p.base64 = ''))
+      photosWithBase64.length = 0
+
+      if (!response) return { result: [] }
+
+      const { result } = response
+      return {
+        result: result.map((photoResult: any) => {
+          let descriptionsByPrompt: { [key: string]: any } = {}
+          this.promptsNames.forEach((targetPrompt) => {
+            try {
+              const descObj = photoResult.descriptions.find(
+                (d: any) => d.id_prompt === targetPrompt
+              )
+              descriptionsByPrompt = descObj.description
+            } catch (err) {
+              logger.error(`Error en Molmo para foto ${photoResult.id}:`, err)
+            }
+          })
+          return {
+            [this.promptsNames[0]]: descriptionsByPrompt,
+          }
+        }),
+      }
+    } catch (error) {
+      logger.error(`Error en executeMolmoTask:`, error)
+      // En lugar de lanzar el error, retornamos un resultado vacío para continuar
+      return { result: [] }
     }
   }
 
@@ -370,18 +444,30 @@ export class VisionDescriptionTask extends AnalyzerTask {
         prompt: this.prompts[index],
       }))
 
-      return await Promise.all(
+      const validResults: any[] = []
+
+      await Promise.all(
         batch.map(async (photo: Photo) => {
-          await photo.refresh()
-          return {
-            id: photo.id,
-            prompts: promptList.map((p) => ({
-              id: p.id,
-              text: typeof p.prompt === 'function' ? p.prompt([photo]) : p.prompt,
-            })),
+          try {
+            await photo.refresh()
+            validResults.push({
+              id: photo.id,
+              prompts: promptList.map((p) => ({
+                id: p.id,
+                text: typeof p.prompt === 'function' ? p.prompt([photo]) : p.prompt,
+              })),
+            })
+          } catch (refreshError) {
+            logger.error(
+              `Error refreshing photo ${photo.id} en injectPromptsDependencies, saltando foto:`,
+              refreshError
+            )
+            // No agregamos esta foto al resultado, simplemente continuamos
           }
         })
       )
+
+      return validResults
     } else {
       return this.prompts.map((p) => (typeof p === 'function' ? p(batch) : p))
     }

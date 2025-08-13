@@ -116,6 +116,9 @@ export default class AnalyzerProcessRunner {
         }
       } catch (error) {
         logger.error(`Error en tarea ${task.name}:`, error)
+        throw new Exception(`[ERROR] Error en tarea ${task.name}: ${error.message}`, 500, {
+          cause: error,
+        })
       }
     }
     await HealthPhotoService.updateSheetWithHealth(this.process)

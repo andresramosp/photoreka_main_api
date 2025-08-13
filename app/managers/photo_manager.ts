@@ -154,6 +154,11 @@ export default class PhotoManager {
   public async getPhotosForRemakeAll(userId?: string): Promise<Photo[]> {
     if (!userId) throw new Error('userId is required')
 
+    console.log(
+      '[AnalyzerProcess] [getPhotosForRemakeAll] Iniciando proceso de remake de todas las fotos para el usuario:',
+      userId
+    )
+
     // 1. Obtener los datos necesarios de las fotos
     const photos: Array<{
       user_id: number
@@ -165,8 +170,13 @@ export default class PhotoManager {
       .select(['user_id', 'name', 'original_file_name', 'thumbnail_name'])
       .pojo()
 
+    console.log('[AnalyzerProcess] [getPhotosForRemakeAll] Fotos obtenidas:', photos.length)
+
     // 2. Borrar todas las fotos del usuario (raw query para velocidad)
     await db.from('photos').where('user_id', userId).delete()
+    console.log(
+      '[AnalyzerProcess] [getPhotosForRemakeAll] Todas las fotos del usuario eliminadas de la base de datos'
+    )
 
     // 3. Recrear las fotos solo con los campos requeridos
     const recreatedPhotos: Photo[] = []
@@ -178,8 +188,13 @@ export default class PhotoManager {
         thumbnailName: p.thumbnail_name,
       })
       recreatedPhotos.push(newPhoto)
+      // console.log('[AnalyzerProcess] [getPhotosForRemakeAll] Foto recreada:', newPhoto.id)
     }
 
+    console.log(
+      '[AnalyzerProcess] [getPhotosForRemakeAll] Proceso finalizado. Total fotos recreadas:',
+      recreatedPhotos.length
+    )
     return recreatedPhotos
   }
 
