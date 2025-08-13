@@ -31,6 +31,7 @@ export type ModelName =
   | 'qwen-vl-max'
   | 'gemini-2.0-flash'
   | 'gemini-2.5-flash'
+  | 'gemini-2.5-flash-lite'
 
 const PRICES = {
   'gpt-4o': {
@@ -87,6 +88,11 @@ const PRICES = {
     input_cache_miss: 0.3 / 1_000_000, // USD per input token
     input_cache_hit: 0.15 / 1_000_000, // USD per cached input token
     output: 2.5 / 1_000_000, // USD per output token
+  },
+  'gemini-2.5-flash-lite': {
+    input_cache_miss: 0.1 / 1_000_000, // USD per input token
+    input_cache_hit: 0.05 / 1_000_000, // USD per cached input token
+    output: 0.4 / 1_000_000, // USD per output token
   },
 }
 

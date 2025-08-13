@@ -318,7 +318,7 @@ export default class CatalogController {
       const gptResponse = await modelsService.getGeminiResponse(
         systemPrompt,
         [imagePayload],
-        'gemini-2.0-flash',
+        'gemini-2.5-flash-lite',
         {
           temperature: 0.6,
         }

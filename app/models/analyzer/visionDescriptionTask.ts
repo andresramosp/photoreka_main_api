@@ -266,7 +266,14 @@ export class VisionDescriptionTask extends AnalyzerTask {
           detail: this.resolution,
         },
       }))
-      return await this.modelsService.getGPTResponse(prompt, images, 'gpt-5-chat-latest', null, 0)
+      return await this.modelsService.getGPTResponse(
+        prompt,
+        images,
+        'gpt-5-chat-latest',
+        null,
+        0,
+        false
+      )
     } else if (this.model === 'Qwen') {
       const images = batch.map((photo) => ({
         type: 'image_url',
@@ -275,7 +282,7 @@ export class VisionDescriptionTask extends AnalyzerTask {
           detail: this.resolution,
         },
       }))
-      return await this.modelsService.getQwenResponse(prompt, images, 'qwen-vl-max', null, 0)
+      return await this.modelsService.getQwenResponse(prompt, images, 'qwen-vl-max', null, 0, false)
     } else if (this.model === 'Gemini') {
       const photoImageService = PhotoImageService.getInstance()
 
@@ -293,13 +300,19 @@ export class VisionDescriptionTask extends AnalyzerTask {
         })
       )
 
-      const result = await this.modelsService.getGeminiResponse(prompt, images, this.modelName, {
-        temperature: 0.1,
-        mediaResolution:
-          this.resolution == 'high'
-            ? MediaResolution.MEDIA_RESOLUTION_HIGH
-            : MediaResolution.MEDIA_RESOLUTION_MEDIUM,
-      })
+      const result = await this.modelsService.getGeminiResponse(
+        prompt,
+        images,
+        this.modelName,
+        {
+          temperature: 0.1,
+          mediaResolution:
+            this.resolution == 'high'
+              ? MediaResolution.MEDIA_RESOLUTION_HIGH
+              : MediaResolution.MEDIA_RESOLUTION_MEDIUM,
+        },
+        false
+      )
 
       // Limpiar las imágenes de memoria de forma más agresiva
       images.forEach((img) => (img.inlineData.data = ''))

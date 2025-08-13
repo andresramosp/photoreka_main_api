@@ -152,18 +152,35 @@ export default class PhotoManager {
   }
 
   public async getPhotosForRemakeAll(userId?: string): Promise<Photo[]> {
-    const query = Photo.query()
-      .preload('tags', (q) => q.preload('tag'))
-      .preload('detections')
-      .preload('descriptionChunks')
-      .preload('analyzerProcess')
-      .orderBy('created_at', 'desc')
+    if (!userId) throw new Error('userId is required')
 
-    if (userId) {
-      query.where('user_id', userId)
+    // 1. Obtener los datos necesarios de las fotos
+    const photos: Array<{
+      user_id: number
+      name: string
+      original_file_name: string
+      thumbnail_name: string
+    }> = await Photo.query()
+      .where('user_id', userId)
+      .select(['user_id', 'name', 'original_file_name', 'thumbnail_name'])
+      .pojo()
+
+    // 2. Borrar todas las fotos del usuario (raw query para velocidad)
+    await db.from('photos').where('user_id', userId).delete()
+
+    // 3. Recrear las fotos solo con los campos requeridos
+    const recreatedPhotos: Photo[] = []
+    for (const p of photos) {
+      const newPhoto = await Photo.create({
+        userId: p.user_id,
+        name: p.name,
+        originalFileName: p.original_file_name,
+        thumbnailName: p.thumbnail_name,
+      })
+      recreatedPhotos.push(newPhoto)
     }
 
-    return await query
+    return recreatedPhotos
   }
 
   public async getPhotosForRemakeProcess(processId: string, userId?: string): Promise<Photo[]> {

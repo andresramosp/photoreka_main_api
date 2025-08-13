@@ -368,8 +368,9 @@ export default class SearchTextService {
           },
           ...imagesPayload,
         ],
-        'gemini-2.0-flash',
-        { temperature: 0.7 }
+        'gemini-2.5-flash-lite',
+        { temperature: 0.7 },
+        false
         // null,
         // 0.7,
         // false

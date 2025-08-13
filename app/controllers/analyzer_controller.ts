@@ -26,7 +26,7 @@ export default class AnalyzerController {
       }
 
       const {
-        userId: targetUserId,
+        userId,
         packageId,
         processId,
         mode,
@@ -35,6 +35,8 @@ export default class AnalyzerController {
         photoIds,
         isGlobal = false,
       } = request.body()
+
+      const targetUserId = userId || user.id
 
       // Obtener isPreprocess del package configuration
       const selectedPackage = packages.find((p) => p.id === packageId)
