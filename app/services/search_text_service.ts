@@ -24,6 +24,7 @@ import Tag from '#models/tag'
 import { getUploadPath } from '../utils/dataPath.js'
 import PhotoImageService from './photo_image_service.js'
 import MeasureExecutionTime from '../decorators/measureExecutionTime.js'
+import { MediaResolution } from '@google/genai'
 
 export type SearchMode = 'logical' | 'flexible' | 'low_precision' | 'curation'
 export type SearchType = 'semantic' | 'tags' | 'topological'
@@ -368,8 +369,11 @@ export default class SearchTextService {
           },
           ...imagesPayload,
         ],
-        'gemini-2.5-flash-lite',
-        { temperature: 0.7 },
+        'gemini-2.0-flash',
+        {
+          temperature: 0.7,
+          mediaResolution: MediaResolution.MEDIA_RESOLUTION_MEDIUM,
+        },
         false
         // null,
         // 0.7,

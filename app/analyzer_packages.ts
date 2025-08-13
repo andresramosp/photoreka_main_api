@@ -45,7 +45,7 @@ export const packages = [
         name: 'vision_visual_aspects', // 0.4 centimos 1000 fotos.
         type: 'VisionDescriptionTask',
         model: 'Gemini',
-        modelName: 'gemini-2.5-flash',
+        modelName: 'gemini-2.5-flash-lite',
         needsImage: true,
         sequential: false,
         prompts: [MESSAGE_ANALYZER_VISUAL_ASPECTS],
