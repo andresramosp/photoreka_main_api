@@ -268,7 +268,6 @@ export default class ModelsService {
       return result
     } catch (error) {
       console.error('Error fetching Qwen response:', error)
-      throw error
     }
   }
   async adjustProximitiesByContextInference(
@@ -708,7 +707,6 @@ export default class ModelsService {
       return result
     } catch (error) {
       console.error('Error fetching GPT response:', error)
-      throw error
     }
   }
 
@@ -791,7 +789,6 @@ export default class ModelsService {
       return finalResult
     } catch (error) {
       console.error('Error fetching Gemini response:', error)
-      throw error
     }
   }
 
