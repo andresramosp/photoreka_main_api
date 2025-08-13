@@ -18,7 +18,7 @@ The aspects and possible values include:
 9. 'genre': 'abstract', 'documentary', 'street', 'landscape', 'portrait'
 10. 'perspective': 'normal', 'high angle', 'low angle'
 
-**Output Example:**
+**Output Example for 1 image:**
 \`\`\`json
 [
    {
@@ -30,8 +30,7 @@ The aspects and possible values include:
       "framing": ["close-up"],
       "genre": ["documentary", "travel"],
       "perspective": ["normal"]
-   },
-   ...
+   }
 ]
 \`\`\`
 

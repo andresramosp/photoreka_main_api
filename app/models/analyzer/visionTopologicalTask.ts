@@ -179,21 +179,20 @@ export class VisionTopologicalTask extends AnalyzerTask {
       } else {
         throw new Error(`Modelo no soportado: ${this.model}`)
       }
+      response.result.forEach((res: any, photoIndex: number) => {
+        const { ...results } = res
+        const photoId = batch[photoIndex].id
+        this.data[photoId] = { ...this.data[photoId], ...results }
+      })
+
+      // Limpiar prompts inyectados después del uso
+      injectedPrompts.length = 0
+
+      await this.commit(batch)
     } catch (err) {
       logger.error(`Error en ${this.model} para ${batch.length} imágenes:`)
       return
     }
-
-    response.result.forEach((res: any, photoIndex: number) => {
-      const { ...results } = res
-      const photoId = batch[photoIndex].id
-      this.data[photoId] = { ...this.data[photoId], ...results }
-    })
-
-    // Limpiar prompts inyectados después del uso
-    injectedPrompts.length = 0
-
-    await this.commit(batch)
   }
 
   async commit(batch: Photo[]): Promise<void> {
@@ -404,13 +403,19 @@ export class VisionTopologicalTask extends AnalyzerTask {
         })
       )
 
-      const result = await this.modelsService.getGeminiResponse(prompt, images, this.modelName, {
-        temperature: 0.1,
-        mediaResolution:
-          this.resolution == 'high'
-            ? MediaResolution.MEDIA_RESOLUTION_HIGH
-            : MediaResolution.MEDIA_RESOLUTION_MEDIUM,
-      })
+      const result = await this.modelsService.getGeminiResponse(
+        prompt,
+        images,
+        this.modelName,
+        {
+          temperature: 0.1,
+          mediaResolution:
+            this.resolution == 'high'
+              ? MediaResolution.MEDIA_RESOLUTION_HIGH
+              : MediaResolution.MEDIA_RESOLUTION_MEDIUM,
+        },
+        false
+      )
 
       // Limpiar las imágenes de memoria de forma más agresiva
       images.forEach((img) => (img.inlineData.data = ''))
@@ -483,10 +488,6 @@ export class VisionTopologicalTask extends AnalyzerTask {
         filteredPhotos.push(photo)
       }
     }
-
-    // Limpiar el array original después del filtrado
-    pendingPhotos.length = 0
-
     return filteredPhotos
   }
 

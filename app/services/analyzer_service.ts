@@ -111,7 +111,6 @@ export default class AnalyzerProcessRunner {
             task.name
           )
           await task.process(pendingPhotos, this.process)
-          await task.commit(pendingPhotos)
           await this.changeStage(`*** Tarea completada *** | ${task.getName()}`)
         }
       } catch (error) {

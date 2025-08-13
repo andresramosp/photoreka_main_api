@@ -45,14 +45,18 @@ export class VisualColorEmbeddingTask extends AnalyzerTask {
           }
         }
       })
+
+      // Commit del batch procesado
+      await this.commit(batch)
     }
   }
 
-  async commit(): Promise<void> {
-    const photoIds = Object.keys(this.data).map(Number)
+  async commit(batch: Photo[]): Promise<void> {
+    const batchIds = batch.map((photo) => photo.id.toString())
+    const batchData = batchIds.map((id) => this.data[id]).filter(Boolean)
 
     await Promise.all(
-      Object.values(this.data).map(({ pi, embedding_full, embedding_dominant }) => {
+      batchData.map(({ pi, embedding_full, embedding_dominant }) => {
         const photo = pi
         photo.colorHistogram = embedding_full
         photo.colorHistogramDominant = embedding_dominant
@@ -60,12 +64,11 @@ export class VisualColorEmbeddingTask extends AnalyzerTask {
       })
     )
 
+    const photoIds = batch.map((photo) => photo.id)
     await this.analyzerProcess.markPhotosCompleted(this.name, photoIds)
 
-    // Limpiar data para liberar memoria
-    for (const key of Object.keys(this.data)) {
-      delete this.data[key]
-    }
+    // Limpiar los datos del batch después del commit
+    batchIds.forEach((id) => delete this.data[id])
 
     logger.debug(`Guardadas embeddings para ${photoIds.length} imágenes`)
   }

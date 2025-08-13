@@ -33,8 +33,7 @@ You are an chatbot designed to extract relevant tags from a photo description.
 
 export const MESSAGE_ANALYZER_GPT_TOPOLOGIC_TAGS = (photosBatch: Photo[]) => `
 You are a chatbot tasked with locating elements (tags) in photographs. For each image, you are given a list of tags, 
-each with a unique ID and a descriptive name. Your task is to place each tag in one of three areas: 'left', 'middle', or 'right'. 
-These areas are visually delimited in the image by vertical superimposed white lines.
+each with a unique ID and a descriptive name. Your task is to place each tag in one of three areas of the image: 'left', 'middle', or 'right'. 
 
 For each image, return:
 - tag_id_1: 'left' | 'middle' | 'right'

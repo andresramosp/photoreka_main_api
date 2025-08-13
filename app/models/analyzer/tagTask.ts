@@ -91,6 +91,8 @@ export class TagTask extends AnalyzerTask {
       await this.requestTagsFromLLM(validPhotos, cleanedResults)
     }
     logger.debug('Procesando creación de tags...')
+
+    await this.commit()
   }
 
   async commit(): Promise<void> {
@@ -264,14 +266,19 @@ export class TagTask extends AnalyzerTask {
             const { result } = await this.modelsService.getGPTResponse(
               this.prompt as string,
               JSON.stringify({ description: cleanedResults[index] }),
-              'gpt-5-nano'
+              'gpt-5-nano',
+              null,
+              0.1,
+              false
             )
             extractedTagsResponse = result
           } else if (this.model === 'Gemini') {
             const { result } = await this.modelsService.getGeminiResponse(
               this.prompt as string,
               [JSON.stringify({ description: cleanedResults[index] })],
-              'gemini-2.0-flash'
+              'gemini-2.0-flash',
+              null,
+              false
             )
             extractedTagsResponse = result
           } else {

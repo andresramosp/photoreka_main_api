@@ -46,22 +46,29 @@ export class VisualEmbeddingTask extends AnalyzerTask {
           this.data[key] = { pi, embedding: item.embedding }
         }
       })
+
+      await this.commit(batch)
     }
   }
 
-  async commit(): Promise<void> {
-    const photoIds = Object.keys(this.data).map(Number)
+  async commit(batch: Photo[]): Promise<void> {
+    const batchIds = batch.map((photo) => photo.id.toString())
+    const batchData = batchIds.map((id) => this.data[id]).filter(Boolean)
 
     await Promise.all(
-      Object.values(this.data).map(({ pi, embedding }) => {
+      batchData.map(({ pi, embedding }) => {
         const photo = pi
         photo.embedding = embedding
         return photo.save()
       })
     )
 
+    const photoIds = batch.map((photo) => photo.id)
     await this.analyzerProcess.markPhotosCompleted(this.name, photoIds)
     logger.debug(`Guardadas embeddings para ${photoIds.length} imágenes`)
+
+    // Limpiar los datos del batch después del commit
+    batchIds.forEach((id) => delete this.data[id])
   }
 
   private sleep(ms: number) {
