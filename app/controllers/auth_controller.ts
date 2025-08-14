@@ -1,5 +1,6 @@
 import User from '#models/user'
 import { WHITELIST_EMAILS } from '#config/whitelist_emails'
+import { AUTH_CODES } from '#config/auth_codes'
 import {
   changePasswordValidator,
   createAuthValidator,
@@ -16,11 +17,16 @@ export default class AuthController {
     try {
       const payload = await request.validateUsing(createAuthValidator)
 
-      // Verificar si el email está en la whitelist
+      // Obtener authCode del payload validado
+      const authCode = payload.authCode
+
+      // Verificar si el email está en la whitelist o si el authCode es válido
       if (!WHITELIST_EMAILS.includes(payload.email)) {
-        return response.unauthorized({
-          message: 'Unauthorized email for registration. Please request access.',
-        })
+        if (!authCode || !AUTH_CODES.includes(authCode)) {
+          return response.unauthorized({
+            message: 'Unauthorized email for registration. Please request access.',
+          })
+        }
       }
 
       const user = await User.create({
