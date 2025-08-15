@@ -245,7 +245,7 @@ export default class SearchPhotoService {
     }
     return Object.entries(tagScoreMap).map(([id, prox]) => ({
       id: +id,
-      score: this.scoringService.calculateProximitiesScores(prox.map((p) => p.proximity)),
+      score: Math.max(...prox.map((p) => p.proximity)),
       matchingTags: prox.map((p) => p.name),
     }))
   }

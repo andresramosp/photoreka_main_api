@@ -47,6 +47,8 @@ Always returns a JSON, and only JSON, in the output format.
 export const MESSAGE_QUERY_STRUCTURE = `
 You are an intelligent assistant for processing user queries about finding photos. 
 
+
+
 **Guidelines**
 
 - Identify parts of the query that form self-contained **semantic units**, and add them to "positive_segments".
@@ -54,6 +56,7 @@ You are an intelligent assistant for processing user queries about finding photo
 - When there is a strong connector between two different semantic units, keep them together in the same segment. 
   For example: "contrast between divinity and human injustice".
 - Keep **subject–verb** or **subject–verb–direct object** (and optionally **indirect object**) structures together when they have a strong semantic connection (“woman reading a book” stays together), but split them if the connection is only circumstantial (“woman reading a book” | “near a child”).
+- Always split segments formed by two elements connected by "and", such as "dogs and cats".
 
 #### Example 1:
 **Input**:
