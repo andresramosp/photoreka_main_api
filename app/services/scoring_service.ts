@@ -29,20 +29,19 @@ interface ScoredPhoto {
 }
 
 // Interfaces para sistema de puntuación absoluta
+
 interface MatchThresholds {
   excellent: number // 90-100%
   good: number // 70-89%
   fair: number // 50-69%
   poor: number // 30-49%
-  minimal: number // 10-29%
 }
 
 interface SearchComposition {
-  hasTagsWeight: boolean
-  hasDescWeight: boolean
   hasFullQuery: boolean
   hasNuances: boolean
   segmentCount: number
+  searchMode?: SearchMode
 }
 
 const MAX_SIMILAR_TAGS = 1250
@@ -51,29 +50,29 @@ const MAX_SIMILAR_CHUNKS = 850
 const getWeights = (isCuration: boolean) => {
   return {
     tags: {
-      tags: 1,
-      desc: 0,
-      fullQuery: null,
+      tags: true,
+      desc: false,
+      fullQuery: false,
       embeddingsTagsThreshold: 0.15,
     },
     semantic: {
-      tags: 1, //isCuration ? 0 : 0.35,
-      desc: 1, //isCuration ? 1 : 0.65,
-      fullQuery: 1,
+      tags: true, //isCuration ? false : true,
+      desc: true, //isCuration ? true : true,
+      fullQuery: true,
       embeddingsTagsThreshold: 0.13,
       embeddingsDescsThreshold: 0.17,
       embeddingsFullQueryThreshold: 0.3,
     },
     topological: {
-      tags: 1,
-      desc: 0,
-      fullQuery: 0,
+      tags: true,
+      desc: false,
+      fullQuery: false,
       embeddingsTagsThreshold: 0.13,
     },
     nuancesTags: {
-      tags: 1,
-      desc: 0,
-      fullQuery: null,
+      tags: true,
+      desc: false,
+      fullQuery: false,
       embeddingsTagsThreshold: 0.35,
     },
   }
@@ -98,83 +97,57 @@ export default class ScoringService {
   private analyzeSearchComposition(
     structuredQuery: any,
     weights: any,
-    searchType: string
+    searchType: string,
+    searchMode?: SearchMode
   ): SearchComposition {
     const typeWeights = weights[searchType] || weights.semantic
 
     return {
-      hasTagsWeight: typeWeights.tags > 0,
-      hasDescWeight: typeWeights.desc > 0,
       hasFullQuery:
         structuredQuery.positive_segments.length > 1 &&
-        (typeWeights.fullQuery > 0 || searchType === 'semantic'),
+        (typeWeights.fullQuery || searchType === 'semantic'),
       hasNuances: structuredQuery.nuances_segments?.length > 0,
       segmentCount: structuredQuery.positive_segments.length,
+      searchMode,
     }
   }
 
   private getAbsoluteThresholds(composition: SearchComposition): MatchThresholds {
-    // Umbrales base
-    let base = {
-      excellent: 1.7, // 90-100%
-      good: 1.3, // 70-89%
-      fair: 0.9, // 50-69%
-      poor: 0.6, // 30-49%
-      minimal: 0.3, // 10-29%
-    }
-
-    // Ajustar según composición
-    if (composition.hasTagsWeight && composition.hasDescWeight) {
-      // Búsqueda combinada: más exigente
-      base = {
-        excellent: 2.1,
-        good: 1.6,
-        fair: 1.2,
-        poor: 0.8,
-        minimal: 0.4,
-      }
-    } else if (composition.hasTagsWeight && !composition.hasDescWeight) {
-      // Solo tags: más permisivo
-      base = {
-        excellent: 1.5,
-        good: 1.2,
-        fair: 0.9,
-        poor: 0.5,
-        minimal: 0.25,
-      }
-    }
-
-    // Ajustar si hay fullQuery
+    // Modificador para umbrales menos estrictos (configurable)
+    const THRESHOLD_MODIFIER_NON_LOGICAL = 0.7
+    // Umbrales base normalizados por segmento
+    let segmentCount = Math.max(1, composition.segmentCount)
+    // Si hay fullQuery, cuenta como 1/4 segmento adicional
+    // Es decir, el score maximo es mas exigente
     if (composition.hasFullQuery) {
-      Object.keys(base).forEach((key) => {
-        base[key] *= 1.2 // Aumentar umbrales porque fullQuery añade puntos
-      })
+      segmentCount += 0.25
     }
 
-    // Ajustar por número de segmentos
-    if (composition.segmentCount > 1) {
-      const segmentMultiplier = Math.sqrt(composition.segmentCount)
-      Object.keys(base).forEach((key) => {
-        base[key] *= segmentMultiplier
-      })
+    // Modificador para searchMode distinto de 'logical'
+    const thresholdModifier =
+      composition.searchMode !== 'logical' ? THRESHOLD_MODIFIER_NON_LOGICAL : 1
+
+    // Cada umbral es un porcentaje del máximo posible (segmentCount)
+    // El rango total será de 0 a segmentCount
+    const base = {
+      excellent: 0.9 * segmentCount * thresholdModifier, // 90-100%
+      good: 0.7 * segmentCount * thresholdModifier, // 70-89%
+      fair: 0.5 * segmentCount * thresholdModifier, // 50-69%
+      poor: 0.3 * segmentCount * thresholdModifier, // 30-49%
     }
 
     return base
   }
 
-  private calculateAbsoluteMatchPercent(totalScore: number, thresholds: MatchThresholds): number {
+  private getLabelScore(totalScore: number, thresholds: MatchThresholds): number {
     if (totalScore >= thresholds.excellent) {
-      return 100
+      return 'excellent'
     } else if (totalScore >= thresholds.good) {
-      return 70 + (30 * (totalScore - thresholds.good)) / (thresholds.excellent - thresholds.good)
+      return 'good'
     } else if (totalScore >= thresholds.fair) {
-      return 50 + (20 * (totalScore - thresholds.fair)) / (thresholds.good - thresholds.fair)
-    } else if (totalScore >= thresholds.poor) {
-      return 30 + (20 * (totalScore - thresholds.poor)) / (thresholds.fair - thresholds.poor)
-    } else if (totalScore >= thresholds.minimal) {
-      return 10 + (20 * (totalScore - thresholds.minimal)) / (thresholds.poor - thresholds.minimal)
+      return 'fair'
     } else {
-      return Math.max(0, 10 * (totalScore / thresholds.minimal))
+      return 'poor'
     }
   }
 
@@ -276,20 +249,19 @@ export default class ScoringService {
       nuancesQuery,
     ])
 
-    let finalScores = this.mergeTagDescScoredPhotos(scoresAfterSegments, [], fullQueryDescScores, {
-      tags: 0,
-      desc: weights.semantic.fullQuery,
-    })
+    let finalScores = this.mergeTagDescScoredPhotos(scoresAfterSegments, [], fullQueryDescScores)
 
     for (let nuanceTagScore of nuancesQueryTagsScore) {
-      finalScores = this.mergeTagDescScoredPhotos(finalScores, nuanceTagScore, [], {
-        tags: 1,
-        desc: 0,
-      })
+      finalScores = this.mergeTagDescScoredPhotos(finalScores, nuanceTagScore, [])
     }
 
     // Nuevo sistema de scoring absoluto
-    const searchComposition = this.analyzeSearchComposition(structuredQuery, weights, 'semantic')
+    const searchComposition = this.analyzeSearchComposition(
+      structuredQuery,
+      weights,
+      'semantic',
+      searchMode
+    )
     const thresholds = this.getAbsoluteThresholds(searchComposition)
 
     const filteredSortedScores = finalScores
@@ -297,9 +269,9 @@ export default class ScoringService {
       .sort((a, b) => b.totalScore - a.totalScore)
       .map((score) => ({
         ...score,
-        matchPercent: this.calculateAbsoluteMatchPercent(score.totalScore, thresholds),
+        labelScore: this.getLabelScore(score.totalScore, thresholds),
       }))
-    //.filter((score) => score.matchPercent >= 10) // Opcional: filtrar resultados no relevantes
+    //.filter((score) => score.labelScore >= 10) // Opcional: filtrar resultados no relevantes
 
     return filteredSortedScores
   }
@@ -311,7 +283,7 @@ export default class ScoringService {
     searchMode: SearchMode,
     userId: string
   ): Promise<number[]> {
-    const proximityThreshold = 1 + 0.6
+    const proximityThreshold = 0.4
     const allTags = await this.tagManager.getTagsByUser(userId)
 
     const matchingPromises = excluded.map((tag) =>
@@ -351,10 +323,10 @@ export default class ScoringService {
   }
 
   // TODO: userid!!
-  @withCache({
-    provider: 'redis',
-    ttl: 120,
-  })
+  // @withCache({
+  //   provider: 'redis',
+  //   ttl: 120,
+  // })
   public async getScoredPhotosByTags(
     photoIds: number[],
     included: string[],
@@ -381,7 +353,7 @@ export default class ScoringService {
       id,
       tagScore: 0,
       descScore: 0,
-      totalScore: 1, // Para que devuelva algo si solo hay negativos
+      totalScore: 0.0001, // Para que devuelva algo si solo hay negativos, sin afectar al score
     }))
 
     const includedPromise = (async () => {
@@ -416,9 +388,8 @@ export default class ScoringService {
       .sort((a, b) => b.totalScore - a.totalScore)
       .map((score) => ({
         ...score,
-        matchPercent: this.calculateAbsoluteMatchPercent(score.totalScore, thresholds),
+        labelScore: this.getLabelScore(score.totalScore, thresholds),
       }))
-      .filter((score) => score.matchPercent >= 10) // Opcional: filtrar resultados no relevantes
 
     return sortedScores
   }
@@ -451,7 +422,7 @@ export default class ScoringService {
       id,
       descScore: 0,
       tagScore: 0,
-      totalScore: 1,
+      totalScore: 0.0001,
       matchingTags: [],
       matchingChunks: [],
     }))
@@ -502,9 +473,8 @@ export default class ScoringService {
       .sort((a, b) => b.totalScore - a.totalScore)
       .map((score) => ({
         ...score,
-        matchPercent: this.calculateAbsoluteMatchPercent(score.totalScore, thresholds),
+        labelScore: this.getLabelScore(score.totalScore, thresholds),
       }))
-      .filter((score) => score.matchPercent >= 10) // Opcional: filtrar resultados no relevantes
 
     const photoModels = await Photo.query().whereIn(
       'id',
@@ -522,8 +492,7 @@ export default class ScoringService {
   private mergeTagDescScoredPhotos(
     aggregatedScores: ScoredPhoto[],
     newScoredTagsPhotos: { id: number; tagScore: number; matchingTags?: any[] }[],
-    newScoredDescsPhotos: { id: number; descScore: number; matchingChunks?: any[] }[],
-    weights: any
+    newScoredDescsPhotos: { id: number; descScore: number; matchingChunks?: any[] }[]
   ): ScoredPhoto[] {
     const map = new Map<number, ScoredPhoto>()
 
@@ -532,7 +501,22 @@ export default class ScoringService {
       map.set(scored.id, { ...scored })
     }
 
-    // Acumula nuevos scores por tags.
+    // Calcular el score del segmento actual para cada foto
+    const segmentScores = new Map<number, number>()
+
+    // Recopilar scores de tags para este segmento
+    for (const scored of newScoredTagsPhotos) {
+      const currentScore = segmentScores.get(scored.id) || 0
+      segmentScores.set(scored.id, Math.max(currentScore, scored.tagScore))
+    }
+
+    // Recopilar scores de descriptions para este segmento
+    for (const scored of newScoredDescsPhotos) {
+      const currentScore = segmentScores.get(scored.id) || 0
+      segmentScores.set(scored.id, Math.max(currentScore, scored.descScore))
+    }
+
+    // Actualizar o crear entradas con matching tags/chunks
     for (const scored of newScoredTagsPhotos) {
       const id = scored.id
       if (map.has(id)) {
@@ -546,14 +530,13 @@ export default class ScoringService {
           id,
           tagScore: scored.tagScore,
           descScore: 0,
-          totalScore: 0, // Se recalculará al final
+          totalScore: 0,
           matchingTags: scored.matchingTags || [],
           matchingChunks: [],
         })
       }
     }
 
-    // Acumula nuevos scores por descripción.
     for (const scored of newScoredDescsPhotos) {
       const id = scored.id
       if (map.has(id)) {
@@ -567,18 +550,19 @@ export default class ScoringService {
           id,
           tagScore: 0,
           descScore: scored.descScore,
-          totalScore: 0, // Se recalculará al final
+          totalScore: 0,
           matchingTags: [],
           matchingChunks: scored.matchingChunks || [],
         })
       }
     }
 
-    // Recalcular totalScore al final usando el máximo entre tagScore y descScore ponderados
-    for (const entry of map.values()) {
-      const weightedTagScore = entry.tagScore || 0 //* weights.tags
-      const weightedDescScore = entry.descScore || 0 //* weights.desc
-      entry.totalScore = Math.max(weightedTagScore, weightedDescScore)
+    // Sumar el score del segmento actual al totalScore acumulado
+    for (const [photoId, segmentScore] of segmentScores) {
+      if (map.has(photoId)) {
+        const entry = map.get(photoId)!
+        entry.totalScore = (entry.totalScore || 0) + segmentScore
+      }
     }
 
     return Array.from(map.values())
@@ -587,7 +571,7 @@ export default class ScoringService {
   private async processSegment(
     segment: { name: string; index: number },
     aggregatedScores: ScoredPhoto[],
-    weights: { tags: number; desc: number; fullQuery: number },
+    weights: { tags: boolean; desc: boolean; fullQuery: boolean | null },
     searchMode: SearchMode,
     tagsCategories: string[],
     descCategories: string[],
@@ -597,7 +581,7 @@ export default class ScoringService {
     const photoIds = aggregatedScores.map((s) => s.id)
 
     const tagPromise =
-      weights.tags > 0 && photoIds.length
+      weights.tags && photoIds.length
         ? this.getScoredPhotoTagsBySegment(
             photoIds,
             segment,
@@ -610,7 +594,7 @@ export default class ScoringService {
         : Promise.resolve([])
 
     const descPromise =
-      weights.desc > 0 && photoIds.length
+      weights.desc && photoIds.length
         ? this.getScoredPhotoDescBySegment(
             photoIds,
             segment,
@@ -629,12 +613,7 @@ export default class ScoringService {
       ...newDescScores.map((d) => d.id),
     ])
 
-    let updatedScores = this.mergeTagDescScoredPhotos(
-      aggregatedScores,
-      newTagScores,
-      newDescScores,
-      weights
-    )
+    let updatedScores = this.mergeTagDescScoredPhotos(aggregatedScores, newTagScores, newDescScores)
 
     return updatedScores.filter((score) => matchingSegmentPhotoIds.has(score.id))
   }
@@ -692,7 +671,8 @@ export default class ScoringService {
 
     const scoredPhotos = Array.from(photoChunkMap.entries()).map(([photoId, matchingChunks]) => {
       const proximities = matchingChunks.map((c) => c.proximity)
-      const descScore = this.calculateProximitiesScores(proximities)
+      const descScore = Math.max(...proximities)
+
       return {
         id: photoId,
         descScore,
@@ -746,7 +726,8 @@ export default class ScoringService {
 
     const scoredPhotos = Array.from(photoTagMap.entries()).map(([photoId, matchingTags]) => {
       const proximities = matchingTags.map((t) => t.proximity)
-      const tagScore = this.calculateProximitiesScores(proximities)
+      const tagScore = Math.max(...proximities)
+
       return {
         id: photoId,
         tagScore,
@@ -854,6 +835,7 @@ export default class ScoringService {
   public async adjustProximities(term, tags, termsType = 'tag', searchMode: SearchMode) {
     let result
 
+    const LOGIC_THRESHOLD = 1.5
     // Low precision
     if (searchMode == 'low_precision') {
       return tags.filter((tag) => tag.proximity > 0)
@@ -864,31 +846,39 @@ export default class ScoringService {
 
     // Logical
     if (searchMode == 'logical') {
-      result = adjustedProximitiesByContext.map((ap) => ({
-        ...ap,
-        proximity: ap.logicProximity,
-      }))
-      return result.filter((element) => element.proximity > 1)
+      result = adjustedProximitiesByContext
+        .map((ap) => ({
+          ...ap,
+          proximity: ap.logicProximity,
+        }))
+        .filter((element) => element.proximity > LOGIC_THRESHOLD)
+        .map((element) => ({
+          ...element,
+          proximity: (element.proximity - LOGIC_THRESHOLD) / (2 - LOGIC_THRESHOLD),
+        }))
+      return result
       // Flexible
     } else {
-      result = adjustedProximitiesByContext.map((ap) => {
-        const logicBonus = Math.max(ap.logicProximity, 0)
-        const scaledBonus = Math.log1p(logicBonus)
-        return {
-          ...ap,
-          proximity: ap.embeddingsProximity + scaledBonus,
-        }
-      })
-      return result.filter((element) => element.proximity > 0.9)
+      const maxPossible = 1 + Math.log1p(2) // embeddingsProximity max 1, logicProximity max 2
+      result = adjustedProximitiesByContext
+        .map((ap) => {
+          const logicBonus = Math.max(ap.logicProximity, 0)
+          const scaledBonus = Math.log1p(logicBonus)
+          const rawProximity = ap.embeddingsProximity + scaledBonus
+          return {
+            ...ap,
+            rawProximity,
+          }
+        })
+        .filter((element) => element.rawProximity > 0.9)
+        .map((element) => {
+          const normalizedProximity = Math.max(0, Math.min(1, element.rawProximity / maxPossible))
+          return {
+            ...element,
+            proximity: normalizedProximity,
+          }
+        })
+      return result
     }
-  }
-
-  public calculateProximitiesScores(proximities) {
-    return Math.max(...proximities)
-    const minProximity = Math.min(...proximities)
-    const maxProximity = Math.max(...proximities)
-    const totalProximities = proximities.reduce((sum, p) => sum + p, 0)
-    const adjustedProximity = totalProximities / 2
-    return maxProximity + Math.min(adjustedProximity, maxProximity)
   }
 }

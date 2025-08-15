@@ -498,23 +498,6 @@ export default class SearchTextService {
     return { hasMore, paginatedPhotos }
   }
 
-  private getPaginatedPhotosByPercent(embeddingScoredPhotos, percent, currentIteration) {
-    const maxMatchPercent = Math.max(...embeddingScoredPhotos.map((photo) => photo.matchPercent))
-
-    // Calcular los límites del intervalo para la iteración actual
-    const upperBound = maxMatchPercent - (currentIteration - 1) * percent
-    const lowerBound = upperBound - 15
-
-    // Filtrar las fotos que caen en el rango definido
-    const paginatedPhotos = embeddingScoredPhotos.filter(
-      (photo) => photo.matchPercent < upperBound && photo.matchPercent >= lowerBound
-    )
-
-    // Determinar si hay más fotos en rangos inferiores
-    const hasMore = embeddingScoredPhotos.some((photo) => photo.matchPercent < lowerBound)
-    return { hasMore, paginatedPhotos }
-  }
-
   public async generateImagesPayload(photos: Photo[]) {
     const validImages: any[] = []
 
