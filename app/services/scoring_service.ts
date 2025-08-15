@@ -57,9 +57,9 @@ const getWeights = (isCuration: boolean) => {
       embeddingsTagsThreshold: 0.15,
     },
     semantic: {
-      tags: isCuration ? 0 : 0.35,
-      desc: isCuration ? 1 : 0.65,
-      fullQuery: 2,
+      tags: 1, //isCuration ? 0 : 0.35,
+      desc: 1, //isCuration ? 1 : 0.65,
+      fullQuery: 1,
       embeddingsTagsThreshold: 0.13,
       embeddingsDescsThreshold: 0.17,
       embeddingsFullQueryThreshold: 0.3,
@@ -537,8 +537,7 @@ export default class ScoringService {
       const id = scored.id
       if (map.has(id)) {
         const entry = map.get(id)!
-        entry.tagScore = (entry.tagScore || 0) + scored.tagScore
-        entry.totalScore = (entry.totalScore || 0) + scored.tagScore * weights.tags
+        entry.tagScore = Math.max(entry.tagScore || 0, scored.tagScore)
         entry.matchingTags = Array.from(
           new Set([...(entry.matchingTags || []), ...(scored.matchingTags || [])])
         )
@@ -547,7 +546,7 @@ export default class ScoringService {
           id,
           tagScore: scored.tagScore,
           descScore: 0,
-          totalScore: scored.tagScore * weights.tags,
+          totalScore: 0, // Se recalculará al final
           matchingTags: scored.matchingTags || [],
           matchingChunks: [],
         })
@@ -559,8 +558,7 @@ export default class ScoringService {
       const id = scored.id
       if (map.has(id)) {
         const entry = map.get(id)!
-        entry.descScore = (entry.descScore || 0) + scored.descScore
-        entry.totalScore = (entry.totalScore || 0) + scored.descScore * weights.desc
+        entry.descScore = Math.max(entry.descScore || 0, scored.descScore)
         entry.matchingChunks = Array.from(
           new Set([...(entry.matchingChunks || []), ...(scored.matchingChunks || [])])
         )
@@ -569,11 +567,18 @@ export default class ScoringService {
           id,
           tagScore: 0,
           descScore: scored.descScore,
-          totalScore: scored.descScore * weights.desc,
+          totalScore: 0, // Se recalculará al final
           matchingTags: [],
           matchingChunks: scored.matchingChunks || [],
         })
       }
+    }
+
+    // Recalcular totalScore al final usando el máximo entre tagScore y descScore ponderados
+    for (const entry of map.values()) {
+      const weightedTagScore = entry.tagScore || 0 //* weights.tags
+      const weightedDescScore = entry.descScore || 0 //* weights.desc
+      entry.totalScore = Math.max(weightedTagScore, weightedDescScore)
     }
 
     return Array.from(map.values())
@@ -879,40 +884,11 @@ export default class ScoringService {
   }
 
   public calculateProximitiesScores(proximities) {
+    return Math.max(...proximities)
     const minProximity = Math.min(...proximities)
     const maxProximity = Math.max(...proximities)
     const totalProximities = proximities.reduce((sum, p) => sum + p, 0)
     const adjustedProximity = totalProximities / 2
     return maxProximity + Math.min(adjustedProximity, maxProximity)
-  }
-
-  private getMaxPotentialScore(structuredQuery, searchType: SearchType, weights) {
-    // Valores que consideramos un match perfecto
-    const maxProximity = 1.9
-    const maxTagMatches = 0.5
-    const maxChunkMatches = 0.5
-
-    const maxRawScoreForTags = maxProximity + (maxTagMatches * maxProximity) / 2
-
-    const maxRawScoreForChunks = maxProximity + (maxChunkMatches * maxProximity) / 2
-
-    const maxRawScoreForFullQuery = maxRawScoreForChunks
-
-    const currentWeights = weights[searchType]
-
-    // Para cada segmento, el aporte máximo es la suma ponderada de tags y descripción
-    const maxScorePerSegment =
-      (currentWeights.tags > 0 ? maxRawScoreForTags * currentWeights.tags : 0) +
-      (currentWeights.desc > 0 ? maxRawScoreForChunks * currentWeights.desc : 0)
-
-    const segmentsCount = structuredQuery.positive_segments.length
-    let maxPotentialScore = segmentsCount * maxScorePerSegment
-
-    // Si se usa fullQuery (más de un segmento y el peso correspondiente es mayor a 0)
-    if (segmentsCount > 1 && currentWeights.fullQuery > 0) {
-      maxPotentialScore += maxRawScoreForFullQuery * currentWeights.fullQuery
-    }
-
-    return maxPotentialScore
   }
 }

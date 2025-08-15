@@ -329,7 +329,7 @@ export default class CatalogController {
 
       let insights = []
 
-      insights = gptResponse.result.insights || []
+      insights = gptResponse.result || []
 
       return response.ok({
         photo: {
@@ -338,7 +338,7 @@ export default class CatalogController {
           thumbnailUrl: photo.thumbnailUrl,
           originalUrl: photo.originalUrl,
         },
-        insights,
+        ...insights,
       })
     } catch (error) {
       console.error('Error generando insights de foto:', error)

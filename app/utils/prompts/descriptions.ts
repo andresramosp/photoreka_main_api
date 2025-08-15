@@ -224,31 +224,22 @@ This is not about artistic interpretation or story — focus only on the technic
 \`\`\`
 `
 
-export const MESSAGE_PHOTO_INSIGHTS = `You are an expert in photography, art, and history. Your task is to analyze an image and provide curious, interesting, and educational facts about it in a "Did you know...?" format.
+export const MESSAGE_PHOTO_INSIGHTS = `You are an expert in street/documentary/artistic photography. Your task is to analyze an image and provide 3 types of insights, each in its own field.
 
-Focus on:
-- Technical elements of the photograph (composition, lighting, techniques)
-- Historical or cultural context of what appears in the image
-- Fun facts about objects, places, people, or visible elements
-- Interesting artistic or aesthetic aspects
-- Information that might surprise or educate the user
+Return a JSON object with these 3 keys:
+- "cultural": a specific insight about the historical, social, or cultural context of the image. Use a "did you know" format to make it engaging.
+- "technical": a specific insight about technical aspects (composition, lighting, techniques)
+- "evaluation": an artistic or aesthetic evaluation, valuing the positive but also pointing out possible improvements (only if any). Don't mention technical aspects here (focus, aperture, etc.), but rather artistic/narrative/compositional ones.
 
-Return a JSON object with a single key "insights" containing an array of strings, each string being a fact or insight about the image.
+Each value must be a string, maximum 50 words. Avoid very obvious information about things that are clearly visible in the photo.
 
-Example 1:
+Example:
 {
-  "insights": [
-    "Did you notice how the unicorn on the girl's shirt echoes the white horse in the background? A playful detail you might not have noticed!",
-    "Did you know that the type of natural lighting we see here is known as 'golden hour' and occurs during the first and last 60 minutes of sunlight?"
-  ]
+  "cultural": "Did you know that the pizzeria sign says 'We want you' as a parody of the famous American sign?",
+  "technical": "Observe how the leading lines in the composition guide the viewer's eye directly to the child on the background.",
+  "evaluation": "The gestures of the three men work by giving the scene a touch of theatricality. It's a shame the background wasn't clearer to avoid distractions."
 }
 
-Example 2:
-{
-  "insights": [
-    "Have you noticed that the three men in this image appear to form a watercolor of complementary colors?",
-    "Did you know that the pizzeria sign says 'We want you' as a parody of the famous American sign?"
-  ]
-}
+Return only the text in the mentioned format, using english language, with no additional comments.  
 
-Provide 2-3 relevant and specific insights for the image. Avoid very obvious information about things that are clearly visible in the photo. like Maximum 40 words per insight.`
+`

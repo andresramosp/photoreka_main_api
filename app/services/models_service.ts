@@ -96,7 +96,13 @@ const PRICES = {
   },
 }
 
-export type EndpointType = 'embeddings_gpu' | 'embeddings_cpu' | 'logic_cpu' | 'logic_gpu' | 'image'
+export type EndpointType =
+  | 'embeddings_gpu'
+  | 'embeddings_cpu'
+  | 'logic_cpu'
+  | 'logic_gpu'
+  | 'logic_gpu_lb'
+  | 'image'
 
 const USD_TO_EUR = 0.92
 
@@ -104,6 +110,7 @@ export default class ModelsService {
   constructor() {
     this.apiMode = process.env.API_MODELS
     this.remoteBaseUrlLogicGPU = process.env.REMOTE_API_BASE_URL_LOGIC_GPU
+    this.remoteBaseUrlLogicGPULB = process.env.REMOTE_API_BASE_URL_LOGIC_GPU_LB
     this.remoteBaseUrlLogicCPU = process.env.REMOTE_API_BASE_URL_LOGIC_CPU
     this.remoteBaseUrlImage = process.env.REMOTE_API_BASE_URL_IMAGE
     this.remoteBaseUrlEmbeddingsGPU = process.env.REMOTE_API_BASE_URL_EMBEDDINGS_GPU
@@ -150,6 +157,11 @@ export default class ModelsService {
       }
       if (endpointType == 'logic_gpu') {
         url = this.remoteBaseUrlLogicGPU
+      }
+      if (endpointType == 'logic_gpu_lb') {
+        url = this.remoteBaseUrlLogicGPULB + '/' + operation
+        headers['Authorization'] = `Bearer ${this.runpodApiKey}`
+        return { url, requestPayload: payload, headers }
       }
       if (endpointType == 'logic_cpu') {
         url = this.remoteBaseUrlLogicCPU
@@ -308,7 +320,7 @@ export default class ModelsService {
       const { url, requestPayload, headers } = this.buildRequestConfig(
         operation,
         payload,
-        isGPU ? 'logic_gpu' : 'logic_cpu'
+        isGPU ? 'logic_gpu' : 'logic_cpu' // 'logic_gpu_lb'
       )
 
       let { data } = await axios.post(url, requestPayload, { headers })
