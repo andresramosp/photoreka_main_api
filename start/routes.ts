@@ -14,6 +14,7 @@ import axios from 'axios'
 import archiver from 'archiver'
 import pLimit from 'p-limit'
 import Photo from '#models/photo'
+import WarmupController from '#controllers/warmup_controller'
 
 // Auth routes (no middleware needed)
 const AuthController = () => import('#controllers/auth_controller')
@@ -71,7 +72,7 @@ router
     router.post('/api/search/tags/sync', [SearchController, 'searchByTagsSync'])
     router.post('/api/search/topological/sync', [SearchController, 'searchTopologicalSync'])
     router.post('/api/search/byPhotos', [SearchController, 'searchByPhotos'])
-    router.get('/api/search/warmUp', [SearchController, 'warmUp'])
+    router.get('/api/warmUp/:endpointType', [WarmupController, 'warmUp'])
 
     router.get('/api/tags/search', [TagsController, 'search'])
 

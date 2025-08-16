@@ -128,22 +128,4 @@ export default class SearchController {
       return response.internalServerError({ message: 'Error fetching photos' })
     }
   }
-
-  public async warmUp({ response }: HttpContext) {
-    try {
-      const modelService = new ModelsService()
-
-      if (process.env.API_MODELS == 'REMOTE') {
-        await Promise.all([
-          // modelService.ensureRunPodWarm('embeddings_cpu'),
-          modelService.ensureRunPodWarm('logic_gpu'),
-        ])
-      }
-
-      return response.ok({ result: true })
-    } catch (error) {
-      console.error('Error warming up:', error)
-      return response.internalServerError({ message: 'Error fetching photos' })
-    }
-  }
 }
