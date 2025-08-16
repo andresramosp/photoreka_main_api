@@ -229,7 +229,7 @@ export class VisionTopologicalTask extends AnalyzerTask {
 
       logger.debug(`Completada tarea ${this.model} para ${batch.length} imágenes`)
     } catch (err) {
-      logger.error(`Error guardando datos de VisionTask:`)
+      logger.error(`Error guardando datos de VisionTask: ${err}`)
     }
   }
 
