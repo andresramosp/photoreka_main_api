@@ -30,14 +30,14 @@ interface ScoredPhoto {
 
 // Interfaces para sistema de puntuación absoluta
 
-interface MatchThresholds {
+export interface MatchThresholds {
   excellent: number // 90-100%
   good: number // 70-89%
   fair: number // 50-69%
   poor: number // 30-49%
 }
 
-interface SearchComposition {
+export interface SearchComposition {
   hasFullQuery: boolean
   hasNuances: boolean
   segmentCount: number
@@ -112,7 +112,7 @@ export default class ScoringService {
     }
   }
 
-  private getAbsoluteThresholds(composition: SearchComposition): MatchThresholds {
+  public getAbsoluteThresholds(composition: SearchComposition): MatchThresholds {
     // Modificador para umbrales menos estrictos (configurable)
     const THRESHOLD_MODIFIER_NON_LOGICAL = 0.7
     // Umbrales base normalizados por segmento
@@ -139,7 +139,7 @@ export default class ScoringService {
     return base
   }
 
-  private getLabelScore(totalScore: number, thresholds: MatchThresholds): number {
+  public getLabelScore(totalScore: number, thresholds: MatchThresholds): string {
     if (totalScore >= thresholds.excellent) {
       return 'excellent'
     } else if (totalScore >= thresholds.good) {

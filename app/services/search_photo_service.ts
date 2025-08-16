@@ -6,7 +6,7 @@ import DescriptionChunk from '#models/descriptionChunk'
 import ModelsService from './models_service.js'
 import PhotoManager from '../managers/photo_manager.js'
 import VisualFeaturesService from './visual_features_service.js'
-import ScoringService from './scoring_service.js'
+import ScoringService, { MatchThresholds, SearchComposition } from './scoring_service.js'
 import VectorService from './vector_service.js'
 import MeasureExecutionTime from '../decorators/measureExecutionTime.js'
 
@@ -38,7 +38,7 @@ export default class SearchPhotoService {
   public async searchByPhotos(
     query: SearchByPhotoOptions,
     userId: number
-  ): Promise<(Photo & { score: number })[]> {
+  ): Promise<(Photo & { score: number; labelScore: string })[]> {
     if (!query.anchorIds?.length) return []
 
     const userPhotoIds = await this.photoManager.getPhotosIdsByUser(userId)
@@ -84,18 +84,13 @@ export default class SearchPhotoService {
       query.opposite && query.criteria !== 'composition' ? a.score - b.score : b.score - a.score
     )
 
-    // Normalizamos los scores entre 0 y 1
-    const scores = scoredSorted.map((s) => s.score)
-    const min = Math.min(...scores)
-    const max = Math.max(...scores)
-    const range = max - min || 1
-
-    scoredSorted = scoredSorted.map((entry) => ({
+    // Aplicar sistema de puntuación por labels
+    const scoredWithLabels = scoredSorted.map((entry) => ({
       ...entry,
-      score: (entry.score - min) / range,
+      labelScore: this.calculateLabelScore(entry.score, query),
     }))
 
-    const topScored = scoredSorted.slice(0, query.resultLength)
+    const topScored = scoredWithLabels.slice(0, query.resultLength)
     const topIds = topScored.map(({ id }) => id)
 
     const photos = await this.photoManager.getPhotosByIds(topIds.map(String))
@@ -115,6 +110,21 @@ export default class SearchPhotoService {
   }
 
   /* ───────────────────── Strategy helpers ───────────────────── */
+
+  /**
+   * Calcula el label score basado en el score numérico y el tipo de búsqueda
+   */
+  private calculateLabelScore(score: number, query: SearchByPhotoOptions): string {
+    const composition: SearchComposition = {
+      hasFullQuery: false,
+      hasNuances: false,
+      segmentCount: query.criteria === 'tags' ? Math.max(1, query.tagIds.length) : 1,
+      searchMode: 'logical', // Por defecto para búsquedas por fotos
+    }
+
+    const thresholds = this.scoringService.getAbsoluteThresholds(composition)
+    return this.scoringService.getLabelScore(score, thresholds)
+  }
 
   private async scoreSemantic(
     query: SearchByPhotoOptions,
@@ -221,9 +231,11 @@ export default class SearchPhotoService {
   }
 
   private async scoreTags(query: SearchByPhotoOptions, candidateIds: number[], anchors: Photo[]) {
-    const tagScoreMap: Record<number, number[]> = {}
+    // Para cada foto candidata, guardamos los mejores scores por cada tag buscado
+    const tagScoreMap: Record<number, Record<number, { name: string; proximity: number }>> = {}
     for (const anchor of anchors) {
       for (const tagPhoto of anchor.tags) {
+        // Si hay tagIds, solo buscamos los que están en la lista
         if (query.tagIds.length && !query.tagIds.includes(tagPhoto.tag.id)) continue
         const tagEmb = VectorService.getParsedEmbedding(tagPhoto.tag.embedding)
         const similar = await this.vectorService.findSimilarTagToEmbedding(
@@ -238,16 +250,36 @@ export default class SearchPhotoService {
           query.opposite
         )
         similar.forEach((t) => {
-          if (!tagScoreMap[t.photo_id]) tagScoreMap[t.photo_id] = []
-          tagScoreMap[t.photo_id].push({ name: t.name, proximity: t.proximity })
+          if (!tagScoreMap[t.photo_id]) tagScoreMap[t.photo_id] = {}
+          // Para cada tag buscado, guardamos el mejor score
+          const tagId = tagPhoto.tag.id
+          if (
+            !tagScoreMap[t.photo_id][tagId] ||
+            t.proximity > tagScoreMap[t.photo_id][tagId].proximity
+          ) {
+            tagScoreMap[t.photo_id][tagId] = { name: t.name, proximity: t.proximity }
+          }
         })
       }
     }
-    return Object.entries(tagScoreMap).map(([id, prox]) => ({
-      id: +id,
-      score: Math.max(...prox.map((p) => p.proximity)),
-      matchingTags: prox.map((p) => p.name),
-    }))
+    // Ahora sumamos los scores de los tags buscados para cada foto
+    return Object.entries(tagScoreMap).map(([id, tagScores]) => {
+      // Si hay tagIds, sumamos solo los que están en la lista; si no, sumamos todos
+      const tagIdsToSum = query.tagIds.length ? query.tagIds : Object.keys(tagScores).map(Number)
+      let score = 0
+      let matchingTags: string[] = []
+      for (const tagId of tagIdsToSum) {
+        if (tagScores[tagId]) {
+          score += tagScores[tagId].proximity
+          matchingTags.push(tagScores[tagId].name)
+        }
+      }
+      return {
+        id: +id,
+        score,
+        matchingTags,
+      }
+    })
   }
 
   private async scoreComposition(
