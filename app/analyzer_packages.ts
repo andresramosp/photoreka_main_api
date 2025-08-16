@@ -132,7 +132,7 @@ export const packages = [
         modelName: 'gemini-2.0-flash',
         needsImage: true,
         sequential: false,
-        resolution: 'high',
+        resolution: 'low',
         prompts: [MESSAGE_ANALYZER_GPT_TOPOLOGIC_TAGS],
         imagesPerBatch: 2,
         useGuideLines: false,

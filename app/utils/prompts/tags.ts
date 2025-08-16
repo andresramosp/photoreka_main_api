@@ -23,8 +23,7 @@ You are an chatbot designed to extract relevant tags from a photo description.
            'Indian city' | toponym,
            'orange (fruit) | objects'
            'painting of tiger | symbols,
-           'happy day | mood',
-           ...], 
+           'happy day | mood']
 }
 \`\`\`
 
@@ -46,13 +45,11 @@ For each image, return:
 [
   {
     "123": "left",
-    "124": "middle",
-    ...
+    "124": "middle"
   },
   {
     "125": "right",
     "126": "left",
-    ...
   }
 ]
 \`\`\`
