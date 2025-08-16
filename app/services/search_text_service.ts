@@ -83,7 +83,7 @@ export default class SearchTextService {
       pageSize,
       iteration,
       minMatchScore,
-      maxPageAttempts = 4,
+      maxPageAttempts = 6,
       minResults,
       collections,
       visualAspects,
@@ -107,7 +107,8 @@ export default class SearchTextService {
     let embeddingScoredPhotos = await this.scoringService.getScoredPhotosByTagsAndDesc(
       photoIds,
       structuredResult,
-      searchMode == 'curation' ? 'low_precision' : searchMode,
+      // searchMode == 'curation' ? 'low_precision' : searchMode,
+      searchMode,
       userId?.toString()
     )
 

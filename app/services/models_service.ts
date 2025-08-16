@@ -288,6 +288,8 @@ export default class ModelsService {
       console.error('Error fetching Qwen response:', error)
     }
   }
+
+  @MeasureExecutionTime
   async adjustProximitiesByContextInference(
     term,
     texts,
