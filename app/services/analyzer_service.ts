@@ -38,7 +38,8 @@ export default class AnalyzerProcessRunner {
     mode: AnalyzerMode = 'adding',
     fastMode: boolean,
     processId?: number,
-    userId?: string
+    userId?: string,
+    selectedTasks?: string[]
   ) {
     const finalUserId = userId
 
@@ -57,7 +58,8 @@ export default class AnalyzerProcessRunner {
         packageId,
         mode,
         fastMode,
-        this.process.userId!!
+        this.process.userId!!,
+        selectedTasks
       )
     } else {
       // Para nuevos procesos, usar el userId pasado como parámetro
@@ -66,7 +68,8 @@ export default class AnalyzerProcessRunner {
         packageId,
         mode,
         fastMode,
-        Number(finalUserId)
+        Number(finalUserId),
+        selectedTasks
       )
     }
 

@@ -13,28 +13,26 @@ The aspects and possible values include:
 
 1. 'color': 'black and white', 'color'.
 2. 'temperature': 'cold', 'warm', 'neutral'
-3. 'composition': 'balanced', 'left-weighted', 'right-weighted', 'cluttered', 'clean', 'crooked'
-4. 'focus': 'blurry', 'nitid'.
-5. 'stylistic': 'long exposure', 'bokeh', 'silhouettes', 'reflections', 'vivid colors', 'complementary colors', 'minimalist', 'geometric shapes'.
-6. 'lighting': 'natural', 'artificial', 'backlit', 'dramatic', 'soft'
-7. 'framing': 'close-up', 'medium shot', 'wide shot'.
-8. 'genre': 'abstract', 'documentary', 'street', 'landscape', 'portrait'
-9. 'perspective': 'normal', 'high angle', 'low angle', 
+3. 'focus': 'blurry', 'nitid'.
+4. 'stylistic': 'long exposure', 'silhouettes', 'reflections', 'vivid colors', 'complementary colors', 'minimalist', 'geometric shapes'.
+5. 'lighting': 'natural', 'artificial', 'backlit', 'dramatic', 'soft'
+6. 'framing': 'close-up', 'medium shot', 'wide shot'.
+7. 'genre': 'abstract', 'documentary', 'street', 'landscape', 'portrait'
+8. 'perspective': 'normal', 'high angle', 'low angle', 
 
 **Output Example for 1 image:**
 \`\`\`json
 [
-   {
-   "color": ["color"],
-   "temperature": ["warm"],
-   "composition": ["balanced", "cluterred", "crooked"],
-   "focus": ["nitid"],
-   "stylistic": ["vivid colors", "bokeh"],
-   "lighting": ["natural"],
-   "framing": ["close-up"],
-   "genre": ["documentary", "street"],
-   "perspective": ["normal"]
-   }
+  {
+  "color": ["color"],
+  "temperature": ["warm"],
+  "focus": ["nitid"],
+  "stylistic": ["vivid colors", "reflections"],
+  "lighting": ["natural"],
+  "framing": ["close-up"],
+  "genre": ["documentary", "street"],
+  "perspective": ["normal"]
+  }
 ]
 \`\`\`
 

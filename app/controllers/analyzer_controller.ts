@@ -34,6 +34,7 @@ export default class AnalyzerController {
         inmediate = true,
         photoIds,
         isGlobal = false,
+        tasks,
       } = request.body()
 
       const targetUserId = userId || user.id
@@ -69,7 +70,8 @@ export default class AnalyzerController {
           mode,
           fastMode,
           processId,
-          targetUserId
+          targetUserId,
+          tasks
         )
 
         if (inmediate) {
@@ -87,9 +89,7 @@ export default class AnalyzerController {
             logger.info(`Análisis ejecutado inmediatamente para usuario ${targetUserId}`)
           }
         } else {
-          logger.info(
-            `Análisis inicializado pero diferido para usuario ${targetUserIdtargetUserId}`
-          )
+          logger.info(`Análisis inicializado pero diferido para usuario ${targetUserId}`)
         }
 
         return response.ok({

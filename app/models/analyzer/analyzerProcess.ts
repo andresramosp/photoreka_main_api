@@ -118,11 +118,12 @@ export default class AnalyzerProcess extends BaseModel {
     packageId: string,
     mode: AnalyzerMode = 'adding',
     isFastMode: boolean,
-    userId?: number
+    userId?: number,
+    selectedTasks?: string[]
   ) {
     this.mode = mode
     this.packageId = this.mode == 'retry_process' ? this.packageId : packageId
-    this.tasks = getTaskList(this.packageId, this)
+    this.tasks = getTaskList(this.packageId, this, selectedTasks)
     this.currentStage = 'init'
     this.autoRetry = true
     this.maxAttempts = 2

@@ -50,6 +50,27 @@ export const packages = [
     isPreprocess: false,
     tasks: [
       {
+        name: 'visual_color_embedding_task',
+        type: 'VisualColorEmbeddingTask',
+        needsImage: true,
+        onlyIfNeeded: true,
+        checks: ['photo.color_histogram'],
+      },
+      {
+        name: 'clip_embeddings',
+        type: 'VisualEmbeddingTask',
+        needsImage: true,
+        onlyIfNeeded: true,
+        checks: ['photo.embedding'],
+      },
+      {
+        name: 'metadata_extraction',
+        type: 'MetadataTask',
+        needsImage: false,
+        onlyIfNeeded: true,
+        checks: ['descriptions.visual_aspects.orientation'],
+      },
+      {
         name: 'vision_visual_aspects', // 0.4 centimos 1000 fotos.
         type: 'VisionDescriptionTask',
         model: 'Gemini',
@@ -136,27 +157,6 @@ export const packages = [
         promptDependentField: null,
         checks: ['tags.topological'],
       },
-      {
-        name: 'visual_color_embedding_task',
-        type: 'VisualColorEmbeddingTask',
-        needsImage: true,
-        onlyIfNeeded: true,
-        checks: ['photo.color_histogram'],
-      },
-      {
-        name: 'clip_embeddings',
-        type: 'VisualEmbeddingTask',
-        needsImage: true,
-        onlyIfNeeded: true,
-        checks: ['photo.embedding'],
-      },
-      {
-        name: 'metadata_extraction',
-        type: 'MetadataTask',
-        needsImage: false,
-        onlyIfNeeded: true,
-        checks: ['descriptions.visual_aspects.orientation'],
-      },
     ],
   },
   // PAYLOAD:
@@ -211,7 +211,11 @@ export const packages = [
   // },
 ]
 
-export const getTaskList = (packageId: string, process: AnalyzerProcess): AnalyzerTask[] => {
+export const getTaskList = (
+  packageId: string,
+  process: AnalyzerProcess,
+  selectedTasks?: string[]
+): AnalyzerTask[] => {
   const pkg = packages.find((p) => p.id === packageId)
   if (!pkg) {
     throw new Error(`Package with id ${packageId} not found`)
@@ -220,7 +224,13 @@ export const getTaskList = (packageId: string, process: AnalyzerProcess): Analyz
   // Asignar la propiedad isPreprocess al proceso
   process.isPreprocess = pkg.isPreprocess || false
 
-  return pkg.tasks.map((taskData) => {
+  // Filtrar las tareas si se especifica selectedTasks
+  const tasksToProcess =
+    selectedTasks && selectedTasks.length > 0
+      ? pkg.tasks.filter((taskData) => selectedTasks.includes(taskData.name))
+      : pkg.tasks
+
+  return tasksToProcess.map((taskData) => {
     let task: AnalyzerTask
     switch (taskData.type) {
       case 'VisionDescriptionTask':
