@@ -1,5 +1,5 @@
 import DetectionPhoto from '#models/detection_photo'
-import Photo, { PhotoDescriptions } from '#models/photo'
+import Photo, { PhotoDescriptions, DescriptionType } from '#models/photo'
 import TagPhoto from '#models/tag_photo'
 import ModelsService from '#services/models_service'
 import NLPService from '#services/nlp_service'
@@ -276,15 +276,45 @@ export default class PhotoManager {
     return photo
   }
 
+  /**
+   * Actualiza las descripciones de una foto con merge profundo automático.
+   * Para objetos anidados (como visual_aspects), preserva las claves existentes
+   * y solo actualiza/agrega las nuevas claves proporcionadas.
+   * Para valores primitivos (strings), los reemplaza completamente.
+   */
   public async updatePhotoDescriptions(id: string, newDescriptions: PhotoDescriptions) {
     const photo = await Photo.find(id)
     if (!photo) {
       throw new Error('Photo not found')
     }
-    photo.descriptions = {
-      ...(photo.descriptions || {}),
-      ...newDescriptions,
+
+    // Merge profundo para preservar claves existentes dentro de cada tipo de descripción
+    const existingDescriptions = photo.descriptions || {}
+    const mergedDescriptions: any = { ...existingDescriptions }
+
+    for (const [key, value] of Object.entries(newDescriptions)) {
+      if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+        // Para objetos (como visual_aspects), hacer merge profundo
+        const existingValue = existingDescriptions[key as DescriptionType]
+        if (
+          typeof existingValue === 'object' &&
+          existingValue !== null &&
+          !Array.isArray(existingValue)
+        ) {
+          mergedDescriptions[key] = {
+            ...existingValue,
+            ...value,
+          }
+        } else {
+          mergedDescriptions[key] = value
+        }
+      } else {
+        // Para strings y otros tipos primitivos, reemplazar directamente
+        mergedDescriptions[key] = value
+      }
     }
+
+    photo.descriptions = mergedDescriptions
     try {
       await photo.save()
     } catch (err) {

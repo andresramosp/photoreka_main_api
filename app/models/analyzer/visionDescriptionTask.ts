@@ -56,14 +56,12 @@ export class VisionDescriptionTask extends AnalyzerTask {
 
     const processBatch = async (batch: Photo[]) => {
       let response: any
-      const injectedPrompts: any = await this.injectPromptsDependencies(batch)
+      const injectedPrompts: any = this.prompts.map((p) => (typeof p === 'function' ? p(batch) : p))
       logger.debug(`Llamando a ${this.model} para ${batch.length} imágenes...`)
 
       try {
         if (this.model === 'GPT' || this.model === 'Qwen' || this.model === 'Gemini') {
           response = await this.executeModelTask(injectedPrompts, batch)
-        } else if (this.model === 'Molmo') {
-          response = await this.executeMolmoTask(injectedPrompts, batch)
         } else {
           throw new Error(`Modelo no soportado: ${this.model}`)
         }
@@ -172,7 +170,7 @@ export class VisionDescriptionTask extends AnalyzerTask {
   }
 
   private async processSingleBatch(batchPhotos: Photo[]): Promise<void> {
-    const prompts = await this.injectPromptsDependencies(batchPhotos)
+    const prompts = this.prompts.map((p) => (typeof p === 'function' ? p(batchPhotos) : p))
     const imagesPerRequest = 4
     const maxRetries = 3
     let attempt = 0
@@ -374,102 +372,6 @@ export class VisionDescriptionTask extends AnalyzerTask {
       logger.error(`Error en executeModelTask para modelo ${this.model}:`, error)
       // En lugar de lanzar el error, retornamos un resultado vacío para continuar
       return { result: [] }
-    }
-  }
-  private async executeMolmoTask(prompts: any[], batch: Photo[]): Promise<any> {
-    const photoImageService = PhotoImageService.getInstance()
-
-    try {
-      // Generar base64 para cada foto
-      const photosWithBase64: { id: number; base64: string }[] = []
-
-      await Promise.all(
-        batch.map(async (photo) => {
-          try {
-            const base64 = await photoImageService.getImageBase64FromR2(photo.name, false)
-            photosWithBase64.push({ id: photo.id, base64: base64.toString() })
-          } catch (imageError) {
-            logger.error(
-              `Error obteniendo imagen para foto ${photo.id} (${photo.name}) en Molmo, saltando foto:`,
-              imageError
-            )
-            // No agregamos esta foto al array, simplemente continuamos
-          }
-        })
-      )
-
-      if (photosWithBase64.length === 0) {
-        logger.warn('No se pudieron obtener imágenes para ninguna foto del batch en Molmo')
-        return { result: [] }
-      }
-
-      const response = await this.modelsService.getMolmoResponse(photosWithBase64, [], prompts)
-
-      // Limpiar base64 de memoria de forma más agresiva
-      photosWithBase64.forEach((p) => (p.base64 = ''))
-      photosWithBase64.length = 0
-
-      if (!response) return { result: [] }
-
-      const { result } = response
-      return {
-        result: result.map((photoResult: any) => {
-          let descriptionsByPrompt: { [key: string]: any } = {}
-          this.promptsNames.forEach((targetPrompt) => {
-            try {
-              const descObj = photoResult.descriptions.find(
-                (d: any) => d.id_prompt === targetPrompt
-              )
-              descriptionsByPrompt = descObj.description
-            } catch (err) {
-              logger.error(`Error en Molmo para foto ${photoResult.id}:`, err)
-            }
-          })
-          return {
-            [this.promptsNames[0]]: descriptionsByPrompt,
-          }
-        }),
-      }
-    } catch (error) {
-      logger.error(`Error en executeMolmoTask:`, error)
-      // En lugar de lanzar el error, retornamos un resultado vacío para continuar
-      return { result: [] }
-    }
-  }
-
-  private async injectPromptsDependencies(batch: Photo[]): Promise<any> {
-    if (this.promptDependentField || this.model === 'Molmo') {
-      const promptList = this.promptsNames.map((target: DescriptionType, index: number) => ({
-        id: target,
-        prompt: this.prompts[index],
-      }))
-
-      const validResults: any[] = []
-
-      await Promise.all(
-        batch.map(async (photo: Photo) => {
-          try {
-            await photo.refresh()
-            validResults.push({
-              id: photo.id,
-              prompts: promptList.map((p) => ({
-                id: p.id,
-                text: typeof p.prompt === 'function' ? p.prompt([photo]) : p.prompt,
-              })),
-            })
-          } catch (refreshError) {
-            logger.error(
-              `Error refreshing photo ${photo.id} en injectPromptsDependencies, saltando foto:`,
-              refreshError
-            )
-            // No agregamos esta foto al resultado, simplemente continuamos
-          }
-        })
-      )
-
-      return validResults
-    } else {
-      return this.prompts.map((p) => (typeof p === 'function' ? p(batch) : p))
     }
   }
 

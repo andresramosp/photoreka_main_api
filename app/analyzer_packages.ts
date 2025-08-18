@@ -1,6 +1,7 @@
 import AnalyzerProcess from '#models/analyzer/analyzerProcess'
 import { AnalyzerTask } from '#models/analyzer/analyzerTask'
 import { ChunkTask } from '#models/analyzer/chunkTask'
+import { MetadataTask } from '#models/analyzer/metadataTask'
 import { TagTask } from '#models/analyzer/tagTask'
 import { VisionDescriptionTask } from '#models/analyzer/visionDescriptionTask'
 import { VisionTopologicalTask } from '#models/analyzer/visionTopologicalTask'
@@ -21,6 +22,13 @@ export const packages = [
     id: 'preprocess',
     isPreprocess: true, // Indica que este package es de pre-análisis
     tasks: [
+      {
+        name: 'metadata_extraction',
+        type: 'MetadataTask',
+        needsImage: false,
+        onlyIfNeeded: true,
+        checks: ['descriptions.visual_aspects.orientation'],
+      },
       {
         name: 'clip_embeddings',
         type: 'VisualEmbeddingTask',
@@ -50,7 +58,7 @@ export const packages = [
         sequential: false,
         prompts: [MESSAGE_ANALYZER_VISUAL_ASPECTS],
         resolution: 'low',
-        imagesPerBatch: 2,
+        imagesPerBatch: 1,
         promptDependentField: null,
         checks: ['descriptions.visual_aspects'],
         visualAspects: true,
@@ -65,13 +73,7 @@ export const packages = [
         descriptionSourceFields: ['visual_aspects'],
         checks: ['tags.any', 'tags.visual_aspects'],
       },
-      {
-        name: 'clip_embeddings',
-        type: 'VisualEmbeddingTask',
-        needsImage: true,
-        onlyIfNeeded: true,
-        checks: ['photo.embedding'],
-      },
+
       {
         name: 'vision_context_story_accents',
         type: 'VisionDescriptionTask',
@@ -119,12 +121,7 @@ export const packages = [
         },
         checks: ['descriptionChunks.any', 'descriptionChunk#*.embedding'],
       },
-      {
-        name: 'visual_color_embedding_task',
-        type: 'VisualColorEmbeddingTask',
-        needsImage: true,
-        checks: ['photo.color_histogram'],
-      },
+
       {
         name: 'topological_tags',
         type: 'VisionTopologicalTask',
@@ -138,6 +135,27 @@ export const packages = [
         useGuideLines: false,
         promptDependentField: null,
         checks: ['tags.topological'],
+      },
+      {
+        name: 'visual_color_embedding_task',
+        type: 'VisualColorEmbeddingTask',
+        needsImage: true,
+        onlyIfNeeded: true,
+        checks: ['photo.color_histogram'],
+      },
+      {
+        name: 'clip_embeddings',
+        type: 'VisualEmbeddingTask',
+        needsImage: true,
+        onlyIfNeeded: true,
+        checks: ['photo.embedding'],
+      },
+      {
+        name: 'metadata_extraction',
+        type: 'MetadataTask',
+        needsImage: false,
+        onlyIfNeeded: true,
+        checks: ['descriptions.visual_aspects.orientation'],
       },
     ],
   },
@@ -216,6 +234,9 @@ export const getTaskList = (packageId: string, process: AnalyzerProcess): Analyz
         break
       case 'ChunkTask':
         task = new ChunkTask(process)
+        break
+      case 'MetadataTask':
+        task = new MetadataTask(process)
         break
       case 'VisualEmbeddingTask':
         task = new VisualEmbeddingTask(process)

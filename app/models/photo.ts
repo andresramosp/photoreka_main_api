@@ -16,7 +16,7 @@ import DetectionPhoto from './detection_photo.js'
 import Collection from './collection.js'
 
 export type DescriptionType = 'context' | 'story' | 'visual_accents' | 'visual_aspects'
-export type PhotoDescriptions = Record<DescriptionType, string>
+export type PhotoDescriptions = Partial<Record<DescriptionType, string | Record<string, any> | any>>
 export type PhotoStatus = 'uploaded' | 'preprocessing' | 'preprocessed' | 'processing' | 'processed'
 
 export default class Photo extends BaseModel {
