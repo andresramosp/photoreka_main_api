@@ -26,28 +26,43 @@ export class VisualColorEmbeddingTask extends AnalyzerTask {
     for (let i = 0; i < pendingPhotos.length; i += 64) {
       await this.sleep(250)
       const batch = pendingPhotos.slice(i, i + 64)
-      const payload = await Promise.all(
-        batch.map(async (pi) => ({
-          id: pi.id,
-          base64: await photoImageService.getImageBase64FromR2(pi.name, false),
-        }))
+
+      // Obtener las imágenes válidas, automáticamente filtra las que no están en R2
+      const validImages = await photoImageService.getValidPhotosWithImages(batch, false)
+
+      // Marcar las fotos fallidas como completadas
+      const failedPhotos = batch.filter(
+        (photo) => !validImages.some((vi) => vi.photo.id === photo.id)
       )
+      if (failedPhotos.length > 0) {
+        const failedIds = failedPhotos.map((p) => p.id)
+        await this.analyzerProcess.markPhotosCompleted(this.name, failedIds)
+      }
+
+      if (validImages.length === 0) {
+        logger.debug(`No hay imágenes válidas en el batch, continuando...`)
+        continue
+      }
+
+      // Convertir al formato esperado por el servicio de embeddings
+      const payload = validImages.map(({ photo, base64 }) => ({ id: photo.id, base64 }))
       const { embeddings } = await this.modelsService.getHistogramColor(payload)
 
       embeddings.forEach((item: EmbeddingResponse) => {
         const key = item.id
-        const pi = batch.find((p) => p.id === Number(item.id))
-        if (pi) {
+        const validImage = validImages.find((vi) => vi.photo.id === Number(item.id))
+        if (validImage) {
           this.data[key] = {
-            pi,
+            pi: validImage.photo,
             embedding_full: item.embedding_full,
             embedding_dominant: item.embedding_dominant,
           }
         }
       })
 
-      // Commit del batch procesado
-      await this.commit(batch)
+      // Commit solo de las fotos válidas procesadas
+      const photosToCommit = validImages.map((vi) => vi.photo)
+      await this.commit(photosToCommit)
     }
   }
 

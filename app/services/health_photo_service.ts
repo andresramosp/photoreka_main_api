@@ -35,10 +35,13 @@ export default class HealthPhotoService {
     push('descriptions.context', !!d.context)
     push('descriptions.story', !!d.story)
     push('descriptions.visual_accents', !!d.visual_accents)
-    push('descriptions.visual_aspects', !!d.visual_aspects)
 
-    // Chequeos granulares para visual_aspects
     const visualAspects = d.visual_aspects || {}
+    push(
+      'descriptions.visual_aspects.genre',
+      !!(visualAspects.genre && visualAspects.genre.length > 0)
+    )
+
     push(
       'descriptions.visual_aspects.orientation',
       !!(visualAspects.orientation && visualAspects.orientation.length > 0)

@@ -174,8 +174,6 @@ export class VisionTopologicalTask extends AnalyzerTask {
     try {
       if (this.model === 'GPT' || this.model === 'Qwen' || this.model === 'Gemini') {
         response = await this.executeModelTask(injectedPrompts, batch)
-      } else if (this.model === 'Molmo') {
-        response = await this.executeMolmoTask(injectedPrompts, batch)
       } else {
         throw new Error(`Modelo no soportado: ${this.model}`)
       }
@@ -386,22 +384,32 @@ export class VisionTopologicalTask extends AnalyzerTask {
     } else if (this.model === 'Gemini') {
       const photoImageService = PhotoImageService.getInstance()
 
-      // Generar base64 para cada foto con líneas guía si es necesario
-      const images = await Promise.all(
-        batch.map(async (photo) => {
-          const base64 = await photoImageService.getImageBase64FromR2(
-            photo.name,
-            this.useGuideLines
-          )
-          // El buffer se libera automáticamente por garbage collector
-          return {
-            inlineData: {
-              mimeType: 'image/png',
-              data: base64,
-            },
-          }
-        })
+      // Obtener imágenes válidas, automáticamente filtra las que no están en R2
+      const validImages = await photoImageService.getValidPhotosWithImages(
+        batch,
+        this.useGuideLines
       )
+
+      // Marcar las fotos fallidas como completadas (opcional)
+      const failedPhotos = batch.filter(
+        (photo) => !validImages.some((vi) => vi.photo.id === photo.id)
+      )
+      if (failedPhotos.length > 0) {
+        logger.debug(`${failedPhotos.length} fotos no disponibles en R2, continuando sin ellas`)
+      }
+
+      if (validImages.length === 0) {
+        logger.debug('No hay imágenes válidas para este batch')
+        return { result: [] }
+      }
+
+      // Convertir al formato esperado por Gemini
+      const images = validImages.map(({ base64 }) => ({
+        inlineData: {
+          mimeType: 'image/png',
+          data: base64,
+        },
+      }))
 
       const result = await this.modelsService.getGeminiResponse(
         prompt,
@@ -424,46 +432,6 @@ export class VisionTopologicalTask extends AnalyzerTask {
       return result
     } else {
       throw new Error(`Modelo no soportado: ${this.model}`)
-    }
-  }
-
-  private async executeMolmoTask(prompts: any[], batch: Photo[]): Promise<any> {
-    const photoImageService = PhotoImageService.getInstance()
-
-    // Generar base64 para cada foto con líneas guía si es necesario
-    const photosWithBase64 = await Promise.all(
-      batch.map(async (photo) => {
-        const base64 = await photoImageService.getImageBase64FromR2(photo.name, this.useGuideLines)
-
-        // El buffer se libera automáticamente por garbage collector
-        return { id: photo.id, base64 }
-      })
-    )
-
-    const response = await this.modelsService.getMolmoResponse(photosWithBase64, [], prompts)
-
-    // Limpiar base64 de memoria de forma más agresiva
-    photosWithBase64.forEach((p) => (p.base64 = ''))
-    photosWithBase64.length = 0
-
-    if (!response) return { result: [] }
-
-    const { result } = response
-    return {
-      result: result.map((photoResult: any) => {
-        let descriptionsByPrompt: { [key: string]: any } = {}
-        this.promptsNames.forEach((targetPrompt) => {
-          try {
-            const descObj = photoResult.descriptions.find((d: any) => d.id_prompt === targetPrompt)
-            descriptionsByPrompt = descObj.description
-          } catch (err) {
-            logger.error(`Error en Molmo para foto ${photoResult.id}:`)
-          }
-        })
-        return {
-          [this.promptsNames[0]]: descriptionsByPrompt,
-        }
-      }),
     }
   }
 

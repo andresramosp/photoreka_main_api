@@ -71,7 +71,7 @@ export const packages = [
         checks: ['descriptions.visual_aspects.orientation'],
       },
       {
-        name: 'vision_visual_aspects', // 0.4 centimos 1000 fotos.
+        name: 'vision_visual_aspects',
         type: 'VisionDescriptionTask',
         model: 'Gemini',
         modelName: 'gemini-2.5-flash-lite',
@@ -81,7 +81,7 @@ export const packages = [
         resolution: 'low',
         imagesPerBatch: 1,
         promptDependentField: null,
-        checks: ['descriptions.visual_aspects'],
+        checks: ['descriptions.visual_aspects.genre'],
         visualAspects: true,
       },
       {
@@ -152,7 +152,7 @@ export const packages = [
         sequential: false,
         resolution: 'low',
         prompts: [MESSAGE_ANALYZER_GPT_TOPOLOGIC_TAGS],
-        imagesPerBatch: 2,
+        imagesPerBatch: 1,
         useGuideLines: false,
         promptDependentField: null,
         checks: ['tags.topological'],

@@ -307,36 +307,32 @@ export class VisionDescriptionTask extends AnalyzerTask {
       } else if (this.model === 'Gemini') {
         const photoImageService = PhotoImageService.getInstance()
 
-        // Generar base64 para cada foto y luego limpiar memoria
-        const imagesWithIds: { photo: Photo; imageData: any }[] = []
+        // Obtener imágenes válidas, automáticamente filtra las que no están en R2
+        const validImages = await photoImageService.getValidPhotosWithImages(batch, false)
 
-        await Promise.all(
-          batch.map(async (photo) => {
-            try {
-              const base64 = await photoImageService.getImageBase64FromR2(photo.name, false)
-              imagesWithIds.push({
-                photo: photo,
-                imageData: {
-                  inlineData: {
-                    mimeType: 'image/png',
-                    data: base64,
-                  },
-                },
-              })
-            } catch (imageError) {
-              logger.error(
-                `Error obteniendo imagen para foto ${photo.id} (${photo.name}), saltando foto:`,
-                imageError
-              )
-              // No agregamos esta foto al array, simplemente continuamos
-            }
-          })
+        // Marcar las fotos fallidas como completadas (opcional, si quieres hacerlo aquí)
+        const failedPhotos = batch.filter(
+          (photo) => !validImages.some((vi) => vi.photo.id === photo.id)
         )
+        if (failedPhotos.length > 0) {
+          logger.debug(`${failedPhotos.length} fotos no disponibles en R2, continuando sin ellas`)
+        }
 
-        if (imagesWithIds.length === 0) {
+        if (validImages.length === 0) {
           logger.warn('No se pudieron obtener imágenes para ninguna foto del batch')
           return { result: [] }
         }
+
+        // Convertir al formato esperado por Gemini
+        const imagesWithIds = validImages.map(({ photo, base64 }) => ({
+          photo,
+          imageData: {
+            inlineData: {
+              mimeType: 'image/png',
+              data: base64,
+            },
+          },
+        }))
 
         const images = imagesWithIds.map((item) => item.imageData)
         const validPhotos = imagesWithIds.map((item) => item.photo)

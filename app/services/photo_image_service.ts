@@ -1,9 +1,9 @@
 import sharp from 'sharp'
 import Logger, { LogLevel } from '../utils/logger.js'
+import Photo from '#models/photo'
 
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3'
 import { Readable } from 'node:stream'
-import { withCache } from '../decorators/withCache.js'
 
 const s3 = new S3Client({
   region: 'auto',
@@ -185,4 +185,29 @@ export default class PhotoImageService {
 
   //   this.photoImagesWithGuides = processesWithGuides.filter((pp) => pp !== null) as PhotoImage[]
   // }
+
+  /**
+   * Obtiene imágenes válidas de R2, filtrando automáticamente las que no se pueden obtener
+   * Retorna un array con las fotos que sí tienen imagen disponible
+   */
+  public async getValidPhotosWithImages(
+    photos: Photo[],
+    withGuideLines: boolean = false
+  ): Promise<{ photo: Photo; base64: string }[]> {
+    const validImages: { photo: Photo; base64: string }[] = []
+
+    for (const photo of photos) {
+      try {
+        const base64 = await this.getImageBase64FromR2(photo.name, withGuideLines)
+        validImages.push({
+          photo,
+          base64: base64 as string,
+        })
+      } catch (error) {
+        logger.debug(`No se pudo obtener la imagen ${photo.name} desde R2:`, error)
+      }
+    }
+
+    return validImages
+  }
 }

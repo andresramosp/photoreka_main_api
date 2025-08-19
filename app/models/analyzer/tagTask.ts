@@ -33,9 +33,8 @@ export class TagTask extends AnalyzerTask {
     this.tagToSustantivesMap = new Map()
     this.embeddingsMap = new Map()
 
-    if (!this.data) {
-      this.data = {}
-    }
+    // Limpiar datos previos para evitar reprocesamiento en retries
+    this.data = {}
 
     const photoIds = pendingPhotos.map((photo) => photo.id)
     const photosWithTags = await Photo.query().whereIn('id', photoIds).preload('tags')
@@ -219,6 +218,9 @@ export class TagTask extends AnalyzerTask {
 
     const photoIds = Object.keys(this.data).map(Number)
     logger.debug(`Datos salvados para ${photoIds.length} imágenes`)
+
+    // Limpiar datos para evitar reprocesamiento en retries
+    this.data = {}
   }
 
   private async cleanPhotosDescs(photos: Photo[], batchSize = 5, delayMs = 500): Promise<string[]> {
