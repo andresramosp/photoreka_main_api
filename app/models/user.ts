@@ -4,6 +4,7 @@ import { withAuthFinder } from '@adonisjs/auth/mixins/lucid'
 import { compose } from '@adonisjs/core/helpers'
 import hash from '@adonisjs/core/services/hash'
 import { DbAccessTokensProvider } from '@adonisjs/auth/access_tokens'
+import type { Usage } from '#services/usage_service'
 
 const AuthFinder = withAuthFinder(() => hash.use('scrypt'), {
   uids: ['email'],
@@ -25,6 +26,9 @@ export default class User extends compose(BaseModel, AuthFinder) {
 
   @column()
   declare isActive: boolean
+
+  @column()
+  declare usage: Usage | null
 
   @column.dateTime({ autoCreate: true })
   declare createdAt: DateTime

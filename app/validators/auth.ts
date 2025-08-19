@@ -9,6 +9,7 @@ export const createAuthValidator = vine.compile(
     email: vine.string().email().normalizeEmail(),
     password: vine.string().minLength(8).maxLength(100),
     authCode: vine.string().minLength(10).maxLength(40).optional(),
+    usageTier: vine.enum(['BASIC', 'PRO', 'PREMIUM']).optional(),
   })
 )
 

@@ -38,6 +38,7 @@ const TagsController = () => import('#controllers/tags_controller')
 const EmbeddingController = () => import('#controllers/embeddings_controller')
 const LandingController = () => import('#controllers/landing_controller')
 const CollectionsController = () => import('#controllers/collections_controller')
+const UsageController = () => import('#controllers/usage_controller')
 
 // Landing page endpoints (no auth required)
 router.post('/api/landing/request', [LandingController, 'request'])
@@ -84,6 +85,15 @@ router
     router.delete('/api/collections/:id', [CollectionsController, 'destroy'])
     router.post('/api/collections/:id/photos', [CollectionsController, 'addPhotos'])
     router.delete('/api/collections/:id/photos', [CollectionsController, 'removePhotos'])
+
+    // Usage endpoints
+    router.get('/api/usage', [UsageController, 'show'])
+    router.get('/api/usage/base', [UsageController, 'base'])
+    router.put('/api/usage', [UsageController, 'update'])
+    router.post('/api/usage/credits/increment', [UsageController, 'incrementCredits'])
+    router.get('/api/usage/can-upload', [UsageController, 'canUpload'])
+    router.get('/api/usage/can-analyze', [UsageController, 'canAnalyze'])
+    router.post('/api/usage/check-credits', [UsageController, 'checkCredits'])
 
     // Download photos endpoint
     router.post('/download-photo', async ({ request, response }) => {

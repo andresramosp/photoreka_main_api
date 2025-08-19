@@ -48,8 +48,6 @@ export class MetadataTask extends AnalyzerTask {
 
         if (!hasOrientation) {
           photosWithoutOrientation.push(photo)
-        } else {
-          logger.debug(`Foto ${photo.id} (${photo.name}) ya tiene orientation, saltando...`)
         }
       }
 

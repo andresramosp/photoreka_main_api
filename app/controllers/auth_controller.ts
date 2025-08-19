@@ -8,6 +8,7 @@ import {
   updateProfileValidator,
 } from '#validators/auth'
 import { HttpContext } from '@adonisjs/core/http'
+import UsageService, { getDefaultUsageByTier, UsageTier } from '#services/usage_service'
 
 export default class AuthController {
   /**
@@ -29,11 +30,16 @@ export default class AuthController {
         }
       }
 
+      // Importar enum y función para usage
+      const tier = UsageTier[payload.usageTier as keyof typeof UsageTier] || UsageTier.BASIC
+      const usage = getDefaultUsageByTier(tier)
+
       const user = await User.create({
         name: payload.name,
         email: payload.email,
         password: payload.password,
         isActive: true,
+        usage,
       })
 
       const token = await User.accessTokens.create(user, ['*'])
@@ -45,6 +51,8 @@ export default class AuthController {
           name: user.name,
           email: user.email,
           isActive: user.isActive,
+          usageTier: tier,
+          usage,
         },
         token: token.value!.release(),
       })
@@ -145,12 +153,16 @@ export default class AuthController {
       await auth.use('api').check()
       const user = auth.use('api').user! as unknown as User
 
+      // Importar UsageService para obtener el usage completo
+      const usage = await UsageService.getUsage(user.id)
+
       return response.ok({
         user: {
           id: user.id,
           name: user.name,
           email: user.email,
           isActive: user.isActive,
+          usage,
           createdAt: user.createdAt,
           updatedAt: user.updatedAt,
         },
