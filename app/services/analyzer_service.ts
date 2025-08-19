@@ -11,6 +11,7 @@ import chalk from 'chalk' // ← NUEVO
 import PhotoManager from '../managers/photo_manager.js'
 import HealthPhotoService from './health_photo_service.js'
 import { has } from 'lodash'
+import { getTaskList } from '../analyzer_packages.js'
 
 const logger = Logger.getInstance('AnalyzerProcess')
 logger.setLevel(LogLevel.DEBUG)
@@ -38,8 +39,7 @@ export default class AnalyzerProcessRunner {
     mode: AnalyzerMode = 'adding',
     fastMode: boolean,
     processId?: number,
-    userId?: string,
-    selectedTasks?: string[]
+    userId?: string
   ) {
     const finalUserId = userId
 
@@ -58,8 +58,7 @@ export default class AnalyzerProcessRunner {
         packageId,
         mode,
         fastMode,
-        this.process.userId!!,
-        selectedTasks
+        this.process.userId!!
       )
     } else {
       // Para nuevos procesos, usar el userId pasado como parámetro
@@ -68,8 +67,7 @@ export default class AnalyzerProcessRunner {
         packageId,
         mode,
         fastMode,
-        Number(finalUserId),
-        selectedTasks
+        Number(finalUserId)
       )
     }
 
@@ -105,24 +103,51 @@ export default class AnalyzerProcessRunner {
       await this.process.preloadPhotoHealth()
     }
 
-    for (const task of tasks) {
+    // Obtener la estructura de tareas con grupos paralelos
+    const taskStructure = getTaskList(this.process.packageId, this.process)
+
+    for (const taskOrGroup of taskStructure) {
       try {
-        const pendingPhotos = await task.prepare(this.process)
-        if (pendingPhotos.length) {
+        if (Array.isArray(taskOrGroup)) {
+          // Es un grupo paralelo - ejecutar todas las tareas en paralelo
+          const groupNames = taskOrGroup.map((t) => t.getName()).join(', ')
           await this.changeStage(
-            `*** Iniciando tarea *** | ${task.getName()} | Fotos: ${pendingPhotos.length} | ${this.process.mode.toUpperCase()}`,
-            task.name
+            `\n\n *** Iniciando grupo paralelo ***${groupNames}\n${this.process.mode.toUpperCase()}\n\n`
           )
-          await task.process(pendingPhotos, this.process)
-          await this.changeStage(`*** Tarea completada *** | ${task.getName()}`)
+          const parallelPromises = taskOrGroup.map(async (task) => {
+            const pendingPhotos = await task.prepare(this.process)
+            if (pendingPhotos.length) {
+              await task.process(pendingPhotos, this.process)
+            }
+            return task
+          })
+
+          await Promise.all(parallelPromises)
+          await this.changeStage(`*** Grupo paralelo completado *** | ${groupNames}`)
+        } else {
+          // Es una tarea individual - ejecutar secuencialmente
+          const task = taskOrGroup
+          const pendingPhotos = await task.prepare(this.process)
+          if (pendingPhotos.length) {
+            await this.changeStage(
+              `\n\n *** Iniciando tarea *** | ${task.getName()} | Fotos: ${pendingPhotos.length} | ${this.process.mode.toUpperCase()} \n\n`,
+              task.name
+            )
+            await task.process(pendingPhotos, this.process)
+            await this.changeStage(`*** Tarea completada *** | ${task.getName()}`)
+          }
         }
       } catch (error) {
-        logger.error(`Error en tarea ${task.name}:`, error)
-        throw new Exception(`[ERROR] Error en tarea ${task.name}: ${error.message}`, 500, {
+        const taskNames = Array.isArray(taskOrGroup)
+          ? taskOrGroup.map((t) => t.name).join(', ')
+          : taskOrGroup.name
+        logger.error(`Error en tarea(s) ${taskNames}:`, error)
+        throw new Exception(`[ERROR] Error en tarea(s) ${taskNames}: ${error.message}`, 500, {
           cause: error,
         })
       }
     }
+
     await HealthPhotoService.updateSheetWithHealth(this.process)
 
     const hasFailed = this.hasFailedPhotos()

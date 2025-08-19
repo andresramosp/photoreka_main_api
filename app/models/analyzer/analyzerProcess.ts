@@ -118,12 +118,18 @@ export default class AnalyzerProcess extends BaseModel {
     packageId: string,
     mode: AnalyzerMode = 'adding',
     isFastMode: boolean,
-    userId?: number,
-    selectedTasks?: string[]
+    userId?: number
   ) {
     this.mode = mode
     this.packageId = this.mode == 'retry_process' ? this.packageId : packageId
-    this.tasks = getTaskList(this.packageId, this, selectedTasks)
+
+    // Obtener la estructura de tareas con grupos paralelos
+    const taskStructure = getTaskList(this.packageId, this)
+
+    // Aplanar la estructura para mantener compatibilidad con el resto del código
+    // que espera un array plano de tareas
+    this.tasks = taskStructure.flat()
+
     this.currentStage = 'init'
     this.autoRetry = true
     this.maxAttempts = 2

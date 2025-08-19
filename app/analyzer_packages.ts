@@ -22,26 +22,31 @@ export const packages = [
     id: 'preprocess',
     isPreprocess: true, // Indica que este package es de pre-análisis
     tasks: [
-      {
-        name: 'metadata_extraction',
-        type: 'MetadataTask',
-        needsImage: false,
-        onlyIfNeeded: true,
-        checks: ['descriptions.visual_aspects.orientation'],
-      },
-      {
-        name: 'clip_embeddings',
-        type: 'VisualEmbeddingTask',
-        needsImage: true,
-        onlyIfNeeded: true,
-        checks: ['photo.embedding'],
-      },
-      {
-        name: 'visual_color_embedding_task',
-        type: 'VisualColorEmbeddingTask',
-        needsImage: true,
-        checks: ['photo.color_histogram'],
-      },
+      // Primer grupo: metadata se ejecuta solo
+
+      // Segundo grupo: embeddings en paralelo
+      [
+        {
+          name: 'metadata_extraction',
+          type: 'MetadataTask',
+          needsImage: false,
+          onlyIfNeeded: true,
+          checks: ['descriptions.visual_aspects.orientation'],
+        },
+        {
+          name: 'clip_embeddings',
+          type: 'VisualEmbeddingTask',
+          needsImage: true,
+          onlyIfNeeded: true,
+          checks: ['photo.embedding'],
+        },
+        {
+          name: 'visual_color_embedding_task',
+          type: 'VisualColorEmbeddingTask',
+          needsImage: true,
+          checks: ['photo.color_histogram'],
+        },
+      ],
     ],
   },
 
@@ -49,27 +54,31 @@ export const packages = [
     id: 'process',
     isPreprocess: false,
     tasks: [
-      {
-        name: 'visual_color_embedding_task',
-        type: 'VisualColorEmbeddingTask',
-        needsImage: true,
-        onlyIfNeeded: true,
-        checks: ['photo.color_histogram'],
-      },
-      {
-        name: 'clip_embeddings',
-        type: 'VisualEmbeddingTask',
-        needsImage: true,
-        onlyIfNeeded: true,
-        checks: ['photo.embedding'],
-      },
-      {
-        name: 'metadata_extraction',
-        type: 'MetadataTask',
-        needsImage: false,
-        onlyIfNeeded: true,
-        checks: ['descriptions.visual_aspects.orientation'],
-      },
+      // Primer grupo: embeddings básicos en paralelo
+      [
+        {
+          name: 'visual_color_embedding_task',
+          type: 'VisualColorEmbeddingTask',
+          needsImage: true,
+          onlyIfNeeded: true,
+          checks: ['photo.color_histogram'],
+        },
+        {
+          name: 'clip_embeddings',
+          type: 'VisualEmbeddingTask',
+          needsImage: true,
+          onlyIfNeeded: true,
+          checks: ['photo.embedding'],
+        },
+        {
+          name: 'metadata_extraction',
+          type: 'MetadataTask',
+          needsImage: false,
+          onlyIfNeeded: true,
+          checks: ['descriptions.visual_aspects.orientation'],
+        },
+      ],
+      // Segunda tarea: vision aspects (secuencial)
       {
         name: 'vision_visual_aspects',
         type: 'VisionDescriptionTask',
@@ -84,6 +93,7 @@ export const packages = [
         checks: ['descriptions.visual_aspects.genre'],
         visualAspects: true,
       },
+      // Tercera tarea: tags visual aspects (secuencial)
       {
         name: 'tags_visual_aspects',
         type: 'TagTask',
@@ -94,7 +104,7 @@ export const packages = [
         descriptionSourceFields: ['visual_aspects'],
         checks: ['tags.any', 'tags.visual_aspects'],
       },
-
+      // Cuarta tarea: vision context story accents (secuencial)
       {
         name: 'vision_context_story_accents',
         type: 'VisionDescriptionTask',
@@ -142,7 +152,6 @@ export const packages = [
         },
         checks: ['descriptionChunks.any', 'descriptionChunk#*.embedding'],
       },
-
       {
         name: 'topological_tags',
         type: 'VisionTopologicalTask',
@@ -213,9 +222,8 @@ export const packages = [
 
 export const getTaskList = (
   packageId: string,
-  process: AnalyzerProcess,
-  selectedTasks?: string[]
-): AnalyzerTask[] => {
+  process: AnalyzerProcess
+): (AnalyzerTask | AnalyzerTask[])[] => {
   const pkg = packages.find((p) => p.id === packageId)
   if (!pkg) {
     throw new Error(`Package with id ${packageId} not found`)
@@ -224,13 +232,8 @@ export const getTaskList = (
   // Asignar la propiedad isPreprocess al proceso
   process.isPreprocess = pkg.isPreprocess || false
 
-  // Filtrar las tareas si se especifica selectedTasks
-  const tasksToProcess =
-    selectedTasks && selectedTasks.length > 0
-      ? pkg.tasks.filter((taskData) => selectedTasks.includes(taskData.name))
-      : pkg.tasks
-
-  return tasksToProcess.map((taskData) => {
+  // Función auxiliar para crear una tarea desde su configuración
+  const createTask = (taskData: any): AnalyzerTask => {
     let task: AnalyzerTask
     switch (taskData.type) {
       case 'VisionDescriptionTask':
@@ -265,5 +268,16 @@ export const getTaskList = (
     }
     Object.assign(task, taskData)
     return task
+  }
+
+  // Procesar las tareas manteniendo la estructura de grupos
+  return pkg.tasks.map((taskOrGroup) => {
+    if (Array.isArray(taskOrGroup)) {
+      // Es un grupo paralelo - crear todas las tareas
+      return taskOrGroup.map(createTask)
+    } else {
+      // Es una tarea individual - crearla
+      return createTask(taskOrGroup)
+    }
   })
 }
