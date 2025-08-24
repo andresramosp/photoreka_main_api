@@ -36,7 +36,7 @@ export default class HealthPhotoService {
     push('descriptions.story', !!d.story)
     push('descriptions.visual_accents', !!d.visual_accents)
 
-    // push('descriptions.artistic_scores', !!d.artistic_scores)
+    push('descriptions.artistic_scores', !!d.artistic_scores)
 
     const visualAspects = d.visual_aspects || {}
     push(
@@ -154,12 +154,15 @@ export default class HealthPhotoService {
 
   // Solo informativa al final del proceso, y para saber si iniciar retry automático
   public static async updateSheetWithHealth(process: AnalyzerProcess) {
-    const packageDef = (await import('../../app/analyzer_packages.js')).packages.find(
-      (p) => p.id === process.packageId
-    )
-    if (packageDef) {
+    const { extractAllTasks } = await import('../analyzer_packages.js')
+
+    // Usar la función centralizada para obtener todas las tareas
+    const allTasks = extractAllTasks(process.packageId)
+
+    if (allTasks.length > 0) {
       const healthReports = await HealthPhotoService.healthForProcess(process, false)
-      for (const taskDef of packageDef.tasks) {
+
+      for (const taskDef of allTasks) {
         const taskName = taskDef.name
         const checksForTask = taskDef.checks || []
         const completedPhotoIds = []

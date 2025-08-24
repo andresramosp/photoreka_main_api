@@ -14,7 +14,7 @@ The aspects and possible values include:
 1. 'color': 'black and white', 'color'.
 2. 'temperature': 'cold', 'warm', 'neutral'
 3. 'focus': 'blurry', 'nitid'.
-4. 'stylistic': 'long exposure', 'silhouettes', 'reflections', 'vivid colors', 'complementary colors', 'minimalist', 'geometric shapes'.
+4. 'stylistic': 'long exposure', 'silhouettes', 'reflections', 'vivid colors', 'minimalist', 'geometric shapes'.
 5. 'lighting': 'natural', 'artificial', 'backlit', 'dramatic', 'soft'
 6. 'framing': 'close-up', 'medium shot', 'wide shot'.
 7. 'genre': 'abstract', 'documentary', 'street', 'landscape', 'portrait'

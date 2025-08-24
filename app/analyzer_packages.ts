@@ -19,167 +19,214 @@ import {
 } from './utils/prompts/tags.js'
 import { MESSAGE_ANALYZER_VISUAL_ASPECTS } from './utils/prompts/visual_aspects.js'
 
+/**
+ * ESTRUCTURA DE PACKAGES CON STAGES
+ *
+ * Cada package define etapas (stages) que se ejecutan secuencialmente.
+ * Dentro de cada stage, las tareas pueden ejecutarse en paralelo o secuencialmente.
+ *
+ * Estructura:
+ * - stages: array de etapas que se ejecutan en orden
+ *   - type: 'parallel' | 'sequential' - define cómo se ejecutan las tareas del stage
+ *   - tasks: array de tareas o stages anidados
+ *
+ * Ventajas:
+ * - Flexibilidad total para mezclar ejecución paralela y secuencial
+ * - Estructura uniforme y clara
+ * - Permite anidamiento de stages para casos complejos
+ * - Fácil mantenimiento y extensión
+ *
+ * FUNCIONES CENTRALIZADAS:
+ * - extractAllTasks(packageId): Extrae todas las tareas de forma plana (útil para health checking, etc.)
+ * - getTaskList(packageId, process): Convierte stages a estructura para el runner (AnalyzerTask | AnalyzerTask[])[]
+ */
+
 export const packages = [
   {
     // Context + Story + Accents en una sola llamada GPT
     id: 'preprocess',
     isPreprocess: true, // Indica que este package es de pre-análisis
-    tasks: [
-      // Primer grupo: metadata se ejecuta solo
-
-      // Segundo grupo: embeddings en paralelo
-      [
-        // {
-        //   name: 'metadata_extraction',
-        //   type: 'MetadataTask',
-        //   needsImage: false,
-        //   onlyIfNeeded: true,
-        //   checks: ['descriptions.visual_aspects.orientation'],
-        // },
-        // {
-        //   name: 'clip_embeddings',
-        //   type: 'VisualEmbeddingTask',
-        //   needsImage: true,
-        //   onlyIfNeeded: true,
-        //   checks: ['photo.embedding'],
-        // },
-        // {
-        //   name: 'visual_color_embedding_task',
-        //   type: 'VisualColorEmbeddingTask',
-        //   needsImage: true,
-        //   checks: ['photo.color_histogram'],
-        // },
-      ],
+    stages: [
+      {
+        type: 'parallel',
+        tasks: [
+          {
+            name: 'metadata_extraction',
+            type: 'MetadataTask',
+            needsImage: false,
+            onlyIfNeeded: true,
+            checks: ['descriptions.visual_aspects.orientation'],
+          },
+          {
+            name: 'clip_embeddings',
+            type: 'VisualEmbeddingTask',
+            needsImage: true,
+            onlyIfNeeded: true,
+            checks: ['photo.embedding'],
+          },
+          {
+            name: 'visual_color_embedding_task',
+            type: 'VisualColorEmbeddingTask',
+            needsImage: true,
+            checks: ['photo.color_histogram'],
+          },
+        ],
+      },
     ],
   },
 
   {
     id: 'process',
     isPreprocess: false,
-    tasks: [
-      // Primer grupo: embeddings básicos en paralelo
-      [
-        {
-          name: 'visual_color_embedding_task',
-          type: 'VisualColorEmbeddingTask',
-          needsImage: true,
-          onlyIfNeeded: true,
-          checks: ['photo.color_histogram'],
-        },
-        {
-          name: 'clip_embeddings',
-          type: 'VisualEmbeddingTask',
-          needsImage: true,
-          onlyIfNeeded: true,
-          checks: ['photo.embedding'],
-        },
-        {
-          name: 'metadata_extraction',
-          type: 'MetadataTask',
-          needsImage: false,
-          onlyIfNeeded: true,
-          checks: ['descriptions.visual_aspects.orientation'],
-        },
-      ],
+    stages: [
+      // Etapa 1: embeddings básicos en paralelo
       {
-        name: 'vision_visual_aspects',
-        type: 'VisionDescriptionTask',
-        model: 'Gemini',
-        modelName: 'gemini-2.5-flash-lite',
-        needsImage: true,
-        sequential: false,
-        prompts: [MESSAGE_ANALYZER_VISUAL_ASPECTS],
-        resolution: 'low',
-        imagesPerBatch: 1,
-        promptDependentField: null,
-        checks: ['descriptions.visual_aspects.genre'],
-        visualAspects: true,
+        type: 'parallel',
+        tasks: [
+          {
+            name: 'visual_color_embedding_task',
+            type: 'VisualColorEmbeddingTask',
+            needsImage: true,
+            onlyIfNeeded: true,
+            checks: ['photo.color_histogram'],
+          },
+          {
+            name: 'clip_embeddings',
+            type: 'VisualEmbeddingTask',
+            needsImage: true,
+            onlyIfNeeded: true,
+            checks: ['photo.embedding'],
+          },
+          {
+            name: 'metadata_extraction',
+            type: 'MetadataTask',
+            needsImage: false,
+            onlyIfNeeded: true,
+            checks: ['descriptions.visual_aspects.orientation'],
+          },
+        ],
       },
+      // Etapa 2 y 3: análisis visual secuencial EN PARALELO con análisis artístico
       {
-        name: 'tags_visual_aspects',
-        type: 'TagTask',
-        model: 'Gemini',
-        modelName: 'gemini-2.5-flash-lite',
-        needsImage: false,
-        prompt: MESSAGE_TAGS_TEXT_EXTRACTION,
-        descriptionSourceFields: ['visual_aspects'],
-        checks: ['tags.any', 'tags.visual_aspects'],
+        type: 'parallel',
+        tasks: [
+          // Sub-etapa secuencial: análisis visual
+          {
+            type: 'sequential',
+            tasks: [
+              {
+                name: 'vision_visual_aspects',
+                type: 'VisionDescriptionTask',
+                model: 'Gemini',
+                modelName: 'gemini-2.5-flash-lite',
+                needsImage: true,
+                sequential: false,
+                prompts: [MESSAGE_ANALYZER_VISUAL_ASPECTS],
+                resolution: 'low',
+                imagesPerBatch: 1,
+                promptDependentField: null,
+                checks: ['descriptions.visual_aspects.genre'],
+                visualAspects: true,
+              },
+              {
+                name: 'tags_visual_aspects',
+                type: 'TagTask',
+                model: 'Gemini',
+                modelName: 'gemini-2.5-flash-lite',
+                needsImage: false,
+                prompt: MESSAGE_TAGS_TEXT_EXTRACTION,
+                descriptionSourceFields: ['visual_aspects'],
+                checks: ['tags.any', 'tags.visual_aspects'],
+              },
+              {
+                name: 'vision_context_story_accents',
+                type: 'VisionDescriptionTask',
+                model: 'Gemini',
+                modelName: 'gemini-2.5-flash-lite',
+                needsImage: true,
+                sequential: false,
+                prompts: [MESSAGE_ANALYZER_GEMINI_CONTEXT_STORY_ACCENTS],
+                resolution: 'high',
+                imagesPerBatch: 1,
+                promptDependentField: null,
+                checks: [
+                  'descriptions.context',
+                  'descriptions.story',
+                  'descriptions.visual_accents',
+                ],
+              },
+              {
+                name: 'tags_context_story',
+                type: 'TagTask',
+                model: 'Gemini',
+                modelName: 'gemini-2.0-flash',
+                needsImage: false,
+                prompt: MESSAGE_TAGS_TEXT_EXTRACTION,
+                descriptionSourceFields: ['context', 'story'],
+                checks: ['tags.any', 'tags.context_story'],
+              },
+              {
+                name: 'tags_visual_accents',
+                type: 'TagTask',
+                model: 'Gemini',
+                modelName: 'gemini-2.0-flash',
+                needsImage: false,
+                prompt: MESSAGE_TAGS_TEXT_EXTRACTION,
+                descriptionSourceFields: ['visual_accents'],
+                checks: ['tags.visual_accents'],
+              },
+              {
+                name: 'chunks_context_story_visual_accents',
+                type: 'ChunkTask',
+                prompt: null,
+                model: null,
+                needsImage: false,
+                descriptionSourceFields: ['context', 'story', 'visual_accents'],
+                descriptionsChunksMethod: {
+                  context: { type: 'split_by_size', maxLength: 250 },
+                  story: { type: 'split_by_size', maxLength: 250 },
+                  visual_accents: { type: 'split_by_size', maxLength: 15 },
+                },
+                checks: ['descriptionChunks.any', 'descriptionChunk#*.embedding'],
+              },
+              {
+                name: 'topological_tags',
+                type: 'VisionTopologicalTask',
+                model: 'Gemini',
+                modelName: 'gemini-2.0-flash',
+                needsImage: true,
+                sequential: false,
+                resolution: 'low',
+                prompts: [MESSAGE_ANALYZER_GPT_TOPOLOGIC_TAGS],
+                imagesPerBatch: 1,
+                useGuideLines: false,
+                promptDependentField: null,
+                checks: ['tags.topological'],
+              },
+            ],
+          },
+          // Sub-etapa paralela: análisis artístico
+          {
+            type: 'sequential',
+            tasks: [
+              {
+                name: 'vision_artistic',
+                type: 'VisionDescriptionTask',
+                model: 'GPT',
+                modelName: 'gpt-5-chat-latest',
+                needsImage: true,
+                sequential: false,
+                prompts: [MESSAGE_ANALYZER_GEMINI_CONTEXT_ARTISTIC_SCORES],
+                resolution: 'high',
+                imagesPerBatch: 6,
+                batchAPI: true,
+                promptDependentField: null,
+                checks: ['descriptions.artistic_scores'],
+              },
+            ],
+          },
+        ],
       },
-      {
-        name: 'vision_context_story_accents',
-        type: 'VisionDescriptionTask',
-        model: 'Gemini',
-        modelName: 'gemini-2.5-flash-lite',
-        needsImage: true,
-        sequential: false,
-        prompts: [MESSAGE_ANALYZER_GEMINI_CONTEXT_STORY_ACCENTS],
-        resolution: 'high',
-        imagesPerBatch: 1,
-        promptDependentField: null,
-        checks: ['descriptions.context', 'descriptions.story', 'descriptions.visual_accents'],
-      },
-      {
-        name: 'tags_context_story',
-        type: 'TagTask',
-        model: 'Gemini',
-        modelName: 'gemini-2.0-flash',
-        needsImage: false,
-        prompt: MESSAGE_TAGS_TEXT_EXTRACTION,
-        descriptionSourceFields: ['context', 'story'],
-        checks: ['tags.any', 'tags.context_story'],
-      },
-      {
-        name: 'tags_visual_accents',
-        type: 'TagTask',
-        model: 'Gemini',
-        modelName: 'gemini-2.0-flash',
-        needsImage: false,
-        prompt: MESSAGE_TAGS_TEXT_EXTRACTION,
-        descriptionSourceFields: ['visual_accents'],
-        checks: ['tags.visual_accents'],
-      },
-      {
-        name: 'chunks_context_story_visual_accents',
-        type: 'ChunkTask',
-        prompt: null,
-        model: null,
-        needsImage: false,
-        descriptionSourceFields: ['context', 'story', 'visual_accents'],
-        descriptionsChunksMethod: {
-          context: { type: 'split_by_size', maxLength: 250 },
-          story: { type: 'split_by_size', maxLength: 250 },
-          visual_accents: { type: 'split_by_size', maxLength: 15 },
-        },
-        checks: ['descriptionChunks.any', 'descriptionChunk#*.embedding'],
-      },
-      {
-        name: 'topological_tags',
-        type: 'VisionTopologicalTask',
-        model: 'Gemini',
-        modelName: 'gemini-2.0-flash',
-        needsImage: true,
-        sequential: false,
-        resolution: 'low',
-        prompts: [MESSAGE_ANALYZER_GPT_TOPOLOGIC_TAGS],
-        imagesPerBatch: 1,
-        useGuideLines: false,
-        promptDependentField: null,
-        checks: ['tags.topological'],
-      },
-      // {
-      //   name: 'vision_artistic',
-      //   type: 'VisionDescriptionTask',
-      //   model: 'GPT',
-      //   modelName: 'gpt-5-chat-latest',
-      //   needsImage: true,
-      //   sequential: false,
-      //   prompts: [MESSAGE_ANALYZER_GEMINI_CONTEXT_ARTISTIC_SCORES],
-      //   resolution: 'high',
-      //   imagesPerBatch: 6,
-      //   batchAPI: true,
-      //   promptDependentField: null,
-      //   checks: ['descriptions.artistic_scores'],
-      // },
     ],
   },
   // PAYLOAD:
@@ -192,48 +239,58 @@ export const packages = [
   {
     id: 'global_embeddings',
     isPreprocess: false,
-    tasks: [
+    stages: [
       {
-        name: 'review_embeddings_tags',
-        type: 'GlobalEmbeddingsTagsTask',
-        isGlobal: true,
+        type: 'sequential',
+        tasks: [
+          {
+            name: 'review_embeddings_tags',
+            type: 'GlobalEmbeddingsTagsTask',
+            isGlobal: true,
+          },
+        ],
       },
     ],
   },
-
-  // {
-  //   name: 'visual_detections_task',
-  //   type: 'VisualDetectionTask',
-  //   needsImage: true,
-  //   categories: [
-  //     {
-  //       name: 'person',
-  //       min_box_size: 80,
-  //       max_box_area_ratio: 1,
-  //       color: 'red',
-  //     },
-  //     {
-  //       name: 'animal',
-  //       min_box_size: 90,
-  //       max_box_area_ratio: 0.8,
-  //       color: 'yellow',
-  //     },
-  //     {
-  //       name: 'prominent object',
-  //       min_box_size: 100,
-  //       max_box_area_ratio: 0.8,
-  //       color: 'green',
-  //     },
-  //     {
-  //       name: 'architectural feature',
-  //       min_box_size: 100,
-  //       max_box_area_ratio: 0.8,
-  //       color: 'orange',
-  //     },
-  //   ],
-  // },
 ]
 
+/**
+ * Extrae todas las tareas de manera plana desde la estructura de stages
+ * Útil para operaciones que necesiten acceso a todas las tareas individuales
+ */
+export const extractAllTasks = (packageId: string): any[] => {
+  const pkg = packages.find((p) => p.id === packageId)
+  if (!pkg || !('stages' in pkg) || !pkg.stages) {
+    return []
+  }
+
+  const extractFromStages = (stages: any[]): any[] => {
+    const allTasks: any[] = []
+
+    for (const stage of stages) {
+      if (stage.tasks) {
+        for (const taskOrStage of stage.tasks) {
+          if (taskOrStage.name && taskOrStage.type) {
+            // Es una tarea individual
+            allTasks.push(taskOrStage)
+          } else if (taskOrStage.type && taskOrStage.tasks) {
+            // Es un stage anidado, extraer recursivamente
+            allTasks.push(...extractFromStages([taskOrStage]))
+          }
+        }
+      }
+    }
+
+    return allTasks
+  }
+
+  return extractFromStages(pkg.stages)
+}
+
+/**
+ * Convierte la estructura de stages a la estructura esperada por el runner
+ * (AnalyzerTask | AnalyzerTask[])[] donde arrays = tareas paralelas
+ */
 export const getTaskList = (
   packageId: string,
   process: AnalyzerProcess
@@ -284,14 +341,60 @@ export const getTaskList = (
     return task
   }
 
-  // Procesar las tareas manteniendo la estructura de grupos
-  return pkg.tasks.map((taskOrGroup) => {
-    if (Array.isArray(taskOrGroup)) {
-      // Es un grupo paralelo - crear todas las tareas
-      return taskOrGroup.map(createTask)
-    } else {
-      // Es una tarea individual - crearla
-      return createTask(taskOrGroup)
+  // Función auxiliar para procesar un stage y convertirlo a la estructura esperada
+  const processStage = (stage: any): (AnalyzerTask | AnalyzerTask[])[] => {
+    if (stage.type === 'parallel') {
+      // Para stages paralelos, todas las tareas van en un solo array
+      const parallelTasks: AnalyzerTask[] = []
+
+      for (const taskOrStage of stage.tasks) {
+        if (taskOrStage.name && taskOrStage.type) {
+          // Es una tarea individual
+          parallelTasks.push(createTask(taskOrStage))
+        } else if (taskOrStage.type && taskOrStage.tasks) {
+          // Es un stage anidado - procesar y agregar sus resultados
+          const nestedResults = processStage(taskOrStage)
+          for (const nestedResult of nestedResults) {
+            if (Array.isArray(nestedResult)) {
+              parallelTasks.push(...nestedResult)
+            } else {
+              parallelTasks.push(nestedResult)
+            }
+          }
+        }
+      }
+
+      return parallelTasks.length > 0 ? [parallelTasks] : []
+    } else if (stage.type === 'sequential') {
+      // Para stages secuenciales, cada tarea/grupo va por separado
+      const result: (AnalyzerTask | AnalyzerTask[])[] = []
+
+      for (const taskOrStage of stage.tasks) {
+        if (taskOrStage.name && taskOrStage.type) {
+          // Es una tarea individual
+          result.push(createTask(taskOrStage))
+        } else if (taskOrStage.type && taskOrStage.tasks) {
+          // Es un stage anidado
+          const nestedResults = processStage(taskOrStage)
+          result.push(...nestedResults)
+        }
+      }
+
+      return result
     }
-  })
+
+    return []
+  }
+
+  // Procesar todos los stages
+  const allResults: (AnalyzerTask | AnalyzerTask[])[] = []
+
+  if ('stages' in pkg && pkg.stages) {
+    for (const stage of pkg.stages) {
+      const stageResults = processStage(stage)
+      allResults.push(...stageResults)
+    }
+  }
+
+  return allResults
 }

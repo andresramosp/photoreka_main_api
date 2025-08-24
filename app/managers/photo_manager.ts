@@ -79,8 +79,8 @@ export default class PhotoManager {
       status: p.status,
       originalFileName: p.originalFileName,
       descriptions: {
-        visualAspects: p.descriptions?.visual_aspects || [],
-        artisticScores: p.descriptions?.artistic_scores || [],
+        visual_aspects: p.descriptions?.visual_aspects || [],
+        artistic_scores: p.descriptions?.artistic_scores || [],
       },
     }))
   }
