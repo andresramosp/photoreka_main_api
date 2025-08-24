@@ -32,10 +32,10 @@ export class VisionDescriptionTask extends AnalyzerTask {
     // Limpiar requests fallidos al inicio del proceso
     this.failedRequests = []
 
-    if (this.model == 'Gemini' || analyzerProcess.isFastMode || pendingPhotos.length < 10) {
-      await this.processWithDirectAPI(pendingPhotos)
-    } else {
+    if (this.batchAPI && pendingPhotos.length > this.imagesPerBatch) {
       await this.processWithBatchAPI(pendingPhotos)
+    } else {
+      await this.processWithDirectAPI(pendingPhotos)
     }
 
     // Limpiar al final del proceso completo

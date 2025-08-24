@@ -142,9 +142,6 @@ export default class AnalyzerProcessRunner {
           ? taskOrGroup.map((t) => t.name).join(', ')
           : taskOrGroup.name
         logger.error(`Error en tarea(s) ${taskNames}:`, error)
-        throw new Exception(`[ERROR] Error en tarea(s) ${taskNames}: ${error.message}`, 500, {
-          cause: error,
-        })
       }
     }
 

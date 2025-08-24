@@ -78,7 +78,10 @@ export default class PhotoManager {
       thumbnailUrl: p.thumbnailUrl,
       status: p.status,
       originalFileName: p.originalFileName,
-      visualAspects: p.descriptions?.visual_aspects || [],
+      descriptions: {
+        visualAspects: p.descriptions?.visual_aspects || [],
+        artisticScores: p.descriptions?.artistic_scores || [],
+      },
     }))
   }
 

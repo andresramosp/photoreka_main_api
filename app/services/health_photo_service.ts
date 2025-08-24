@@ -36,6 +36,8 @@ export default class HealthPhotoService {
     push('descriptions.story', !!d.story)
     push('descriptions.visual_accents', !!d.visual_accents)
 
+    // push('descriptions.artistic_scores', !!d.artistic_scores)
+
     const visualAspects = d.visual_aspects || {}
     push(
       'descriptions.visual_aspects.genre',

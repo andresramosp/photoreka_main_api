@@ -9,7 +9,10 @@ import { VisualColorEmbeddingTask } from '#models/analyzer/visualColorEmbeddingT
 import { VisualDetectionTask } from '#models/analyzer/visualDetectionTask'
 import { VisualEmbeddingTask } from '#models/analyzer/visualEmbeddingTask'
 import { GlobalEmbeddingsTagsTask } from '#models/analyzer/globalEmbeddingsTagsTask'
-import { MESSAGE_ANALYZER_GEMINI_CONTEXT_STORY_ACCENTS } from './utils/prompts/descriptions.js'
+import {
+  MESSAGE_ANALYZER_GEMINI_CONTEXT_ARTISTIC_SCORES,
+  MESSAGE_ANALYZER_GEMINI_CONTEXT_STORY_ACCENTS,
+} from './utils/prompts/descriptions.js'
 import {
   MESSAGE_ANALYZER_GPT_TOPOLOGIC_TAGS,
   MESSAGE_TAGS_TEXT_EXTRACTION,
@@ -26,26 +29,26 @@ export const packages = [
 
       // Segundo grupo: embeddings en paralelo
       [
-        {
-          name: 'metadata_extraction',
-          type: 'MetadataTask',
-          needsImage: false,
-          onlyIfNeeded: true,
-          checks: ['descriptions.visual_aspects.orientation'],
-        },
-        {
-          name: 'clip_embeddings',
-          type: 'VisualEmbeddingTask',
-          needsImage: true,
-          onlyIfNeeded: true,
-          checks: ['photo.embedding'],
-        },
-        {
-          name: 'visual_color_embedding_task',
-          type: 'VisualColorEmbeddingTask',
-          needsImage: true,
-          checks: ['photo.color_histogram'],
-        },
+        // {
+        //   name: 'metadata_extraction',
+        //   type: 'MetadataTask',
+        //   needsImage: false,
+        //   onlyIfNeeded: true,
+        //   checks: ['descriptions.visual_aspects.orientation'],
+        // },
+        // {
+        //   name: 'clip_embeddings',
+        //   type: 'VisualEmbeddingTask',
+        //   needsImage: true,
+        //   onlyIfNeeded: true,
+        //   checks: ['photo.embedding'],
+        // },
+        // {
+        //   name: 'visual_color_embedding_task',
+        //   type: 'VisualColorEmbeddingTask',
+        //   needsImage: true,
+        //   checks: ['photo.color_histogram'],
+        // },
       ],
     ],
   },
@@ -78,7 +81,6 @@ export const packages = [
           checks: ['descriptions.visual_aspects.orientation'],
         },
       ],
-      // Segunda tarea: vision aspects (secuencial)
       {
         name: 'vision_visual_aspects',
         type: 'VisionDescriptionTask',
@@ -93,7 +95,6 @@ export const packages = [
         checks: ['descriptions.visual_aspects.genre'],
         visualAspects: true,
       },
-      // Tercera tarea: tags visual aspects (secuencial)
       {
         name: 'tags_visual_aspects',
         type: 'TagTask',
@@ -104,7 +105,6 @@ export const packages = [
         descriptionSourceFields: ['visual_aspects'],
         checks: ['tags.any', 'tags.visual_aspects'],
       },
-      // Cuarta tarea: vision context story accents (secuencial)
       {
         name: 'vision_context_story_accents',
         type: 'VisionDescriptionTask',
@@ -126,7 +126,7 @@ export const packages = [
         needsImage: false,
         prompt: MESSAGE_TAGS_TEXT_EXTRACTION,
         descriptionSourceFields: ['context', 'story'],
-        checks: ['tags.any', 'tags.context_story'], // 'tagPhoto#*.tag#*.embedding' Mejor lanzar el review global que relanzar toda la task completa, al menos hasta que se subdivida
+        checks: ['tags.any', 'tags.context_story'],
       },
       {
         name: 'tags_visual_accents',
@@ -166,6 +166,20 @@ export const packages = [
         promptDependentField: null,
         checks: ['tags.topological'],
       },
+      // {
+      //   name: 'vision_artistic',
+      //   type: 'VisionDescriptionTask',
+      //   model: 'GPT',
+      //   modelName: 'gpt-5-chat-latest',
+      //   needsImage: true,
+      //   sequential: false,
+      //   prompts: [MESSAGE_ANALYZER_GEMINI_CONTEXT_ARTISTIC_SCORES],
+      //   resolution: 'high',
+      //   imagesPerBatch: 6,
+      //   batchAPI: true,
+      //   promptDependentField: null,
+      //   checks: ['descriptions.artistic_scores'],
+      // },
     ],
   },
   // PAYLOAD:

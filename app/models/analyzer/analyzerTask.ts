@@ -14,6 +14,7 @@ export abstract class AnalyzerTask {
   declare modelName: ModelName
   declare data: any
   declare needsImage: boolean
+  declare batchAPI: boolean
   declare analyzerProcess: AnalyzerProcess
   declare onlyIfNeeded: boolean
   declare isGlobal: boolean

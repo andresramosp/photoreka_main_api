@@ -30,6 +30,14 @@ export default class AuthController {
         }
       }
 
+      // Verificar si el email ya está registrado
+      const existingUser = await User.findBy('email', payload.email)
+      if (existingUser) {
+        return response.badRequest({
+          message: 'Email already in use',
+        })
+      }
+
       // Importar enum y función para usage
       const tier = UsageTier[payload.usageTier as keyof typeof UsageTier] || UsageTier.BASIC
       const usage = getDefaultUsageByTier(tier)
