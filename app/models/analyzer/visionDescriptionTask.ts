@@ -283,7 +283,7 @@ export class VisionDescriptionTask extends AnalyzerTask {
         return await this.modelsService.getGPTResponse(
           prompt,
           images,
-          'gpt-5-chat-latest',
+          this.modelName,
           null,
           0,
           false
