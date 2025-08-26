@@ -32,7 +32,10 @@ export class VisionDescriptionTask extends AnalyzerTask {
     // Limpiar requests fallidos al inicio del proceso
     this.failedRequests = []
 
-    if (this.batchAPI && pendingPhotos.length >= this.imagesPerBatch) {
+    if (
+      this.batchAPI &&
+      (analyzerProcess.mode !== 'retry_process' || pendingPhotos.length > this.imagesPerBatch * 2)
+    ) {
       await this.processWithBatchAPI(pendingPhotos)
     } else {
       await this.processWithDirectAPI(pendingPhotos)
