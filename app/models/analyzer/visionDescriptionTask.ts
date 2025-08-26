@@ -32,10 +32,10 @@ export class VisionDescriptionTask extends AnalyzerTask {
     // Limpiar requests fallidos al inicio del proceso
     this.failedRequests = []
 
-    if (this.model == 'Gemini' || analyzerProcess.isFastMode || pendingPhotos.length < 10) {
-      await this.processWithDirectAPI(pendingPhotos)
-    } else {
+    if (this.batchAPI && pendingPhotos.length >= this.imagesPerBatch) {
       await this.processWithBatchAPI(pendingPhotos)
+    } else {
+      await this.processWithDirectAPI(pendingPhotos)
     }
 
     // Limpiar al final del proceso completo
@@ -171,13 +171,15 @@ export class VisionDescriptionTask extends AnalyzerTask {
 
   private async processSingleBatch(batchPhotos: Photo[]): Promise<void> {
     const prompts = this.prompts.map((p) => (typeof p === 'function' ? p(batchPhotos) : p))
-    const imagesPerRequest = 4
+    const imagesPerRequest = this.imagesPerBatch
     const maxRetries = 3
     let attempt = 0
     let completed = false
     let batchId: string | null = null
     let status = 'in_progress'
     let requests: any[] = []
+
+    const isGpt5NonChat = ['gpt-5', 'gpt-5-mini', 'gpt-5-nano'].includes(this.modelName)
 
     while (attempt < maxRetries && !completed) {
       // Generar requests en cada intento para evitar side effects
@@ -192,20 +194,25 @@ export class VisionDescriptionTask extends AnalyzerTask {
             detail: this.resolution,
           },
         }))
+        const body: any = {
+          model: this.modelName,
+          messages: [
+            { role: 'system', content: prompts[0] },
+            { role: 'user', content: userContent },
+          ],
+        }
+        if (!isGpt5NonChat) {
+          body.temperature = 0.1
+          body.max_tokens = 15000
+        } else {
+          body.reasoning_effort = 'low'
+          body.verbosity = 'low'
+        }
         requests.push({
           custom_id: customId,
           method: 'POST',
           url: '/v1/chat/completions',
-          body: {
-            model: 'gpt-4.1', // 'gpt-5-chat-latest' no soporta aun Batch API y el gpt-5 desvaría.
-            temperature: 0.1,
-            // response_format: { type: 'json_object' },
-            max_tokens: 15000,
-            messages: [
-              { role: 'system', content: prompts[0] },
-              { role: 'user', content: userContent },
-            ],
-          },
+          body,
         })
       }
 
@@ -247,8 +254,10 @@ export class VisionDescriptionTask extends AnalyzerTask {
       try {
         const items = res.items || []
         const photoIds = res.custom_id.split('-').map(Number)
+
         if (items.length !== photoIds.length) {
           logger.error(`Batch mismatch ${res.custom_id}: ${items.length} vs ${photoIds.length}`)
+          logger.error(`Items structure: ${JSON.stringify(items, null, 2)}`)
           this.failedRequests.push(...batchPhotos.filter((photo) => photoIds.includes(photo.id)))
           return
         }
@@ -283,7 +292,7 @@ export class VisionDescriptionTask extends AnalyzerTask {
         return await this.modelsService.getGPTResponse(
           prompt,
           images,
-          'gpt-5-chat-latest',
+          this.modelName,
           null,
           0,
           false

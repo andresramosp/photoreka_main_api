@@ -15,7 +15,13 @@ import AnalyzerProcess from './analyzer/analyzerProcess.js'
 import DetectionPhoto from './detection_photo.js'
 import Collection from './collection.js'
 
-export type DescriptionType = 'context' | 'story' | 'visual_accents' | 'visual_aspects'
+export type DescriptionType =
+  | 'context'
+  | 'story'
+  | 'visual_accents'
+  | 'visual_aspects'
+  | 'artistic_review'
+  | 'artistic_scores'
 export type PhotoDescriptions = Partial<Record<DescriptionType, string | Record<string, any> | any>>
 export type PhotoStatus = 'uploaded' | 'preprocessing' | 'preprocessed' | 'processing' | 'processed'
 

@@ -19,6 +19,8 @@ const s3 = new S3Client({
 
 interface PhotoMetadata {
   orientation: string[]
+  temperature?: string[]
+  palette?: string[]
   width?: number
   height?: number
   fileSize?: number
@@ -59,17 +61,47 @@ export class MetadataTask extends AnalyzerTask {
 
     logger.debug(`Procesando metadatos para ${photosToProcess.length} fotos`)
 
-    // Procesar fotos de forma secuencial para optimizar el uso de memoria
-    for (const photo of photosToProcess) {
-      try {
-        const metadata = await this.extractPhotoMetadata(photo)
-        this.data[photo.id] = metadata
+    // Procesar fotos en lotes de 5 en paralelo para optimizar I/O
+    const BATCH_SIZE = 5
+    const batches = []
 
-        // Commit individual para liberar memoria progresivamente
-        await this.commit([photo])
+    for (let i = 0; i < photosToProcess.length; i += BATCH_SIZE) {
+      batches.push(photosToProcess.slice(i, i + BATCH_SIZE))
+    }
+
+    for (const batch of batches) {
+      try {
+        // Procesar el lote en paralelo
+        const results = await Promise.allSettled(
+          batch.map(async (photo) => {
+            try {
+              const metadata = await this.extractPhotoMetadata(photo)
+              this.data[photo.id] = metadata
+              return { photo, success: true }
+            } catch (error) {
+              logger.error(
+                `Error procesando metadatos para foto ${photo.id} (${photo.name}):`,
+                error
+              )
+              return { photo, success: false, error }
+            }
+          })
+        )
+
+        // Filtrar solo las fotos procesadas exitosamente para el commit
+        const successfulPhotos = results
+          .filter((result) => result.status === 'fulfilled' && result.value.success)
+          .map((result) => (result as PromiseFulfilledResult<any>).value.photo)
+
+        if (successfulPhotos.length > 0) {
+          // Commit del lote completo para liberar memoria progresivamente
+          await this.commit(successfulPhotos)
+        }
+
+        logger.debug(`Lote procesado: ${successfulPhotos.length}/${batch.length} fotos exitosas`)
       } catch (error) {
-        logger.error(`Error procesando metadatos para foto ${photo.id} (${photo.name}):`, error)
-        // Continuar con la siguiente foto en caso de error
+        logger.error(`Error procesando lote de ${batch.length} fotos:`, error)
+        // Continuar con el siguiente lote en caso de error
       }
     }
   }
@@ -107,6 +139,28 @@ export class MetadataTask extends AnalyzerTask {
       // Usar sharp para obtener metadatos de la imagen
       const sharpMetadata = await sharp(buffer).metadata()
 
+      // Obtener estadísticas de color para calcular temperature y detectar color/B&W
+      const imageStats = await sharp(buffer).stats()
+
+      // Calcular temperature basada en los canales RGB promedio
+      const rAvg = imageStats.channels[0].mean
+      const bAvg = imageStats.channels[2].mean
+
+      let temperature: string
+      const warmCoolDiff = rAvg - bAvg
+      const threshold = 10 // Umbral para considerar neutral
+
+      if (warmCoolDiff > threshold) {
+        temperature = 'warm'
+      } else if (warmCoolDiff < -threshold) {
+        temperature = 'cold'
+      } else {
+        temperature = 'neutral'
+      }
+
+      // Detectar si es color o blanco y negro
+      const paletteType = await this.detectImagePalette(buffer)
+
       // Determinar orientación basada en dimensiones
       const width = sharpMetadata.width || 0
       const height = sharpMetadata.height || 0
@@ -125,6 +179,8 @@ export class MetadataTask extends AnalyzerTask {
 
       return {
         orientation: [orientation],
+        temperature: [temperature],
+        palette: [paletteType],
         width,
         height,
         fileSize,
@@ -136,7 +192,103 @@ export class MetadataTask extends AnalyzerTask {
       // Retornar datos mínimos en caso de error
       return {
         orientation: ['unknown'],
+        temperature: ['neutral'],
+        palette: ['color'], // Asumir color por defecto en caso de error
       }
+    }
+  }
+
+  private async detectImagePalette(buffer: Buffer): Promise<string> {
+    try {
+      // Obtener información básica de la imagen
+      const metadata = await sharp(buffer).metadata()
+
+      // Si la imagen tiene solo 1 canal, es definitivamente B&W
+      if (metadata.channels && metadata.channels <= 1) {
+        return 'black and white'
+      }
+
+      // Para imágenes RGB, usar el método TomB (análisis píxel por píxel)
+      if (metadata.channels && metadata.channels >= 3) {
+        // Redimensionar imagen para optimizar procesamiento (manteniendo aspect ratio)
+        const resized = await sharp(buffer)
+          .resize(100, 100, { fit: 'inside' })
+          .raw()
+          .toBuffer({ resolveWithObject: true })
+        const { data, info } = resized
+
+        let totalDiff = 0
+        const pixels = info.width * info.height
+
+        // Para cada píxel, calcular diferencias absolutas entre canales R-G, R-B, G-B
+        for (let i = 0; i < data.length; i += 3) {
+          const r = data[i]
+          const g = data[i + 1]
+          const b = data[i + 2]
+
+          const rg = Math.abs(r - g)
+          const rb = Math.abs(r - b)
+          const gb = Math.abs(g - b)
+
+          totalDiff += rg + rb + gb
+        }
+
+        // Normalizar por número de píxeles y rango máximo (255 * 3)
+        const colorFactor = totalDiff / (pixels * 255 * 3)
+
+        // Umbrales ajustables para determinismo
+        const COLOR_THRESHOLD_HIGH = 0.08 // 8% - claramente color
+        const COLOR_THRESHOLD_LOW = 0.02 // 2% - claramente B&W
+
+        if (colorFactor >= COLOR_THRESHOLD_HIGH) {
+          return 'color'
+        } else if (colorFactor <= COLOR_THRESHOLD_LOW) {
+          return 'black and white'
+        } else {
+          // Zona gris: aplicar segundo criterio basado en saturación
+          return await this.detectColorBySaturation(buffer)
+        }
+      }
+
+      // Fallback
+      return 'color'
+    } catch (error) {
+      logger.error('Error detectando palette de imagen:', error)
+      return 'color' // Asumir color por defecto en caso de error
+    }
+  }
+
+  private async detectColorBySaturation(buffer: Buffer): Promise<string> {
+    try {
+      // Convertir a HSV para analizar saturación
+      const { data, info } = await sharp(buffer)
+        .resize(50, 50, { fit: 'inside' })
+        .raw()
+        .toBuffer({ resolveWithObject: true })
+
+      let totalSaturation = 0
+      const pixels = info.width * info.height
+
+      // Convertir RGB a HSV y analizar saturación
+      for (let i = 0; i < data.length; i += 3) {
+        const r = data[i] / 255
+        const g = data[i + 1] / 255
+        const b = data[i + 2] / 255
+
+        const max = Math.max(r, g, b)
+        const min = Math.min(r, g, b)
+        const saturation = max === 0 ? 0 : (max - min) / max
+
+        totalSaturation += saturation
+      }
+
+      const avgSaturation = totalSaturation / pixels
+      const SATURATION_THRESHOLD = 0.05 // 5% de saturación promedio
+
+      return avgSaturation > SATURATION_THRESHOLD ? 'color' : 'black and white'
+    } catch (error) {
+      logger.error('Error analizando saturación:', error)
+      return 'color'
     }
   }
 
@@ -167,6 +319,8 @@ export class MetadataTask extends AnalyzerTask {
           // Estructurar los datos como visual_aspects siguiendo el patrón de visionDescriptionTask
           const visualAspectsData = {
             orientation: metadata.orientation,
+            ...(metadata.temperature && { temperature: metadata.temperature }),
+            ...(metadata.palette && { palette: metadata.palette }),
             // Se pueden agregar más campos aquí en el futuro
             ...(metadata.width &&
               metadata.height && {

@@ -11,7 +11,16 @@ import chalk from 'chalk' // ← NUEVO
 import PhotoManager from '../managers/photo_manager.js'
 import HealthPhotoService from './health_photo_service.js'
 import { has } from 'lodash'
-import { getTaskList } from '../analyzer_packages.js'
+import { packages } from '../analyzer_packages.js'
+import { VisionDescriptionTask } from '#models/analyzer/visionDescriptionTask'
+import { VisionTopologicalTask } from '#models/analyzer/visionTopologicalTask'
+import { TagTask } from '#models/analyzer/tagTask'
+import { ChunkTask } from '#models/analyzer/chunkTask'
+import { MetadataTask } from '#models/analyzer/metadataTask'
+import { VisualEmbeddingTask } from '#models/analyzer/visualEmbeddingTask'
+import { VisualColorEmbeddingTask } from '#models/analyzer/visualColorEmbeddingTask'
+import { VisualDetectionTask } from '#models/analyzer/visualDetectionTask'
+import { GlobalEmbeddingsTagsTask } from '#models/analyzer/globalEmbeddingsTagsTask'
 
 const logger = Logger.getInstance('AnalyzerProcess')
 logger.setLevel(LogLevel.DEBUG)
@@ -103,50 +112,17 @@ export default class AnalyzerProcessRunner {
       await this.process.preloadPhotoHealth()
     }
 
-    // Obtener la estructura de tareas con grupos paralelos
-    const taskStructure = getTaskList(this.process.packageId, this.process)
-
-    for (const taskOrGroup of taskStructure) {
-      try {
-        if (Array.isArray(taskOrGroup)) {
-          // Es un grupo paralelo - ejecutar todas las tareas en paralelo
-          const groupNames = taskOrGroup.map((t) => t.getName()).join(', ')
-          await this.changeStage(
-            `\n\n *** Iniciando grupo paralelo ***${groupNames}\n${this.process.mode.toUpperCase()}\n\n`
-          )
-          const parallelPromises = taskOrGroup.map(async (task) => {
-            const pendingPhotos = await task.prepare(this.process)
-            if (pendingPhotos.length) {
-              await task.process(pendingPhotos, this.process)
-            }
-            return task
-          })
-
-          await Promise.all(parallelPromises)
-          await this.changeStage(`*** Grupo paralelo completado *** | ${groupNames}`)
-        } else {
-          // Es una tarea individual - ejecutar secuencialmente
-          const task = taskOrGroup
-          const pendingPhotos = await task.prepare(this.process)
-          if (pendingPhotos.length) {
-            await this.changeStage(
-              `\n\n *** Iniciando tarea *** | ${task.getName()} | Fotos: ${pendingPhotos.length} | ${this.process.mode.toUpperCase()} \n\n`,
-              task.name
-            )
-            await task.process(pendingPhotos, this.process)
-            await this.changeStage(`*** Tarea completada *** | ${task.getName()}`)
-          }
-        }
-      } catch (error) {
-        const taskNames = Array.isArray(taskOrGroup)
-          ? taskOrGroup.map((t) => t.name).join(', ')
-          : taskOrGroup.name
-        logger.error(`Error en tarea(s) ${taskNames}:`, error)
-        throw new Exception(`[ERROR] Error en tarea(s) ${taskNames}: ${error.message}`, 500, {
-          cause: error,
-        })
-      }
+    // CAMBIO: Usar stages directamente en lugar de getTaskList
+    const pkg = packages.find((p) => p.id === this.process.packageId)
+    if (!pkg || !pkg.stages) {
+      throw new Exception(`Package ${this.process.packageId} not found or has no stages`)
     }
+
+    // Asignar isPreprocess al proceso
+    this.process.isPreprocess = pkg.isPreprocess || false
+
+    // Ejecutar stages directamente
+    await this.executeStages(pkg.stages)
 
     await HealthPhotoService.updateSheetWithHealth(this.process)
 
@@ -170,6 +146,158 @@ export default class AnalyzerProcessRunner {
     this.handleAutoRetry()
 
     return { hasFailed, processId: this.process.id }
+  }
+
+  /**
+   * Ejecuta una lista de stages secuencialmente
+   */
+  private async executeStages(stages: any[], level: number = 0): Promise<void> {
+    for (const stage of stages) {
+      try {
+        await this.executeStage(stage, level)
+      } catch (error) {
+        const stageDescription = `stage ${stage.type} (${stage.tasks?.length || 0} items)`
+        logger.error(`Error en ${stageDescription}:`, error)
+      }
+    }
+  }
+
+  /**
+   * Ejecuta un stage (parallel o sequential)
+   */
+  private async executeStage(stage: any, level: number): Promise<void> {
+    const indent = '  '.repeat(level)
+    const stageType = stage.type || 'unknown'
+    const stageDescription = `${stageType.toUpperCase()} STAGE (${stage.tasks?.length || 0} items)`
+
+    await this.changeStage(
+      `${indent}*** Iniciando ${stageDescription} *** | ${this.process.mode.toUpperCase()}`
+    )
+
+    if (stage.type === 'parallel') {
+      // Ejecutar todas las tasks/stages en paralelo
+      const parallelPromises = stage.tasks.map(async (item: any) => {
+        if (this.isTaskDefinition(item)) {
+          const task = this.createTask(item)
+          await this.executeSingleTask(task, level + 1, true)
+        } else {
+          await this.executeStage(item, level + 1)
+        }
+      })
+
+      await Promise.all(parallelPromises)
+    } else if (stage.type === 'sequential') {
+      // Ejecutar las tasks/stages secuencialmente
+      for (const item of stage.tasks) {
+        if (this.isTaskDefinition(item)) {
+          const task = this.createTask(item)
+          await this.executeSingleTask(task, level + 1)
+        } else {
+          await this.executeStage(item, level + 1)
+        }
+      }
+    }
+
+    await this.changeStage(`${indent}*** ${stageDescription} completado ***`)
+  }
+
+  /**
+   * Ejecuta una tarea individual
+   */
+  private async executeSingleTask(
+    task: any,
+    level: number,
+    isParallel: boolean = false
+  ): Promise<void> {
+    const indent = '  '.repeat(level)
+    const taskName = task.getName()
+    const executionType = isParallel ? 'paralelo' : 'secuencial'
+
+    const pendingPhotos = await task.prepare(this.process)
+
+    if (pendingPhotos.length) {
+      if (!isParallel) {
+        await this.changeStage(
+          `${indent}*** Iniciando tarea ${executionType} *** | ${taskName} | Fotos: ${pendingPhotos.length} | ${this.process.mode.toUpperCase()}`,
+          task.name
+        )
+      }
+
+      logger.info(
+        `${indent}-> Ejecutando ${taskName} en ${executionType} | Fotos: ${pendingPhotos.length}`
+      )
+      await task.process(pendingPhotos, this.process)
+      logger.info(`${indent}-> Completado ${taskName}`)
+
+      if (!isParallel) {
+        await this.changeStage(`${indent}*** Tarea ${executionType} completada *** | ${taskName}`)
+      }
+    } else {
+      logger.info(`${indent}-> Saltando ${taskName} (sin fotos pendientes)`)
+    }
+  }
+
+  /**
+   * Determina si un item es una definición de tarea (no una instancia)
+   */
+  private isTaskDefinition(item: any): boolean {
+    return (
+      item && typeof item === 'object' && item.name && item.type && !item.getName // No es una instancia de tarea
+    )
+  }
+
+  /**
+   * Crea una instancia de tarea desde su definición
+   */
+  private createTask(taskData: any): any {
+    let task: any
+    switch (taskData.type) {
+      case 'VisionDescriptionTask':
+        task = new VisionDescriptionTask(this.process)
+        break
+      case 'VisionTopologicalTask':
+        task = new VisionTopologicalTask(this.process)
+        break
+      case 'TagTask':
+        task = new TagTask(this.process)
+        break
+      case 'ChunkTask':
+        task = new ChunkTask(this.process)
+        break
+      case 'MetadataTask':
+        task = new MetadataTask(this.process)
+        break
+      case 'VisualEmbeddingTask':
+        task = new VisualEmbeddingTask(this.process)
+        break
+      case 'VisualColorEmbeddingTask':
+        task = new VisualColorEmbeddingTask(this.process)
+        break
+      case 'VisualDetectionTask':
+        task = new VisualDetectionTask(this.process)
+        break
+      case 'GlobalEmbeddingsTagsTask':
+        task = new GlobalEmbeddingsTagsTask(this.process)
+        break
+      default:
+        throw new Error(`Unknown task type: ${taskData.type}`)
+    }
+
+    Object.assign(task, taskData)
+    return task
+  }
+
+  /**
+   * Obtiene una descripción legible del item para logging
+   */
+  private getItemDescription(item: any): string {
+    if (this.isTaskDefinition(item)) {
+      return `tarea ${item.name}`
+    } else if (item.type && item.tasks) {
+      return `stage ${item.type} (${item.tasks.length} items)`
+    } else {
+      return 'item desconocido'
+    }
   }
 
   /**

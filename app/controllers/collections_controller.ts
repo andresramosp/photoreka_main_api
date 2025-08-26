@@ -32,6 +32,10 @@ export default class CollectionsController {
           originalFileName: photo.originalFileName,
           thumbnailUrl: photo.thumbnailUrl,
           originalUrl: photo.originalUrl,
+          descriptions: {
+            visual_aspects: photo.descriptions?.visual_aspects || [],
+            artistic_scores: photo.descriptions?.artistic_scores || [],
+          },
         })),
       }))
 

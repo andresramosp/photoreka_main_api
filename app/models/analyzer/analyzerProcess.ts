@@ -16,6 +16,7 @@ export type AnalyzerMode =
   | 'remake_task'
   | 'remake_process'
   | 'retry_process'
+  | 'upgrade_with_package'
 export type ModelType = 'GPT' | 'Molmo' | 'Qwen' | 'Gemini'
 export type StageType =
   | 'init'
