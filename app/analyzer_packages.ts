@@ -105,7 +105,7 @@ export const packages = [
             checks: [
               'descriptions.visual_aspects.orientation',
               'descriptions.visual_aspects.temperature',
-              'descriptions.visual_aspects.color',
+              'descriptions.visual_aspects.palette',
             ],
           },
         ],
@@ -211,13 +211,15 @@ export const packages = [
           },
           // Sub-etapa paralela: análisis artístico
           {
+            // 1,38 EUR / 1000 fotos (reasoning effort: low)
+            // 0.86 EUR / 1000 fotos (reasoning effort: minimal)
             type: 'sequential',
             tasks: [
               {
                 name: 'vision_artistic',
                 type: 'VisionDescriptionTask',
                 model: 'GPT',
-                modelName: 'gpt-5-chat-latest',
+                modelName: 'gpt-5',
                 needsImage: true,
                 sequential: false,
                 prompts: [MESSAGE_ANALYZER_GEMINI_CONTEXT_ARTISTIC_SCORES],
@@ -260,7 +262,7 @@ export const packages = [
             name: 'vision_artistic',
             type: 'VisionDescriptionTask',
             model: 'GPT',
-            modelName: 'gpt-5-chat-latest',
+            modelName: 'gpt-5', //'gpt-5-chat-latest',
             needsImage: true,
             sequential: false,
             prompts: [MESSAGE_ANALYZER_GEMINI_CONTEXT_ARTISTIC_SCORES],

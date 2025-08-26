@@ -61,17 +61,47 @@ export class MetadataTask extends AnalyzerTask {
 
     logger.debug(`Procesando metadatos para ${photosToProcess.length} fotos`)
 
-    // Procesar fotos de forma secuencial para optimizar el uso de memoria
-    for (const photo of photosToProcess) {
-      try {
-        const metadata = await this.extractPhotoMetadata(photo)
-        this.data[photo.id] = metadata
+    // Procesar fotos en lotes de 5 en paralelo para optimizar I/O
+    const BATCH_SIZE = 5
+    const batches = []
 
-        // Commit individual para liberar memoria progresivamente
-        await this.commit([photo])
+    for (let i = 0; i < photosToProcess.length; i += BATCH_SIZE) {
+      batches.push(photosToProcess.slice(i, i + BATCH_SIZE))
+    }
+
+    for (const batch of batches) {
+      try {
+        // Procesar el lote en paralelo
+        const results = await Promise.allSettled(
+          batch.map(async (photo) => {
+            try {
+              const metadata = await this.extractPhotoMetadata(photo)
+              this.data[photo.id] = metadata
+              return { photo, success: true }
+            } catch (error) {
+              logger.error(
+                `Error procesando metadatos para foto ${photo.id} (${photo.name}):`,
+                error
+              )
+              return { photo, success: false, error }
+            }
+          })
+        )
+
+        // Filtrar solo las fotos procesadas exitosamente para el commit
+        const successfulPhotos = results
+          .filter((result) => result.status === 'fulfilled' && result.value.success)
+          .map((result) => (result as PromiseFulfilledResult<any>).value.photo)
+
+        if (successfulPhotos.length > 0) {
+          // Commit del lote completo para liberar memoria progresivamente
+          await this.commit(successfulPhotos)
+        }
+
+        logger.debug(`Lote procesado: ${successfulPhotos.length}/${batch.length} fotos exitosas`)
       } catch (error) {
-        logger.error(`Error procesando metadatos para foto ${photo.id} (${photo.name}):`, error)
-        // Continuar con la siguiente foto en caso de error
+        logger.error(`Error procesando lote de ${batch.length} fotos:`, error)
+        // Continuar con el siguiente lote en caso de error
       }
     }
   }

@@ -151,11 +151,13 @@ Analyze each image in depth and return a JSON array, one item per image, in the 
    
    - strangeness: Does the photo have a mysterious element that makes it special? Whether it's an everyday situation where something out of place raises an eyebrow, or a scene bathed in strange, dreamlike, surreal light, evaluate how unique or unusual the photo is. 
 
-   - social_message:  Does the photo convey a clear message, moral or social commentary? Does it make us think about something beyond the image itself? Evaluate how strong and clear that message is.
+   - message:  Does the photo convey a powerful message, whether social/human (in documentary/street photography) or more figurative/symbolic (in conceptual photography)? Does it invite reflection on the human condition or the world?
 
    - humor: Does the photo have a humorous element, whether intentional or accidental? It can be a funny situation, an ironic twist, or a visual pun. Evaluate how effectively the humor is conveyed.
 
-   - visual_games:Does the photo feature visual games, illusions, or paradoxes that create a playful or intriguing effect? This could include reflections, curious juxtapositions, or other elements that challenge the viewer’s perception, much like a magician would
+   - visual_games: Does the photo feature visual games, illusions, or paradoxes that create a playful or intriguing effect? This could include reflections, curious juxtapositions, or other elements that challenge the viewer’s perception, much like a magician would
+
+   - candidness: evaluates the spontaneity of the moment captured, whether it feels natural and unposed, and if it aligns with the principles of street photography.
 
 📌 **Output example:**
 \`\`\`json
@@ -169,6 +171,7 @@ Analyze each image in depth and return a JSON array, one item per image, in the 
       "social_message": x
       "humor": x,
       "visual_games": x,
+      "candidness": x,
     }
   },
   // ...

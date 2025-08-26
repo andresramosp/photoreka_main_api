@@ -154,6 +154,20 @@ export default class PhotoManager {
     return await query
   }
 
+  public async getPhotosForUpgradeWithPackage(userId?: string): Promise<Photo[]> {
+    const query = Photo.query()
+      .preload('analyzerProcess')
+      .preload('tags', (q) => q.preload('tag'))
+      .preload('descriptionChunks')
+      .orderBy('created_at', 'desc')
+
+    if (userId) {
+      query.where('user_id', userId)
+    }
+
+    return await query
+  }
+
   public async getPhotosForRemakeAll(userId?: string): Promise<Photo[]> {
     if (!userId) throw new Error('userId is required')
 
@@ -205,7 +219,6 @@ export default class PhotoManager {
     const query = Photo.query()
       .where('analyzer_process_id', processId)
       .preload('tags', (q) => q.preload('tag'))
-      .preload('detections')
       .preload('descriptionChunks')
       .preload('analyzerProcess')
       .orderBy('created_at', 'desc')
@@ -221,7 +234,6 @@ export default class PhotoManager {
     const query = Photo.query()
       .where('analyzer_process_id', processId)
       .preload('tags', (q) => q.preload('tag'))
-      // .preload('detections')
       .preload('descriptionChunks')
       .preload('analyzerProcess')
       .orderBy('created_at', 'desc')
@@ -243,14 +255,16 @@ export default class PhotoManager {
     isPreprocess?: boolean
   ): Promise<Photo[]> {
     switch (mode) {
-      case 'adding':
+      case 'adding': // las fotos nuevas
         return isPreprocess ? this.getPhotosForPreprocess(userId) : this.getPhotosForAdding(userId)
-      case 'remake_all':
+      case 'upgrade_with_package': // añade tasks a un proceso, no destructivo
+        return this.getPhotosForUpgradeWithPackage(userId)
+      case 'remake_all': // todas las fotos, destructivo
         return this.getPhotosForRemakeAll(userId)
-      case 'remake_process':
+      case 'remake_process': // rehacer un proceso, no destructivo
         if (!processId) throw new Error('processId required for remake_process mode')
         return this.getPhotosForRemakeProcess(processId)
-      case 'retry_process':
+      case 'retry_process': // reintetar un proceso, conservador, no destructivo
         if (!processId) throw new Error('processId required for retry_process mode')
         return this.getPhotosForRetryProcess(processId)
       default:

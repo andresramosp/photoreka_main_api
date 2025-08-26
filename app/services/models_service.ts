@@ -656,9 +656,8 @@ export default class ModelsService {
 
       if (isGpt5NonChat) {
         payload.max_completion_tokens = 15000
-        // payload.reasoning = {
-        //   effort: 'minimal',
-        // }
+        payload.reasoning_effort = 'low'
+        payload.verbosity = 'low'
       } else {
         payload.temperature = temperature
         payload.max_tokens = 15000

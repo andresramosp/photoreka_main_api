@@ -48,8 +48,18 @@ export default class HealthPhotoService {
       'descriptions.visual_aspects.orientation',
       !!(visualAspects.orientation && visualAspects.orientation.length > 0)
     )
+    push(
+      'descriptions.visual_aspects.temperature',
+      !!(visualAspects.temperature && visualAspects.temperature.length > 0)
+    )
+    push(
+      'descriptions.visual_aspects.palette',
+      !!(visualAspects.palette && visualAspects.palette.length > 0)
+    )
 
-    push('tags.any', photo.tags.length > 0)
+    'descriptions.visual_aspects.temperature',
+      'descriptions.visual_aspects.color',
+      push('tags.any', photo.tags.length > 0)
     push(
       'tags.context_story',
       photo.tags.some((t) => t.category === 'context_story')
