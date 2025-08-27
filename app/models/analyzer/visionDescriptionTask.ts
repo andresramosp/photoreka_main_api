@@ -54,7 +54,7 @@ export class VisionDescriptionTask extends AnalyzerTask {
       batches.push(batch)
     }
 
-    const maxConcurrency = 5 // Número de batches simultáneos
+    const maxConcurrency = 3 // Número de batches simultáneos
     const limit = pLimit(maxConcurrency)
 
     const processBatch = async (batch: Photo[]) => {
@@ -116,7 +116,7 @@ export class VisionDescriptionTask extends AnalyzerTask {
     if (!this.data) this.data = {}
 
     const imagesPerBatch = 200
-    const maxConcurrency = 5 // Número de batches simultáneos
+    const maxConcurrency = 6 // Número de batches simultáneos
 
     // Divide las fotos en batches de 200
     const batches: Photo[][] = []
@@ -175,7 +175,7 @@ export class VisionDescriptionTask extends AnalyzerTask {
   private async processSingleBatch(batchPhotos: Photo[]): Promise<void> {
     const prompts = this.prompts.map((p) => (typeof p === 'function' ? p(batchPhotos) : p))
     const imagesPerRequest = this.imagesPerBatch
-    const maxRetries = 3
+    const maxRetries = 1
     let attempt = 0
     let completed = false
     let batchId: string | null = null
@@ -228,7 +228,11 @@ export class VisionDescriptionTask extends AnalyzerTask {
       // Espera hasta que el batch cambie de estado o se agoten los reintentos
       while (status === 'in_progress' || status === 'finalizing' || status === 'validating') {
         await this.sleep(5000)
-        status = await this.modelsService.getBatchStatus(batchId)
+        try {
+          status = await this.modelsService.getBatchStatus(batchId)
+        } catch (error) {
+          logger.error(`Error al obtener status del batch ${batchId}:`, error)
+        }
       }
       if (status === 'completed') {
         completed = true
