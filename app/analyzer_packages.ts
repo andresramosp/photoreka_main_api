@@ -119,15 +119,17 @@ export const packages = [
             type: 'sequential',
             tasks: [
               {
+                // 0.3 EUR / 1000 fotos (gemini-2.5-flash, 4 imágenes por batch, low res)
+                // TODO: batchAPI: true,
                 name: 'vision_visual_aspects',
                 type: 'VisionDescriptionTask',
                 model: 'Gemini',
-                modelName: 'gemini-2.5-flash-lite',
+                modelName: 'gemini-2.5-flash',
                 needsImage: true,
                 sequential: false,
                 prompts: [MESSAGE_ANALYZER_VISUAL_ASPECTS],
                 resolution: 'low',
-                imagesPerBatch: 8,
+                imagesPerBatch: 4,
                 promptDependentField: null,
                 checks: ['descriptions.visual_aspects.genre'],
                 visualAspects: true,
