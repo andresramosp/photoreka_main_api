@@ -18,7 +18,7 @@ export class VisionTopologicalTask extends AnalyzerTask {
   declare prompts: Prompt[]
   declare resolution: 'low' | 'high'
   declare sequential: boolean
-  declare imagesPerBatch: number
+  declare imagesPerRequest: number
   declare promptDependentField: DescriptionType
   declare promptsNames: DescriptionType[]
   declare useGuideLines: boolean
@@ -76,8 +76,8 @@ export class VisionTopologicalTask extends AnalyzerTask {
     }
 
     const batches: Photo[][] = []
-    for (let i = 0; i < validPhotos.length; i += this.imagesPerBatch) {
-      const batch = validPhotos.slice(i, i + this.imagesPerBatch)
+    for (let i = 0; i < validPhotos.length; i += this.imagesPerRequest) {
+      const batch = validPhotos.slice(i, i + this.imagesPerRequest)
       batches.push(batch)
     }
 

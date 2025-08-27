@@ -79,7 +79,7 @@ export const packages = [
     id: 'process',
     isPreprocess: false,
     stages: [
-      // Etapa 1: embeddings básicos en paralelo
+      // Etapa 1: Metadata y color palette
       {
         type: 'parallel',
         tasks: [
@@ -89,13 +89,6 @@ export const packages = [
             needsImage: true,
             onlyIfNeeded: true,
             checks: ['photo.color_histogram'],
-          },
-          {
-            name: 'clip_embeddings',
-            type: 'VisualEmbeddingTask',
-            needsImage: true,
-            onlyIfNeeded: true,
-            checks: ['photo.embedding'],
           },
           {
             name: 'metadata_extraction',
@@ -129,7 +122,7 @@ export const packages = [
                 sequential: false,
                 prompts: [MESSAGE_ANALYZER_VISUAL_ASPECTS],
                 resolution: 'low',
-                imagesPerBatch: 4,
+                imagesPerRequest: 4,
                 promptDependentField: null,
                 checks: ['descriptions.visual_aspects.genre'],
                 visualAspects: true,
@@ -153,7 +146,7 @@ export const packages = [
                 sequential: false,
                 prompts: [MESSAGE_ANALYZER_GEMINI_CONTEXT_STORY_ACCENTS],
                 resolution: 'high',
-                imagesPerBatch: 1,
+                imagesPerRequest: 1,
                 promptDependentField: null,
                 checks: [
                   'descriptions.context',
@@ -204,7 +197,7 @@ export const packages = [
                 sequential: false,
                 resolution: 'low',
                 prompts: [MESSAGE_ANALYZER_GPT_TOPOLOGIC_TAGS],
-                imagesPerBatch: 1,
+                imagesPerRequest: 1,
                 useGuideLines: false,
                 promptDependentField: null,
                 checks: ['tags.topological'],
@@ -226,10 +219,23 @@ export const packages = [
                 sequential: false,
                 prompts: [MESSAGE_ANALYZER_GEMINI_CONTEXT_ARTISTIC_SCORES],
                 resolution: 'high',
-                imagesPerBatch: 6,
+                imagesPerRequest: 6,
                 batchAPI: true,
                 promptDependentField: null,
                 checks: ['descriptions.artistic_scores'],
+              },
+            ],
+          },
+          {
+            type: 'sequential',
+            tasks: [
+              {
+                // 0.15 EUR / 1000 fotos (aprox)
+                name: 'clip_embeddings',
+                type: 'VisualEmbeddingTask',
+                needsImage: true,
+                onlyIfNeeded: true,
+                checks: ['photo.embedding'],
               },
             ],
           },
@@ -255,7 +261,7 @@ export const packages = [
             sequential: false,
             prompts: [MESSAGE_ANALYZER_VISUAL_ASPECTS],
             resolution: 'low',
-            imagesPerBatch: 8,
+            imagesPerRequest: 8,
             promptDependentField: null,
             checks: ['descriptions.visual_aspects.genre'],
             visualAspects: true,
@@ -269,7 +275,7 @@ export const packages = [
             sequential: false,
             prompts: [MESSAGE_ANALYZER_GEMINI_CONTEXT_ARTISTIC_SCORES],
             resolution: 'high',
-            imagesPerBatch: 6,
+            imagesPerRequest: 6,
             batchAPI: true,
             promptDependentField: null,
             checks: ['descriptions.artistic_scores'],

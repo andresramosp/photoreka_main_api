@@ -18,7 +18,7 @@ export class VisionDescriptionTask extends AnalyzerTask {
   declare prompts: Prompt[]
   declare resolution: 'low' | 'high' | 'medium'
   declare sequential: boolean
-  declare imagesPerBatch: number
+  declare imagesPerRequest: number
   declare promptDependentField: DescriptionType
   declare promptsNames: DescriptionType[]
   declare data: Record<number, Record<string, string>>
@@ -34,7 +34,7 @@ export class VisionDescriptionTask extends AnalyzerTask {
 
     if (
       this.batchAPI &&
-      (analyzerProcess.mode !== 'retry_process' || pendingPhotos.length > this.imagesPerBatch * 2)
+      (analyzerProcess.mode !== 'retry_process' || pendingPhotos.length > this.imagesPerRequest * 2)
     ) {
       await this.processWithBatchAPI(pendingPhotos)
     } else {
@@ -49,8 +49,8 @@ export class VisionDescriptionTask extends AnalyzerTask {
     if (!this.data) this.data = {}
 
     const batches: Photo[][] = []
-    for (let i = 0; i < pendingPhotos.length; i += this.imagesPerBatch) {
-      const batch = pendingPhotos.slice(i, i + this.imagesPerBatch)
+    for (let i = 0; i < pendingPhotos.length; i += this.imagesPerRequest) {
+      const batch = pendingPhotos.slice(i, i + this.imagesPerRequest)
       batches.push(batch)
     }
 
@@ -174,7 +174,7 @@ export class VisionDescriptionTask extends AnalyzerTask {
 
   private async processSingleBatch(batchPhotos: Photo[]): Promise<void> {
     const prompts = this.prompts.map((p) => (typeof p === 'function' ? p(batchPhotos) : p))
-    const imagesPerRequest = this.imagesPerBatch
+    const imagesPerRequest = this.imagesPerRequest
     const maxRetries = 1
     let attempt = 0
     let completed = false
@@ -227,7 +227,7 @@ export class VisionDescriptionTask extends AnalyzerTask {
       status = 'in_progress'
       // Espera hasta que el batch cambie de estado o se agoten los reintentos
       while (status === 'in_progress' || status === 'finalizing' || status === 'validating') {
-        await this.sleep(5000)
+        await this.sleep(8000)
         try {
           status = await this.modelsService.getBatchStatus(batchId)
         } catch (error) {
