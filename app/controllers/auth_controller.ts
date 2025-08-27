@@ -39,7 +39,7 @@ export default class AuthController {
       }
 
       // Importar enum y función para usage
-      const tier = UsageTier[payload.usageTier as keyof typeof UsageTier] || UsageTier.BASIC
+      const tier = UsageTier[payload.usageTier as keyof typeof UsageTier] || UsageTier.TESTER
       const usage = getDefaultUsageByTier(tier)
 
       const user = await User.create({
