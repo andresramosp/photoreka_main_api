@@ -41,7 +41,7 @@ export default class SearchPhotoService {
   ): Promise<(Photo & { score: number; labelScore: string })[]> {
     if (!query.anchorIds?.length) return []
 
-    const userPhotoIds = await this.photoManager.getPhotosIdsByUser(userId)
+    const userPhotoIds = await this.photoManager.getPhotosIdsForSearch(userId)
 
     const anchors = await this.photoManager.getPhotosByIds(query.anchorIds)
     if (!anchors.length) return []

@@ -65,7 +65,7 @@ export default class CatalogController {
    */
   private async invalidateUserCache(userId: string) {
     await invalidateCache(`getPhotosByUser_${userId}`)
-    await invalidateCache(`getPhotosIdsByUser_${userId}`)
+    await invalidateCache(`getPhotosIdsForSearch${userId}`)
   }
 
   /**

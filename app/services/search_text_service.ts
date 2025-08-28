@@ -39,6 +39,7 @@ export type SearchOptions = {
   minResults?: number
   collections?: string[]
   visualAspects?: string[]
+  artisticScores?: string[]
 }
 
 export type SearchTagsOptions = SearchOptions & {
@@ -87,12 +88,14 @@ export default class SearchTextService {
       minResults,
       collections,
       visualAspects,
+      artisticScores,
     } = options
 
-    const photoIds = await this.photoManager.getPhotosIdsByUser(
+    const photoIds = await this.photoManager.getPhotosIdsForSearch(
       userId?.toString(),
       collections && collections.length > 0 ? collections : undefined,
-      visualAspects && visualAspects.length > 0 ? visualAspects : undefined
+      visualAspects && visualAspects.length > 0 ? visualAspects : undefined,
+      artisticScores && artisticScores.length > 0 ? artisticScores : undefined
     )
 
     const { structuredResult, useImage, expansionCost } = await this.queryService.structureQuery(
@@ -221,16 +224,18 @@ export default class SearchTextService {
       iteration = 1,
       collections,
       visualAspects,
+      artisticScores,
     } = options
 
     if (searchMode === 'curation') {
       throw new Error('searchSemanticSync no soporta el modo curation')
     }
 
-    const photoIds = await this.photoManager.getPhotosIdsByUser(
+    const photoIds = await this.photoManager.getPhotosIdsForSearch(
       userId?.toString(),
       collections && collections.length > 0 ? collections : undefined,
-      visualAspects && visualAspects.length > 0 ? visualAspects : undefined
+      visualAspects && visualAspects.length > 0 ? visualAspects : undefined,
+      artisticScores && artisticScores.length > 0 ? artisticScores : undefined
     )
 
     const { structuredResult, useImage, expansionCost } = await this.queryService.structureQuery(
@@ -269,7 +274,7 @@ export default class SearchTextService {
     const { included, excluded, iteration, pageSize, searchMode, collections, visualAspects } =
       options
 
-    const photoIds = await this.photoManager.getPhotosIdsByUser(
+    const photoIds = await this.photoManager.getPhotosIdsForSearch(
       userId?.toString(),
       collections && collections.length > 0 ? collections : undefined,
       visualAspects && visualAspects.length > 0 ? visualAspects : undefined
@@ -308,7 +313,7 @@ export default class SearchTextService {
   ) {
     const { pageSize, iteration, searchMode, collections, visualAspects } = options
 
-    const photoIds = await this.photoManager.getPhotosIdsByUser(
+    const photoIds = await this.photoManager.getPhotosIdsForSearch(
       userId?.toString(),
       collections && collections.length > 0 ? collections : undefined,
       visualAspects && visualAspects.length > 0 ? visualAspects : undefined

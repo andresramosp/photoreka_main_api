@@ -89,10 +89,11 @@ export default class PhotoManager {
     provider: 'redis',
     ttl: 60 * 30,
   })
-  public async getPhotosIdsByUser(
+  public async getPhotosIdsForSearch(
     userId: string,
     collections?: string[],
-    visualAspects?: string[]
+    visualAspects?: string[],
+    artisticScores?: string[]
   ): Promise<number[]> {
     let query = Photo.query().where('user_id', userId)
     if (collections && collections.length > 0) {
@@ -103,18 +104,44 @@ export default class PhotoManager {
 
     const photos = await query.select('id', 'descriptions')
 
-    if (!visualAspects || !Array.isArray(visualAspects) || visualAspects.length === 0) {
+    // Si no hay filtros, devolver todos los IDs
+    const noVisualAspects =
+      !visualAspects || !Array.isArray(visualAspects) || visualAspects.length === 0
+    const noArtisticScores =
+      !artisticScores || !Array.isArray(artisticScores) || artisticScores.length === 0
+    if (noVisualAspects && noArtisticScores) {
       return photos.map((p) => p.id)
     }
 
     return photos
       .filter((p) => {
-        const va = p.descriptions?.visual_aspects
-        if (!va || typeof va !== 'object') return false
-        // Unir todos los valores de todos los arrays en un solo array
-        const allValues = Object.values(va).flat().filter(Boolean)
-        // Verificar que todos los visualAspects estén presentes
-        return visualAspects.every((aspect) => allValues.includes(aspect))
+        let visualOk = true
+        let artisticOk = true
+
+        // Filtrado por visual aspects
+        if (!noVisualAspects) {
+          const va = p.descriptions?.visual_aspects
+          if (!va || typeof va !== 'object') visualOk = false
+          else {
+            const allValues = Object.values(va).flat().filter(Boolean)
+            visualOk = visualAspects.every((aspect) => allValues.includes(aspect))
+          }
+        }
+
+        // Filtrado por artistic scores
+        if (!noArtisticScores) {
+          const scores = p.descriptions?.artistic_scores
+          if (!scores || typeof scores !== 'object') artisticOk = false
+          else {
+            // Debe cumplir que todos los scores seleccionados tengan al menos 7.5
+            artisticOk = artisticScores.every((scoreKey) => {
+              const value = scores[scoreKey]
+              return typeof value === 'number' && value >= 7.5
+            })
+          }
+        }
+
+        return visualOk && artisticOk
       })
       .map((p) => p.id)
   }
@@ -451,7 +478,7 @@ export default class PhotoManager {
     }
 
     await invalidateCache(`getPhotos_${userId}`)
-    await invalidateCache(`getPhotosIdsByUser_${userId}`)
+    await invalidateCache(`getPhotosIdsForSearch${userId}`)
 
     return { message: 'Photos deleted successfully', ids }
   }

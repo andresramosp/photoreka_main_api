@@ -83,6 +83,7 @@ export const packages = [
       {
         type: 'parallel',
         tasks: [
+          // sub-etapa paralela: color palette
           {
             name: 'visual_color_embedding_task',
             type: 'VisualColorEmbeddingTask',
@@ -90,6 +91,7 @@ export const packages = [
             onlyIfNeeded: true,
             checks: ['photo.color_histogram'],
           },
+          // sub-etapa paralela: metadata + (visual sapects deterministas )
           {
             name: 'metadata_extraction',
             type: 'MetadataTask',
@@ -103,11 +105,11 @@ export const packages = [
           },
         ],
       },
-      // Etapa 2 y 3: análisis visual secuencial EN PARALELO con análisis artístico
+      // Etapa 2 y 3 y 4: visual aspects, narrativo, artistico
       {
         type: 'parallel',
         tasks: [
-          // Sub-etapa secuencial: análisis visual
+          // sub-etapa: aspectos visuales no deterministas
           {
             type: 'sequential',
             tasks: [
@@ -137,6 +139,12 @@ export const packages = [
                 descriptionSourceFields: ['visual_aspects'],
                 checks: ['tags.any', 'tags.visual_aspects'],
               },
+            ],
+          },
+          // Sub-etapa: análisis narrativo y topológico
+          {
+            type: 'sequential',
+            tasks: [
               {
                 name: 'vision_context_story_accents',
                 type: 'VisionDescriptionTask',
@@ -204,7 +212,7 @@ export const packages = [
               },
             ],
           },
-          // Sub-etapa paralela: análisis artístico
+          // Sub-etapa: análisis artístico
           {
             // 1,38 EUR / 1000 fotos (reasoning effort: low)
             // 0.86 EUR / 1000 fotos (reasoning effort: minimal)
@@ -226,6 +234,7 @@ export const packages = [
               },
             ],
           },
+          // Sub-etapa: embedding CLIP
           {
             type: 'sequential',
             tasks: [

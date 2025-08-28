@@ -53,7 +53,7 @@ export default class AnalyzerProcessRunner {
     const finalUserId = userId
 
     await invalidateCache(`getPhotos_${finalUserId}`)
-    await invalidateCache(`getPhotosIdsByUser_${finalUserId}`)
+    await invalidateCache(`getPhotosIdsForSearch${finalUserId}`)
 
     if ((mode === 'retry_process' || mode === 'remake_process') && processId) {
       this.process = await AnalyzerProcess.query()
@@ -136,7 +136,7 @@ export default class AnalyzerProcessRunner {
     // Usar el userId del proceso para invalidar cache
     const processUserId = this.process.userId?.toString()
     await invalidateCache(`getPhotos_${processUserId}`)
-    await invalidateCache(`getPhotosIdsByUser_${processUserId}`)
+    await invalidateCache(`getPhotosIdsForSearch${processUserId}`)
 
     // Limpiar cache de health solo si se precargó
     if (this.process.mode === 'retry_process') {

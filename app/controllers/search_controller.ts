@@ -24,6 +24,7 @@ export default class SearchController {
         minResults: query.options.minResults,
         collections: query.options.collections,
         visualAspects: query.options.visualAspects,
+        artisticScores: query.options.artisticScores,
       })
 
       return response.ok(result)
@@ -47,6 +48,7 @@ export default class SearchController {
         minResults: query.options.minResults,
         collections: query.options.collections,
         visualAspects: query.options.visualAspects,
+        artisticScores: query.options.artisticScores,
       })
 
       for await (const result of stream) {
@@ -77,6 +79,7 @@ export default class SearchController {
           searchMode: query.options.searchMode,
           collections: query.options.collections,
           visualAspects: query.options.visualAspects,
+          artisticScores: query.options.artisticScores,
         },
         user.id
       )
@@ -104,6 +107,7 @@ export default class SearchController {
         searchMode: query.options.searchMode,
         collections: query.options.collections,
         visualAspects: query.options.visualAspects,
+        artisticScores: query.options.artisticScores,
       })
 
       return response.ok(result)
