@@ -69,7 +69,7 @@ export const MESSAGE_ANALYZER_GEMINI_CONTEXT_STORY_ACCENTS = (photosBatch: Photo
    
 3. 'visual_accents': Here you should pay attention to the elements or details of the scene that may have gone unnoticed in the 'story' field but have an impact, either visually or meaningfully. 
      Typical examples: a striking drawing that contrasts with something in the scene, a sign that says something interesting, the curious way in which certain elements align creating a pattern, 
-     an out-of-place object that makes the scene special, the curious similarity between to people, etc.
+     an out-of-place object that makes the scene special, the curious similarity between two people, etc.
 
 *General rules*
 1. IGNORE elements that are super small or require zooming in to view.
