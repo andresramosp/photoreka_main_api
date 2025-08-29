@@ -67,9 +67,9 @@ export const MESSAGE_ANALYZER_GEMINI_CONTEXT_STORY_ACCENTS = (photosBatch: Photo
 
 2. 'story': Here, focus on the narrative of the scene, describing what each subject does, their gestures and interactions with each other, without losing sight of the overall meaning.
    
-3. 'visual_accents': Here you should pay attention to the elements or details of the scene that may have gone unnoticed in the narrative but have an impact, either visually or meaningfully. 
+3. 'visual_accents': Here you should pay attention to the elements or details of the scene that may have gone unnoticed in the 'story' field but have an impact, either visually or meaningfully. 
      Typical examples: a striking drawing that contrasts with something in the scene, a sign that says something interesting, the curious way in which certain elements align creating a pattern, 
-     an out-of-place object that makes the scene special, the ironic way in which someone observes the situation from the side, etc.
+     an out-of-place object that makes the scene special, the curious similarity between to people, etc.
 
 *General rules*
 1. IGNORE elements that are super small or require zooming in to view.
@@ -87,7 +87,7 @@ Minimum lenghts for properties:
    { 
       'context': "South America, in a small town in the Andes mountains, during the afternoon.", 
       'story': "This scene shows...", 
-      'visual_accents': "A poster with a red dragon drawing. Advertisement with a sensual woman's face. A misterious hand sticking out with an ice cream. The triangular shape formed by the members of the family"
+      'visual_accents': "A poster with a red dragon drawing. Advertisement with a sensual woman's face. A misterious hand sticking out with an ice cream. The echoe between the turban of the man and the round sign on the wall."
    },
    ...
 ]
