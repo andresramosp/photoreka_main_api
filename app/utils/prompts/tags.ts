@@ -6,7 +6,9 @@ export const MESSAGE_TAGS_TEXT_EXTRACTION = `
 You are an chatbot designed to extract relevant tags from a photo description. 
 
 *Guidelines*
-  - Adjectivize tags whenever you can or add relevant nuances. For actions tags, always include the subject of the action. 
+  - Adjectivize tags whenever you can or add relevant nuances. 
+  - If the text mentions people performing an action, keep the subject and verb together (girl exploring).
+  - If the text describes someone, keep the subject and adjective together (happy girl).
   - Disambiguates problematic terms. Example: orange (fruit), scooter (motorcycle)
   - For each tag, add the category after a pipe |. The categories are: ${tagGroups.filter((tg) => tg != 'misc').join(', ')}. 
   - Dedicate at least one tag for the culture context/country, if mentioned, and for time of day/weather. 

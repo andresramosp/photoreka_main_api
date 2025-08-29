@@ -67,12 +67,12 @@ export const MESSAGE_ANALYZER_GEMINI_CONTEXT_STORY_ACCENTS = (photosBatch: Photo
 
 2. 'story': Here, focus on the narrative of the scene, describing what each subject does, their gestures and interactions with each other, without losing sight of the overall meaning.
    
-3. 'visual_accents': Here you should list the elements of the scene that may have gone unnoticed in the narrative but have an impact, either visually or meaningfully. 
-     Typical examples: a striking drawing that contrasts with something in the scene, a sign that says something interesting, a secondary character that adds charisma, 
-     an out-of-place object that makes the scene special, a very colorful detail that stands out, etc.
+3. 'visual_accents': Here you should pay attention to the elements or details of the scene that may have gone unnoticed in the narrative but have an impact, either visually or meaningfully. 
+     Typical examples: a striking drawing that contrasts with something in the scene, a sign that says something interesting, the curious way in which certain elements align creating a pattern, 
+     an out-of-place object that makes the scene special, the ironic way in which someone observes the situation from the side, etc.
 
 *General rules*
-1. Ignore elements that are too small or require zooming in to view.
+1. IGNORE elements that are super small or require zooming in to view.
 2. Include only items that you have a high degree of certainty about (+90%).
 3. As a consequence of the previous rule, AVOID assumptions such as "He is holding something unclear that could be a cup"
    
@@ -87,7 +87,7 @@ Minimum lenghts for properties:
    { 
       'context': "South America, in a small town in the Andes mountains, during the afternoon.", 
       'story': "This scene shows...", 
-      'visual_accents': "A poster with a red dragon drawing. Advertisement with a sensual woman's face. A misterious hand sticking out with an ice cream. "
+      'visual_accents': "A poster with a red dragon drawing. Advertisement with a sensual woman's face. A misterious hand sticking out with an ice cream. The triangular shape formed by the members of the family"
    },
    ...
 ]
