@@ -106,7 +106,8 @@ export default class QueryService {
 
     // Añadir los campos de metadata
     if (metadataResult) {
-      modelResult.include_visual_aspects = metadataResult.include_visual_aspects
+      modelResult.include_visual_aspects =
+        metadataResult.include_visual_aspects || mode == 'curation'
       modelResult.only_tags = metadataResult.only_tags
     }
 

@@ -73,6 +73,11 @@ export default class HealthPhotoService {
       photo.tags.some((t) => t.category === 'visual_aspects')
     )
 
+    push(
+      'tags.artistic_scores',
+      photo.tags.some((t) => t.category === 'artistic_scores')
+    )
+
     push('descriptionChunks.any', photo.descriptionChunks.length > 0)
     photo.descriptionChunks.forEach((c) =>
       push(`descriptionChunk#${c.id}.embedding`, !!c.embedding)

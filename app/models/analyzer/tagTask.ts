@@ -24,6 +24,9 @@ export class TagTask extends AnalyzerTask {
   declare descriptionSourceFields: DescriptionType[]
   declare data: Record<string, { name: string; group: string }[]>
 
+  // Umbral para artistic_scores
+  private artisticScoreThreshold: number = 7
+
   private nlpService: NLPService
   private tagToSustantivesMap: Map<string, string[]>
   private embeddingsMap: Map<string, number[]>
@@ -54,6 +57,15 @@ export class TagTask extends AnalyzerTask {
         }
 
         validPhotos.push(photo)
+      } else if (this.descriptionSourceFields.includes('artistic_scores')) {
+        // Validación especial para artistic_scores
+        const artisticScoresData = photo.descriptions?.artistic_scores
+        if (!artisticScoresData) {
+          skippedPhotoIds.push(photo.id)
+          continue
+        }
+
+        validPhotos.push(photo)
       } else {
         // Validación original para otros tipos de descripción
         const missing = this.descriptionSourceFields.some(
@@ -78,12 +90,16 @@ export class TagTask extends AnalyzerTask {
       return
     }
 
-    // Detectar si estamos procesando visual_aspects
+    // Detectar si estamos procesando visual_aspects o artistic_scores
     const isVisualAspects = this.descriptionSourceFields.includes('visual_aspects')
+    const isArtisticScores = this.descriptionSourceFields.includes('artistic_scores')
 
     if (isVisualAspects) {
       logger.debug('Procesando extracción de tags de visual_aspects...')
       await this.extractTagsFromVisualAspects(validPhotos)
+    } else if (isArtisticScores) {
+      logger.debug('Procesando extracción de tags de artistic_scores...')
+      await this.extractTagsFromArtisticScores(validPhotos)
     } else {
       const cleanedResults = await this.cleanPhotosDescs(validPhotos)
       logger.debug('Procesando extracción de tags...')
@@ -116,9 +132,10 @@ export class TagTask extends AnalyzerTask {
     // 2. Recolectar todos los sustantivos y preparar la lista de términos para embeddings
     const allTerms = new Set<string>(allTagNames)
     const isVisualAspects = category === 'visual_aspects'
+    const isArtisticScores = category === 'artistic_scores'
 
-    // Solo calcular sustantivos si no es visual_aspects
-    if (!isVisualAspects) {
+    // Solo calcular sustantivos si no es visual_aspects ni artistic_scores
+    if (!isVisualAspects && !isArtisticScores) {
       for (const tagName of allTagNames) {
         const sustantives = this.nlpService.getSustantives(tagName) ?? []
         this.tagToSustantivesMap.set(tagName, sustantives)
@@ -361,6 +378,51 @@ export class TagTask extends AnalyzerTask {
         logger.debug(`Extraídos ${this.data[photo.id].length} tags para foto ${photo.id}`)
       } catch (error) {
         logger.error(`Error procesando visual_aspects para foto ${photo.id}:`, error)
+        // Continuar con las demás fotos
+      }
+    }
+  }
+
+  private async extractTagsFromArtisticScores(photos: Photo[]) {
+    logger.debug(`Extrayendo tags de artistic_scores para ${photos.length} imágenes`)
+
+    // Keys que llevan el prefijo "good"
+    const keysWithPrefix = ['composition']
+
+    for (const photo of photos) {
+      try {
+        this.data[photo.id] = []
+        const artisticScoresData = photo.descriptions?.artistic_scores
+        if (!artisticScoresData) {
+          logger.warn(`Foto ${photo.id} no tiene datos de artistic_scores`)
+          continue
+        }
+
+        // artistic_scores viene como objeto JSON con scores numéricos
+        const scoresObject = artisticScoresData as Record<string, number>
+
+        // Extraer tags basados en los scores y umbral
+        for (const [scoreKey, scoreValue] of Object.entries(scoresObject)) {
+          if (typeof scoreValue === 'number' && scoreValue >= this.artisticScoreThreshold) {
+            let tagName = ''
+            const cleanKey = scoreKey.replace('_', ' ')
+
+            if (keysWithPrefix.includes(scoreKey)) {
+              tagName = `photo with good ${cleanKey}`
+            } else {
+              tagName = `photo with ${cleanKey}`
+            }
+
+            const newTag = new Tag()
+            newTag.name = tagName
+            newTag.group = 'artistic_scores'
+            this.data[photo.id].push(newTag)
+          }
+        }
+
+        logger.debug(`Extraídos ${this.data[photo.id].length} tags para foto ${photo.id}`)
+      } catch (error) {
+        logger.error(`Error procesando artistic_scores para foto ${photo.id}:`, error)
         // Continuar con las demás fotos
       }
     }

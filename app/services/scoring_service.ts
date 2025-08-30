@@ -214,7 +214,7 @@ export default class ScoringService {
               weights.nuancesTags,
               searchMode,
               structuredQuery.include_visual_aspects
-                ? ['context_story', 'visual_accents', 'visual_aspects']
+                ? ['context_story', 'visual_accents', 'visual_aspects', 'artistic_scores']
                 : ['context_story', 'visual_accents'],
               ['context', 'story', 'visual_accents'],
               [],
@@ -233,7 +233,7 @@ export default class ScoringService {
           weights.semantic,
           searchMode,
           structuredQuery.include_visual_aspects
-            ? ['context_story', 'visual_accents', 'visual_aspects']
+            ? ['context_story', 'visual_accents', 'visual_aspects', 'artistic_scores']
             : ['context_story', 'visual_accents'],
           ['context', 'story'],
           [],

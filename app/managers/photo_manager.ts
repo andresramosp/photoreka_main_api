@@ -133,10 +133,10 @@ export default class PhotoManager {
           const scores = p.descriptions?.artistic_scores
           if (!scores || typeof scores !== 'object') artisticOk = false
           else {
-            // Debe cumplir que todos los scores seleccionados tengan al menos 7.5
+            // Debe cumplir que todos los scores seleccionados tengan al menos 7
             artisticOk = artisticScores.every((scoreKey) => {
               const value = scores[scoreKey]
-              return typeof value === 'number' && value >= 7.5
+              return typeof value === 'number' && value >= 7
             })
           }
         }
