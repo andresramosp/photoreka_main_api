@@ -79,7 +79,7 @@ export const MESSAGE_ANALYZER_GEMINI_CONTEXT_STORY_ACCENTS = (photosBatch: Photo
 Minimum lenghts for properties:
 1. 'context': 20 - 25 words
 2. 'story': 130 - 160 words
-3. 'visual_accents': 3 - 4 elements, dot separated.
+3. 'visual_accents': 4 - 5 elements, dot separated, long tag-style.
 
 📌 **Output Example:**  
 \`\`\`json

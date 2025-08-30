@@ -154,6 +154,7 @@ export default class VectorService {
     tagIds?: number[],
     categories?: string[], // garantizamos que pertenece a esa categorías, pero aún no sabemos para qué foto
     areas?: string[],
+    excludedGroups?: string[], // excluye tags que pertenezcan a estos grupos
     photoIds?: number[],
     opposite: boolean = false
   ) {
@@ -213,10 +214,12 @@ export default class VectorService {
       categories && categories.length > 0 ? 'AND tags_photos.category = ANY(:categories)' : ''
     const areaFilterCondition =
       areas && areas.length > 0 ? 'AND tags_photos.area = ANY(:areas)' : ''
+    const excludedGroupsCondition =
+      excludedGroups && excludedGroups.length > 0 ? 'AND tags."group" != ALL(:excludedGroups)' : ''
     const photoFilterCondition =
       photoIds && photoIds.length > 0 ? 'AND photos.id = ANY(:photoIds)' : ''
 
-    whereCondition = `${thresholdCondition} ${tagFilterCondition} ${categoryFilterCondition} ${areaFilterCondition} ${photoFilterCondition}`
+    whereCondition = `${thresholdCondition} ${tagFilterCondition} ${categoryFilterCondition} ${areaFilterCondition} ${excludedGroupsCondition} ${photoFilterCondition}`
 
     const embeddingString = `[${embedding.join(',')}]`
 
@@ -246,6 +249,7 @@ export default class VectorService {
         tagIds: tagIds || [],
         categories: categories || [],
         areas: areas || [],
+        excludedGroups: excludedGroups || [],
         photoIds: photoIds || [],
         ...additionalParams,
       }

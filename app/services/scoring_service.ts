@@ -814,6 +814,8 @@ export default class ScoringService {
   ) {
     const embedding = EmbeddingStoreService.getEmbedding(term)
 
+    const excludeSustantives = term.trim().split(/\s+/).length > 1
+
     // Buscar similitud
     const similarTags = await this.vectorService.findSimilarTagToEmbedding(
       embedding,
@@ -823,6 +825,7 @@ export default class ScoringService {
       userTags.map((t) => t.id),
       categories,
       areas,
+      excludeSustantives ? ['misc'] : [],
       photoIds
     )
 

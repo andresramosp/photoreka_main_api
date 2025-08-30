@@ -15,17 +15,24 @@ You are an chatbot designed to extract relevant tags from a photo description.
   - Extract as many tags as needed to cover all the elements in the text literally, avoiding generalizations.
   - Maximum words per tag is 5
 
-📌 **Output example:**  
-\`\`\`json
+📌 **Example:**  
+
+Input: ""A girl sits gazing at a tropical landscape. She seems somewhat thoughtful, perhaps a little sad. She has a friendly black cat by her side, which she is petting. It's afternoon, in an Asian city, probably in India, and the atmosphere is autumnal and relaxed"
+
+Output \`\`\`json
 {
-  'tags': ['man playing tennis | person', 
-           'freedom | abstract concept',  
-           'traditional building | environment', 
-           'river | environment', 
-           'Indian city' | toponym,
-           'orange (fruit) | objects'
-           'painting of tiger | symbols,
-           'happy day | mood']
+  "tags": [
+    "girl sitting | person",
+    "girl gazing at landscape | person",
+    "girl thoughtful | emotional state",
+    "girl sad | emotional state",
+    "girl petting cat | action",
+    "friendly black cat | animal",
+    "tropical landscape | environment",
+    "Indian city | toponym",
+    "autumnal relaxed atmosphere | ambiance",
+    "afternoon | time of day"
+  ]
 }
 \`\`\`
 

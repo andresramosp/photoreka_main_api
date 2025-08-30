@@ -134,6 +134,70 @@ export default class SearchPhotoService {
   ) {
     for (const p of anchors) if (!p.descriptionChunks) await p.load('descriptionChunks')
 
+    // Para cada foto candidata, guardamos los mejores scores por cada chunk buscado
+    const chunkScoreMap: Record<number, Record<number, { content: string; proximity: number }>> = {}
+
+    for (const anchor of anchors) {
+      const baseChunks = anchor.descriptionChunks.filter((dc) =>
+        descriptionCategories.includes(dc.category)
+      )
+
+      for (const chunk of baseChunks) {
+        const chunkEmb = VectorService.getParsedEmbedding(chunk.embedding)
+
+        const similar = await this.vectorService.findSimilarChunkToEmbedding(
+          chunkEmb,
+          query.opposite ? 1 : 0.5,
+          200,
+          'cosine_similarity',
+          candidateIds,
+          descriptionCategories,
+          undefined,
+          query.opposite
+        )
+
+        similar.forEach((c) => {
+          if (!chunkScoreMap[c.photo_id]) chunkScoreMap[c.photo_id] = {}
+          // Para cada chunk buscado, guardamos el mejor score
+          const chunkId = chunk.id
+          if (
+            !chunkScoreMap[c.photo_id][chunkId] ||
+            c.proximity > chunkScoreMap[c.photo_id][chunkId].proximity
+          ) {
+            chunkScoreMap[c.photo_id][chunkId] = {
+              content: c.content || c.chunk || '',
+              proximity: c.proximity,
+            }
+          }
+        })
+      }
+    }
+
+    // Ahora sumamos los scores de los chunks buscados para cada foto
+    return Object.entries(chunkScoreMap).map(([id, chunkScores]) => {
+      let score = 0
+      let matchingChunks: { chunk: string; proximity: number }[] = []
+      for (const chunkScore of Object.values(chunkScores)) {
+        score += chunkScore.proximity
+        matchingChunks.push({ chunk: chunkScore.content, proximity: chunkScore.proximity })
+      }
+      return {
+        id: +id,
+        score,
+        matchingChunks,
+      }
+    })
+  }
+
+  private async scoreSemanticPerSegment(
+    query: SearchByPhotoOptions,
+    candidateIds: number[],
+    anchors: Photo[],
+    descriptionCategories: string[]
+  ) {
+    for (const p of anchors) if (!p.descriptionChunks) await p.load('descriptionChunks')
+
+    // Junta todos los chunks relevantes de las fotos base
     const baseChunks: DescriptionChunk[] = []
     anchors.forEach((p) => {
       baseChunks.push(
@@ -142,29 +206,30 @@ export default class SearchPhotoService {
     })
     if (!baseChunks.length) return []
 
-    const combined = baseChunks
-      .reduce((acc: number[], dc, idx) => {
-        const e = VectorService.getParsedEmbedding(dc.embedding)
-        return idx === 0 ? e.slice() : acc.map((v, i) => v + e[i])
-      }, [])
-      .map((v) => v / baseChunks.length)
+    // Para cada chunk base, busca los chunks más similares en las fotos candidatas
+    const bestScores: Record<number, number> = {}
+    for (const chunk of baseChunks) {
+      const embedding = VectorService.getParsedEmbedding(chunk.embedding)
+      const similar = await this.vectorService.findSimilarChunkToEmbedding(
+        embedding,
+        query.opposite ? 1 : 0.5,
+        200,
+        'cosine_similarity',
+        candidateIds,
+        descriptionCategories,
+        undefined,
+        query.opposite
+      )
+      // Para cada foto candidata, guarda el mejor score para este chunk
+      similar.forEach((c) => {
+        if (!bestScores[c.photo_id] || c.proximity > bestScores[c.photo_id]) {
+          bestScores[c.photo_id] = c.proximity
+        }
+      })
+    }
 
-    const similar = await this.vectorService.findSimilarChunkToEmbedding(
-      combined,
-      query.opposite ? 1 : 0.5,
-      200,
-      'cosine_similarity',
-      candidateIds,
-      descriptionCategories,
-      undefined,
-      query.opposite
-    )
-
-    const best: Record<number, number> = {}
-    similar.forEach((c) => {
-      if (!best[c.photo_id] || c.proximity > best[c.photo_id]) best[c.photo_id] = c.proximity
-    })
-    return Object.entries(best).map(([id, score]) => ({ id: +id, score }))
+    // Devuelve los mejores scores por foto candidata
+    return Object.entries(bestScores).map(([id, score]) => ({ id: +id, score }))
   }
 
   @MeasureExecutionTime
@@ -238,6 +303,8 @@ export default class SearchPhotoService {
         // Si hay tagIds, solo buscamos los que están en la lista
         if (query.tagIds.length && !query.tagIds.includes(tagPhoto.tag.id)) continue
         const tagEmb = VectorService.getParsedEmbedding(tagPhoto.tag.embedding)
+        const excludeSustantives = tagPhoto.tag.name.trim().split(/\s+/).length > 1
+
         const similar = await this.vectorService.findSimilarTagToEmbedding(
           tagEmb,
           query.opposite ? 1 : 0.3,
@@ -246,6 +313,7 @@ export default class SearchPhotoService {
           null,
           null,
           [],
+          excludeSustantives ? ['misc'] : [],
           candidateIds,
           query.opposite
         )
