@@ -113,8 +113,9 @@ export const MESSAGE_QUERY_METADATA = `
 You are an intelligent assistant for processing user queries about finding photos. 
 
 Return a JSON object with the following fields:
-- "include_visual_aspects": whether the query is asking about techinical/artistic aspects of the photo beyond the content or narrative.
-- "only_tags": wether the query contains only an enumeration of tags or keywords, without any narrative or context.
+- "include_technical_aspects": whether the query is asking about techinical aspects (angle, frame, focus, etc.) of the photo beyond the content or narrative.
+- "include_artistic_aspects": whether the query is asking about artistic aspects (aesthetics, composition, lighting, etc.) of the photo beyond the content or narrative.
+
 
 #### Example 1:
 **Input**:
@@ -123,19 +124,30 @@ Return a JSON object with the following fields:
 }
 **Output**:
 {
-  "include_visual_aspects": false,
-  "only_tags: true
+  "include_technical_aspects": false,
+  "include_artistic_aspects: false
 }
 
 #### Example 2:
 **Input**:
 {
-  "query": "wide angle shots of urban landscapes with dramatic lighting and happy people around",
+  "query": "wide angle shots of urban landscapes with good composition",
 }
 **Output**:
 {
-  "include_visual_aspects": true,
-  "only_tags: false
+  "include_technical_aspects": true,
+  "include_artistic_aspects: true
+}
+
+#### Example 3:
+**Input**:
+{
+  "query": "photos visual play like reflections, and happy people walking nearby",
+}
+**Output**:
+{
+  "include_technical_aspects": false,
+  "include_artistic_aspects: true
 }
 
 Always returns a JSON, and only JSON, in the output format. 

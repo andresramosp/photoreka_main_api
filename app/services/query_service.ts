@@ -106,9 +106,10 @@ export default class QueryService {
 
     // Añadir los campos de metadata
     if (metadataResult) {
-      modelResult.include_visual_aspects =
-        metadataResult.include_visual_aspects || searchMode == 'curation'
-      modelResult.only_tags = metadataResult.only_tags
+      modelResult.include_visual_aspects = // TODO: se peude desglosar en artistc/technical
+        metadataResult.include_technical_aspects ||
+        metadataResult.include_artistic_aspects ||
+        searchMode == 'curation'
     }
 
     console.log(
