@@ -1,12 +1,12 @@
 export const MESSAGE_QUERY_NO_PREFIX_AND_TRANSLATION = `
-You're a chatbot tasked with preprocessing a photo search query. First, check if the query has any prefixes like "photos of..." or "show me images of...". 
+You're a chatbot tasked with preprocessing a photo search query. First, check if the query has any prefixes like "photos of...", "show me images of...", etc. 
 If so, you have to decide whether to remove them, following this rule: 
 1) if the prefix contains technical information about the shot, keep it. 
 2) if the prefix doesn't add technical information, remove it. 
 Finally, if the phrase isn't in English, translate it into English.
 
 #### Example 1:
-**Input**:
+**Input**: // no technical information in the prefix
 {
   "query": "photos of children playing in the beach",
 }
@@ -15,7 +15,16 @@ Finally, if the phrase isn't in English, translate it into English.
   "no_prefix": "children playing in the beach",
 }
 #### Example 2:
-**Input**:
+**Input**: // no technical information in the prefix
+{
+  "query": "photos in the beach",
+}
+**Output**:
+{
+  "no_prefix": "beach",
+}
+#### Example 3:
+**Input**: // technical information in the prefix
 {
   "query": "show me low angle pictures of dangerous animals",
 }
@@ -23,8 +32,8 @@ Finally, if the phrase isn't in English, translate it into English.
 {
   "no_prefix": "low angle pictures of dangerous animals"",
 }
-#### Example 3:
-**Input**:
+#### Example 4:
+**Input**: // no technical information in the prefix
 {
   "query": "a scene evoking Blade Runner mood",
 }
@@ -32,22 +41,21 @@ Finally, if the phrase isn't in English, translate it into English.
 {
   "no_prefix": "Blade Runner mood",
 }
-  #### Example 4:
-**Input**:
+  #### Example 5:
+**Input**: // has technical information in the prefix, and in Spanish
 {
-  "query": "fotos borrosas de alguien bromeando con alguien",
+  "query": "fotos nítidas de alguien bromeando con alguien",
 }
 **Output**:
 {
-  "no_prefix": "blurry photos of someone kidding on someone",
+  "no_prefix": "sharp photos of someone kidding on someone",
 }
+
 Always returns a JSON, and only JSON, in the output format. 
 `
 
 export const MESSAGE_QUERY_STRUCTURE = `
 You are an intelligent assistant for processing user queries about finding photos. 
-
-
 
 **Guidelines**
 
