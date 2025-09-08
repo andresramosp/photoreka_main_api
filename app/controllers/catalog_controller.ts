@@ -2,7 +2,7 @@ import type { HttpContext } from '@adonisjs/core/http'
 
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
 import crypto from 'crypto'
-import Photo from '#models/photo'
+import Photo, { PhotoDescriptions } from '#models/photo'
 import PhotoManager from '../managers/photo_manager.js'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { invalidateCache } from '../decorators/withCache.js'
@@ -82,7 +82,8 @@ export default class CatalogController {
         fileType,
         originalName: originalFileName,
         source = 'local',
-      } = request.only(['fileType', 'originalName', 'source'])
+        exifData,
+      } = request.only(['fileType', 'originalName', 'source', 'exifData'])
 
       if (!fileType || !originalFileName) {
         return response.badRequest({ message: 'Faltan datos' })
@@ -97,11 +98,13 @@ export default class CatalogController {
 
       // Guarda en base de datos
 
+      const descriptions: PhotoDescriptions = exifData ? { EXIF: exifData } : {}
       const photo = await Photo.create({
         name: key,
         thumbnailName: thumbnailKey,
         originalFileName,
         userId: Number(userId),
+        descriptions,
         // source,
       })
 
