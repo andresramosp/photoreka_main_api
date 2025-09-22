@@ -33,6 +33,7 @@ server.use([
   () => import('@adonisjs/cors/cors_middleware'),
   () => import('@adonisjs/static/static_middleware'),
   () => import('@adonisjs/auth/initialize_auth_middleware'),
+  () => import('#middleware/activity_logger_middleware'),
 ])
 
 /**
@@ -47,7 +48,6 @@ router.use([() => import('@adonisjs/core/bodyparser_middleware')])
  */
 export const middleware = router.named({
   auth: () => import('#middleware/auth_middleware'),
-  debugAuth: () => import('#middleware/debug_auth_middleware'),
 })
 
 const migrator = new MigrationRunner(db, app, {

@@ -3,7 +3,6 @@ import type { HttpContext } from '@adonisjs/core/http'
 import ws from '#services/ws'
 import SearchTextService from '#services/search_text_service'
 import SearchPhotoService from '#services/search_photo_service'
-import ModelsService from '#services/models_service'
 
 export default class SearchController {
   /**
