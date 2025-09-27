@@ -24,6 +24,7 @@ export default class SearchController {
         collections: query.options.collections,
         visualAspects: query.options.visualAspects,
         artisticScores: query.options.artisticScores,
+        cursor: query.options.cursor,
       })
 
       return response.ok(result)
@@ -79,6 +80,7 @@ export default class SearchController {
           collections: query.options.collections,
           visualAspects: query.options.visualAspects,
           artisticScores: query.options.artisticScores,
+          cursor: query.options.cursor,
         },
         user.id
       )
@@ -107,6 +109,7 @@ export default class SearchController {
         collections: query.options.collections,
         visualAspects: query.options.visualAspects,
         artisticScores: query.options.artisticScores,
+        cursor: query.options.cursor,
       })
 
       return response.ok(result)

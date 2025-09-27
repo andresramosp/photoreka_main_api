@@ -40,6 +40,7 @@ export type SearchOptions = {
   collections?: string[]
   visualAspects?: string[]
   artisticScores?: string[]
+  cursor?: string
 }
 
 export type SearchTagsOptions = SearchOptions & {
@@ -225,6 +226,7 @@ export default class SearchTextService {
       collections,
       visualAspects,
       artisticScores,
+      cursor,
     } = options
 
     if (searchMode === 'curation') {
@@ -250,10 +252,10 @@ export default class SearchTextService {
       userId?.toString()
     )
 
-    const { paginatedPhotos, hasMore } = await this.getPaginatedPhotosByPage(
+    const { paginatedPhotos, hasMore } = await this.getPaginatedPhotosByCursor(
       embeddingScoredPhotos,
       pageSize,
-      iteration
+      cursor
     )
 
     return {
@@ -271,8 +273,16 @@ export default class SearchTextService {
   }
 
   public async searchByTagsSync(options: SearchTagsOptions, userId: string | number) {
-    const { included, excluded, iteration, pageSize, searchMode, collections, visualAspects } =
-      options
+    const {
+      included,
+      excluded,
+      iteration,
+      pageSize,
+      searchMode,
+      collections,
+      visualAspects,
+      cursor,
+    } = options
 
     const photoIds = await this.photoManager.getPhotosIdsForSearch(
       userId?.toString(),
@@ -288,10 +298,10 @@ export default class SearchTextService {
       userId?.toString()
     )
 
-    const { paginatedPhotos, hasMore } = await this.getPaginatedPhotosByPage(
+    const { paginatedPhotos, hasMore } = await this.getPaginatedPhotosByCursor(
       embeddingScoredPhotos,
       pageSize,
-      iteration
+      cursor
     )
 
     return {
@@ -311,7 +321,7 @@ export default class SearchTextService {
     userId: string | number,
     options: SearchTopologicalOptions
   ) {
-    const { pageSize, iteration, searchMode, collections, visualAspects } = options
+    const { pageSize, iteration, searchMode, collections, visualAspects, cursor } = options
 
     const photoIds = await this.photoManager.getPhotosIdsForSearch(
       userId?.toString(),
@@ -330,10 +340,10 @@ export default class SearchTextService {
       userId?.toString()
     )
 
-    const { paginatedPhotos, hasMore } = await this.getPaginatedPhotosByPage(
+    const { paginatedPhotos, hasMore } = await this.getPaginatedPhotosByCursor(
       embeddingScoredPhotos,
       pageSize,
-      iteration
+      cursor
     )
 
     return {
@@ -475,6 +485,58 @@ export default class SearchTextService {
     const offset = (currentIteration - 1) * pageSize
     const pageSlice = embeddingScoredPhotos.slice(offset, offset + pageSize)
     const hasMore = offset + pageSize < embeddingScoredPhotos.length
+
+    const pagePhotoModels = await Photo.query()
+      .whereIn(
+        'id',
+        pageSlice.map((p) => p.id)
+      )
+      .preload('tags', (q) => q.preload('tag'))
+    const photoMap = new Map(pagePhotoModels.map((p) => [p.id, p]))
+
+    const paginatedPhotos = pageSlice.map((scoredPhoto) => {
+      const photo = photoMap.get(scoredPhoto.id)
+      return {
+        photo: {
+          id: photo.id,
+          thumbnailName: photo.thumbnailName,
+          name: photo.name,
+          descriptions: photo?.descriptions,
+          tags: photo?.tags,
+          originalUrl: photo?.originalUrl,
+          thumbnailUrl: photo?.thumbnailUrl,
+          ...scoredPhoto,
+          //matchingTags: scoredPhoto.matchingTags ? scoredPhoto.matchingTags.map((t) => t.name) : [],
+        },
+      }
+    })
+
+    return { hasMore, paginatedPhotos }
+  }
+
+  private async getPaginatedPhotosByCursor(embeddingScoredPhotos, pageSize, cursor?: string) {
+    let pageSlice
+    let hasMore
+
+    if (!cursor) {
+      // First page: return first pageSize elements
+      pageSlice = embeddingScoredPhotos.slice(0, pageSize)
+      hasMore = pageSize < embeddingScoredPhotos.length
+    } else {
+      // Subsequent pages: find cursor index and return following elements
+      const cursorIndex = embeddingScoredPhotos.findIndex((photo) => photo.id === cursor)
+
+      if (cursorIndex === -1) {
+        // Cursor not found, start from beginning
+        pageSlice = embeddingScoredPhotos.slice(0, pageSize)
+        hasMore = pageSize < embeddingScoredPhotos.length
+      } else {
+        // Return elements after the cursor
+        const startIndex = cursorIndex + 1
+        pageSlice = embeddingScoredPhotos.slice(startIndex, startIndex + pageSize)
+        hasMore = startIndex + pageSize < embeddingScoredPhotos.length
+      }
+    }
 
     const pagePhotoModels = await Photo.query()
       .whereIn(
