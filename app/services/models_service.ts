@@ -405,11 +405,28 @@ export default class ModelsService {
   async getEmbeddingsCPU(tags) {
     try {
       const { data } = await axios.post(process.env.PYTHON_API_CPU + '/embeddings', { tags })
-
       return data
     } catch (error) {
       console.error('Error en getEmbeddings:', error.message, JSON.stringify(tags))
       return { embeddings: [] }
+    }
+  }
+
+  /**
+   * Reduce high-dimensional embeddings to 3D using PCA+TSNE (or other method).
+   * @param {Object} payload - { method, tsne_perplexity, random_state, items }
+   * @returns {Promise<Object>} - { reduced_embeddings: [...] }
+   */
+  async getReducedEmbeddings(payload) {
+    try {
+      const { data } = await axios.post(
+        process.env.PYTHON_API_CPU + '/reduce_embeddings_to_3d',
+        payload
+      )
+      return data
+    } catch (error) {
+      console.error('Error en getReducedEmbeddings:', error.message, JSON.stringify(payload))
+      return { reduced_embeddings: [] }
     }
   }
 

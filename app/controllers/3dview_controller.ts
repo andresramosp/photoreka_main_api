@@ -1,8 +1,37 @@
 import type { HttpContext } from '@adonisjs/core/http'
-import DimensionalReductionService from '#services/3dview_service'
+import ModelsService from '#services/models_service'
 import db from '@adonisjs/lucid/services/db'
 
 export default class ThreeDViewController {
+  /**
+   * Combina múltiples embeddings en uno solo usando promedio aritmético
+   */
+  private combineEmbeddings(embeddings: number[][]): number[] {
+    if (embeddings.length === 0) {
+      return []
+    }
+
+    if (embeddings.length === 1) {
+      return embeddings[0]
+    }
+
+    const dimensions = embeddings[0].length
+    const combined: number[] = new Array(dimensions).fill(0)
+
+    // Sumar todos los embeddings
+    for (const embedding of embeddings) {
+      for (let i = 0; i < dimensions; i++) {
+        combined[i] += embedding[i]
+      }
+    }
+
+    // Calcular promedio
+    for (let i = 0; i < dimensions; i++) {
+      combined[i] = combined[i] / embeddings.length
+    }
+
+    return combined
+  }
   /**
    * Endpoint para obtener fotos con coordenadas 3D basadas en un chunk de descripción
    * Body: { chunkName, page?, limit?, method? }
@@ -13,45 +42,72 @@ export default class ThreeDViewController {
       const user = auth.use('api').user! as any
       const userId = user.id.toString()
 
-      const { chunkName, page = 1, limit = 50, method = 'pca' } = request.body()
-
-      // Validaciones básicas
-      if (!chunkName) {
-        return response.badRequest({ message: 'El parámetro chunkName es requerido' })
-      }
+      const { chunkName, page = 1, limit = 50, method = 'pca_tsne' } = request.body()
 
       const pageNum = parseInt(page)
-      const limitNum = Math.min(parseInt(limit), 200) // Máximo 200 fotos por página
+      const limitNum = Math.min(parseInt(limit), 1500) // Máximo 200 fotos por página
       const offset = (pageNum - 1) * limitNum
 
       if (pageNum < 1 || limitNum < 1) {
         return response.badRequest({ message: 'Los parámetros page y limit deben ser mayores a 0' })
       }
 
-      // Primero obtener las fotos únicas que tienen chunks de esta categoría (con paginación)
-      const photosWithCategory = await db.rawQuery(
-        `
-        SELECT DISTINCT
-          p.id,
-          p.name,
-          p.thumbnail_name,
-          p.original_file_name
-        FROM photos p
-        JOIN descriptions_chunks dc ON p.id = dc.photo_id
-        WHERE dc.category = :chunkName
-          AND p.user_id = :userId
-          AND dc.embedding IS NOT NULL
-        ORDER BY p.id
-        OFFSET :offset
-        LIMIT :limit
-      `,
-        {
-          chunkName,
-          userId: parseInt(userId),
-          offset,
-          limit: limitNum,
+      let photosWithCategory
+
+      // Caso especial: si chunkName es null, usar embeddings de la tabla photos
+      if (chunkName === null) {
+        photosWithCategory = await db.rawQuery(
+          `
+          SELECT 
+            p.id,
+            p.name,
+            p.thumbnail_name,
+            p.original_file_name,
+            p.embedding
+          FROM photos p
+          WHERE p.user_id = :userId
+            AND p.embedding IS NOT NULL
+          ORDER BY p.id
+          OFFSET :offset
+          LIMIT :limit
+        `,
+          {
+            userId: parseInt(userId),
+            offset,
+            limit: limitNum,
+          }
+        )
+      } else {
+        // Validación para cuando chunkName no es null
+        if (!chunkName) {
+          return response.badRequest({ message: 'El parámetro chunkName es requerido' })
         }
-      )
+
+        // Obtener las fotos únicas que tienen chunks de esta categoría (con paginación)
+        photosWithCategory = await db.rawQuery(
+          `
+          SELECT DISTINCT
+            p.id,
+            p.name,
+            p.thumbnail_name,
+            p.original_file_name
+          FROM photos p
+          JOIN descriptions_chunks dc ON p.id = dc.photo_id
+          WHERE dc.category = :chunkName
+            AND p.user_id = :userId
+            AND dc.embedding IS NOT NULL
+          ORDER BY p.id
+          OFFSET :offset
+          LIMIT :limit
+        `,
+          {
+            chunkName,
+            userId: parseInt(userId),
+            offset,
+            limit: limitNum,
+          }
+        )
+      }
 
       const photos = photosWithCategory.rows
 
@@ -72,49 +128,98 @@ export default class ThreeDViewController {
         })
       }
 
-      // Obtener los chunks específicos de las fotos paginadas
-      const photoIds = photos.map((p: any) => p.id)
-      const chunksResult = await db.rawQuery(
-        `
-        SELECT 
-          dc.id as chunk_id,
-          dc.photo_id,
-          dc.chunk,
-          dc.embedding
-        FROM descriptions_chunks dc
-        WHERE dc.category = :chunkName
-          AND dc.photo_id = ANY(:photoIds)
-          AND dc.embedding IS NOT NULL
-      `,
-        {
-          chunkName,
-          photoIds,
-        }
-      )
+      let vectors
 
-      const chunks = chunksResult.rows
+      // Caso especial: si chunkName es null, usar embeddings directos de las fotos
+      if (chunkName === null) {
+        vectors = photos
+          .map((photo: any) => {
+            const embedding = photo.embedding ? JSON.parse(photo.embedding as string) : null
 
-      // Preparar vectores para reducción dimensional
-      const vectors = chunks
-        .map((chunk: any) => {
-          const embedding = chunk.embedding ? JSON.parse(chunk.embedding as string) : null
+            return {
+              id: photo.id,
+              chunkId: null, // No hay chunk específico
+              embedding,
+              photoData: {
+                id: photo.id,
+                name: photo.name,
+                thumbnailName: photo.thumbnail_name,
+                originalFileName: photo.original_file_name,
+                chunk: null, // No hay chunk de descripción
+              },
+            }
+          })
+          .filter((v: any) => v.embedding && v.embedding.length > 0)
+      } else {
+        // Obtener los chunks específicos de las fotos paginadas
+        const photoIds = photos.map((p: any) => p.id)
+        const chunksResult = await db.rawQuery(
+          `
+          SELECT 
+            dc.id as chunk_id,
+            dc.photo_id,
+            dc.chunk,
+            dc.embedding
+          FROM descriptions_chunks dc
+          WHERE dc.category = :chunkName
+            AND dc.photo_id = ANY(:photoIds)
+            AND dc.embedding IS NOT NULL
+          ORDER BY dc.photo_id
+        `,
+          {
+            chunkName,
+            photoIds,
+          }
+        )
+
+        const chunks = chunksResult.rows
+
+        // Agrupar chunks por foto_id y combinar sus embeddings
+        const photoChunksMap = new Map<number, any[]>()
+
+        chunks.forEach((chunk: any) => {
+          const photoId = chunk.photo_id
+          if (!photoChunksMap.has(photoId)) {
+            photoChunksMap.set(photoId, [])
+          }
+          photoChunksMap.get(photoId)!.push(chunk)
+        })
+
+        // Preparar vectores combinando embeddings por foto
+        vectors = []
+
+        for (const [photoId, photoChunks] of photoChunksMap.entries()) {
+          const embeddings = photoChunks
+            .map((chunk: any) => {
+              return chunk.embedding ? JSON.parse(chunk.embedding as string) : null
+            })
+            .filter(Boolean)
+
+          if (embeddings.length === 0) continue
+
+          // Combinar embeddings de todos los chunks de esta foto
+          const combinedEmbedding = this.combineEmbeddings(embeddings)
+
           // Buscar la información de la foto correspondiente
-          const photoInfo = photos.find((p: any) => p.id === chunk.photo_id)
+          const photoInfo = photos.find((p: any) => p.id === photoId)
 
-          return {
-            id: chunk.photo_id,
-            chunkId: chunk.chunk_id,
-            embedding,
+          // Combinar todos los chunks en un solo texto para mostrar
+          const combinedChunkText = photoChunks.map((chunk: any) => chunk.chunk).join(' | ')
+
+          vectors.push({
+            id: photoId,
+            chunkId: null, // Ya no es relevante porque combinamos todos
+            embedding: combinedEmbedding,
             photoData: {
-              id: chunk.photo_id,
+              id: photoId,
               name: photoInfo?.name,
               thumbnailName: photoInfo?.thumbnail_name,
               originalFileName: photoInfo?.original_file_name,
-              chunk: chunk.chunk,
+              chunk: combinedChunkText,
             },
-          }
-        })
-        .filter((v: any) => v.embedding && v.embedding.length > 0)
+          })
+        }
+      }
 
       if (vectors.length === 0) {
         return response.ok({
@@ -134,10 +239,21 @@ export default class ThreeDViewController {
       }
 
       // Aplicar reducción dimensional
-      const dimensionalReductionService = new DimensionalReductionService()
-      const reducedVectors = await dimensionalReductionService.reduce3D(
-        vectors.map((v: any) => ({ id: v.id, embedding: v.embedding! }))
-      )
+      const modelsService = new ModelsService()
+
+      // Preparar payload para el nuevo endpoint
+      const payload = {
+        method,
+        tsne_perplexity: 30,
+        random_state: 42,
+        items: vectors.map((v: any) => ({
+          id: v.id.toString(),
+          embedding: v.embedding,
+        })),
+      }
+
+      const reductionResult = await modelsService.getReducedEmbeddings(payload)
+      const reducedVectors = reductionResult.items || []
 
       // Crear mapa para un acceso rápido a los datos de las fotos
       const photosMap = new Map()
@@ -147,8 +263,8 @@ export default class ThreeDViewController {
 
       // Mapear resultados con información de fotos
       const photos3D = reducedVectors
-        .map((reduced) => {
-          const photoData = photosMap.get(reduced.id)
+        .map((reduced: any) => {
+          const photoData = photosMap.get(parseInt(reduced.id))
           if (!photoData) return null
 
           return {
@@ -156,26 +272,42 @@ export default class ThreeDViewController {
             originalFileName: photoData.originalFileName,
             thumbnailUrl: `https://pub-${process.env.R2_PUBLIC_ID}.r2.dev/${photoData.thumbnailName}`,
             chunk: photoData.chunk,
-            coordinates: reduced.coordinates,
+            coordinates: reduced.embedding_3d,
           }
         })
         .filter(Boolean)
 
       // Obtener total de fotos únicas para paginación
-      const totalResult = await db.rawQuery(
-        `
-        SELECT COUNT(DISTINCT p.id) as total
-        FROM photos p
-        JOIN descriptions_chunks dc ON p.id = dc.photo_id
-        WHERE dc.category = :chunkName
-          AND p.user_id = :userId
-          AND dc.embedding IS NOT NULL
-      `,
-        {
-          chunkName,
-          userId: parseInt(userId),
-        }
-      )
+      let totalResult
+
+      if (chunkName === null) {
+        totalResult = await db.rawQuery(
+          `
+          SELECT COUNT(p.id) as total
+          FROM photos p
+          WHERE p.user_id = :userId
+            AND p.embedding IS NOT NULL
+        `,
+          {
+            userId: parseInt(userId),
+          }
+        )
+      } else {
+        totalResult = await db.rawQuery(
+          `
+          SELECT COUNT(DISTINCT p.id) as total
+          FROM photos p
+          JOIN descriptions_chunks dc ON p.id = dc.photo_id
+          WHERE dc.category = :chunkName
+            AND p.user_id = :userId
+            AND dc.embedding IS NOT NULL
+        `,
+          {
+            chunkName,
+            userId: parseInt(userId),
+          }
+        )
+      }
 
       const total = totalResult.rows[0]?.total || 0
       const totalPages = Math.ceil(total / limitNum)
