@@ -39,6 +39,7 @@ const EmbeddingController = () => import('#controllers/embeddings_controller')
 const LandingController = () => import('#controllers/landing_controller')
 const CollectionsController = () => import('#controllers/collections_controller')
 const UsageController = () => import('#controllers/usage_controller')
+const ThreeDViewController = () => import('#controllers/3dview_controller')
 
 // Landing page endpoints (no auth required)
 router.post('/api/landing/request', [LandingController, 'request'])
@@ -85,6 +86,10 @@ router
     router.delete('/api/collections/:id', [CollectionsController, 'destroy'])
     router.post('/api/collections/:id/photos', [CollectionsController, 'addPhotos'])
     router.delete('/api/collections/:id/photos', [CollectionsController, 'removePhotos'])
+
+    // 3D Visualization endpoints
+    router.post('/api/3d/photos', [ThreeDViewController, 'get3DPhotos'])
+    router.get('/api/3d/categories', [ThreeDViewController, 'getAvailableCategories'])
 
     // Usage endpoints
     router.get('/api/usage', [UsageController, 'show'])
