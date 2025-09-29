@@ -16,6 +16,7 @@ import {
   GenerateContentResponse,
   MediaResolution,
 } from '@google/genai'
+import { withCache } from '../decorators/withCache.js'
 
 const cache = new NodeCache() // Simple in-memory cache
 
@@ -417,6 +418,9 @@ export default class ModelsService {
    * @param {Object} payload - { method, tsne_perplexity, random_state, items }
    * @returns {Promise<Object>} - { reduced_embeddings: [...] }
    */
+  // @withCache({
+  //   ttl: 60 * 60 * 24,
+  // })
   async getReducedEmbeddings(payload) {
     try {
       const { data } = await axios.post(
