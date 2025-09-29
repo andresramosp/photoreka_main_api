@@ -40,7 +40,7 @@ export default class ThreeDViewController {
   public async get3DPhotos({ request, response, auth }: HttpContext) {
     try {
       // Variable para limitar fotos en pruebas
-      const fakeLimit = 200
+      const fakeLimit = 5000
 
       await auth.use('api').check()
       const user = auth.use('api').user! as any
@@ -249,17 +249,42 @@ export default class ThreeDViewController {
       })
 
       // Mapear resultados con información de fotos
+      // Obtener descriptions para cada foto y filtrar propiedades
+      const photoIdsForDescriptions = reducedVectors.map((reduced: any) => parseInt(reduced.id))
+      let descriptionsMap = new Map()
+      if (photoIdsForDescriptions.length > 0) {
+        const descriptionsResult = await db.rawQuery(
+          `SELECT id, descriptions FROM photos WHERE id = ANY(:photoIds)`,
+          { photoIds: photoIdsForDescriptions }
+        )
+        descriptionsResult.rows.forEach((row: any) => {
+          let filtered: any = {}
+          if (row.descriptions) {
+            try {
+              const desc =
+                typeof row.descriptions === 'string'
+                  ? JSON.parse(row.descriptions)
+                  : row.descriptions
+              if ('visual_aspects' in desc) filtered.visual_aspects = desc.visual_aspects
+              if ('artistic_scores' in desc) filtered.artistic_scores = desc.artistic_scores
+            } catch {}
+          }
+          descriptionsMap.set(row.id, filtered)
+        })
+      }
+
       const photos3D = reducedVectors
         .map((reduced: any) => {
           const photoData = photosMap.get(parseInt(reduced.id))
           if (!photoData) return null
-
+          const descriptions = descriptionsMap.get(photoData.id) || {}
           return {
             id: photoData.id,
             originalFileName: photoData.originalFileName,
             thumbnailUrl: `https://pub-${process.env.R2_PUBLIC_ID}.r2.dev/${photoData.thumbnailName}`,
             chunk: photoData.chunk,
             coordinates: reduced.embedding_3d,
+            descriptions,
           }
         })
         .filter(Boolean)
