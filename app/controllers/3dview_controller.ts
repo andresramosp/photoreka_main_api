@@ -1,6 +1,7 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import ModelsService from '#services/models_service'
 import db from '@adonisjs/lucid/services/db'
+import { method } from 'lodash'
 
 export default class ThreeDViewController {
   /**
@@ -34,28 +35,23 @@ export default class ThreeDViewController {
   }
   /**
    * Endpoint para obtener fotos con coordenadas 3D basadas en un chunk de descripción
-   * Body: { chunkName, page?, limit?, method? }
+   * Body: { chunkName }
    */
   public async get3DPhotos({ request, response, auth }: HttpContext) {
     try {
+      // Variable para limitar fotos en pruebas
+      const fakeLimit = 200
+
       await auth.use('api').check()
       const user = auth.use('api').user! as any
       const userId = user.id.toString()
 
-      const { chunkName, page = 1, limit = 50, method = 'pca_tsne' } = request.body()
-
-      const pageNum = parseInt(page)
-      const limitNum = Math.min(parseInt(limit), 1500) // Máximo 200 fotos por página
-      const offset = (pageNum - 1) * limitNum
-
-      if (pageNum < 1 || limitNum < 1) {
-        return response.badRequest({ message: 'Los parámetros page y limit deben ser mayores a 0' })
-      }
+      const { chunkName } = request.body()
 
       let photosWithCategory
 
       // Caso especial: si chunkName es null, usar embeddings de la tabla photos
-      if (chunkName === null) {
+      if (chunkName === 'general') {
         photosWithCategory = await db.rawQuery(
           `
           SELECT 
@@ -68,13 +64,9 @@ export default class ThreeDViewController {
           WHERE p.user_id = :userId
             AND p.embedding IS NOT NULL
           ORDER BY p.id
-          OFFSET :offset
-          LIMIT :limit
         `,
           {
             userId: parseInt(userId),
-            offset,
-            limit: limitNum,
           }
         )
       } else {
@@ -83,7 +75,7 @@ export default class ThreeDViewController {
           return response.badRequest({ message: 'El parámetro chunkName es requerido' })
         }
 
-        // Obtener las fotos únicas que tienen chunks de esta categoría (con paginación)
+        // Obtener las fotos únicas que tienen chunks de esta categoría
         photosWithCategory = await db.rawQuery(
           `
           SELECT DISTINCT
@@ -97,14 +89,10 @@ export default class ThreeDViewController {
             AND p.user_id = :userId
             AND dc.embedding IS NOT NULL
           ORDER BY p.id
-          OFFSET :offset
-          LIMIT :limit
         `,
           {
             chunkName,
             userId: parseInt(userId),
-            offset,
-            limit: limitNum,
           }
         )
       }
@@ -114,15 +102,8 @@ export default class ThreeDViewController {
       if (photos.length === 0) {
         return response.ok({
           photos: [],
-          pagination: {
-            page: pageNum,
-            limit: limitNum,
-            total: 0,
-            totalPages: 0,
-          },
           metadata: {
             chunkName,
-            method,
             message: 'No se encontraron fotos con embeddings para esta categoría',
           },
         })
@@ -131,7 +112,7 @@ export default class ThreeDViewController {
       let vectors
 
       // Caso especial: si chunkName es null, usar embeddings directos de las fotos
-      if (chunkName === null) {
+      if (chunkName === 'general') {
         vectors = photos
           .map((photo: any) => {
             const embedding = photo.embedding ? JSON.parse(photo.embedding as string) : null
@@ -224,15 +205,8 @@ export default class ThreeDViewController {
       if (vectors.length === 0) {
         return response.ok({
           photos: [],
-          pagination: {
-            page: pageNum,
-            limit: limitNum,
-            total: 0,
-            totalPages: 0,
-          },
           metadata: {
             chunkName,
-            method,
             message: 'No se encontraron embeddings válidos',
           },
         })
@@ -243,9 +217,22 @@ export default class ThreeDViewController {
 
       // Preparar payload para el nuevo endpoint
       const payload = {
-        method,
-        tsne_perplexity: 30,
+        method: 'umap',
+        umap_n_neighbors: 15,
+        umap_min_dist: 2,
+        umap_spread: 10.0,
+        output_dims: 3,
+        umap_metric: 'cosine',
         random_state: 42,
+
+        // method: 'pca_tsne',
+        // n_components: 3, // 3D para navegación
+        // perplexity: 30, // vecinos efectivos (≈log(n)), bueno para ~2000 puntos
+        // metric: 'cosine', // más acorde con embeddings
+        // learning_rate: 200, // valor estable, evita dispersión caótica
+        // n_iter: 1000, // suficiente para converger
+        // init: 'pca', // inicialización más estable que aleatoria
+        // random_state: 42, // reproducible
         items: vectors.map((v: any) => ({
           id: v.id.toString(),
           embedding: v.embedding,
@@ -277,54 +264,15 @@ export default class ThreeDViewController {
         })
         .filter(Boolean)
 
-      // Obtener total de fotos únicas para paginación
-      let totalResult
-
-      if (chunkName === null) {
-        totalResult = await db.rawQuery(
-          `
-          SELECT COUNT(p.id) as total
-          FROM photos p
-          WHERE p.user_id = :userId
-            AND p.embedding IS NOT NULL
-        `,
-          {
-            userId: parseInt(userId),
-          }
-        )
-      } else {
-        totalResult = await db.rawQuery(
-          `
-          SELECT COUNT(DISTINCT p.id) as total
-          FROM photos p
-          JOIN descriptions_chunks dc ON p.id = dc.photo_id
-          WHERE dc.category = :chunkName
-            AND p.user_id = :userId
-            AND dc.embedding IS NOT NULL
-        `,
-          {
-            chunkName,
-            userId: parseInt(userId),
-          }
-        )
-      }
-
-      const total = totalResult.rows[0]?.total || 0
-      const totalPages = Math.ceil(total / limitNum)
+      // Aplicar límite temporal para pruebas
+      const finalPhotos = photos3D.slice(0, fakeLimit)
 
       return response.ok({
-        photos: photos3D,
-        pagination: {
-          page: pageNum,
-          limit: limitNum,
-          total,
-          totalPages,
-        },
+        photos: finalPhotos,
         metadata: {
           chunkName,
-          method,
-          vectorCount: vectors.length,
-          reducedCount: photos3D.length,
+          vectorCount: finalPhotos.length,
+          reducedCount: finalPhotos.length,
         },
       })
     } catch (error) {
