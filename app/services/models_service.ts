@@ -6,6 +6,8 @@ import NodeCache from 'node-cache'
 import MeasureExecutionTime from '../decorators/measureExecutionTime.js'
 import withWarmUp from '../decorators/withWarmUp.js'
 import { robustJsonParse } from '../utils/jsonUtils.js'
+const require = createRequire(import.meta.url)
+
 const { GoogleGenAI } = await import('@google/genai')
 
 import FormData from 'form-data'
@@ -17,6 +19,7 @@ import {
   MediaResolution,
 } from '@google/genai'
 import { withCache } from '../decorators/withCache.js'
+import { createRequire } from 'module'
 
 const cache = new NodeCache() // Simple in-memory cache
 
@@ -418,9 +421,10 @@ export default class ModelsService {
    * @param {Object} payload - { method, tsne_perplexity, random_state, items }
    * @returns {Promise<Object>} - { reduced_embeddings: [...] }
    */
-  // @withCache({
-  //   ttl: 60 * 60 * 24,
-  // })
+  @withCache({
+    ttl: 60 * 60 * 24,
+    key: (payload) => `reducedEmbeddings:${payload.userId}:${payload.chunkName}`,
+  })
   async getReducedEmbeddings(payload) {
     try {
       const { data } = await axios.post(

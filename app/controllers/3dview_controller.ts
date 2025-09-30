@@ -217,6 +217,8 @@ export default class ThreeDViewController {
 
       // Preparar payload para el nuevo endpoint
       const payload = {
+        chunkName, // Para la cache key
+        userId, // Para la cache key
         method: 'umap',
         umap_n_neighbors: 15,
         umap_min_dist: 2,
