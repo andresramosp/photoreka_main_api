@@ -1,5 +1,6 @@
 import User from '#models/user'
 import { WHITELIST_EMAILS } from '#config/whitelist_emails'
+import { EXPIRED_EMAILS } from '#config/expired_emails'
 import { AUTH_CODES } from '#config/auth_codes'
 import {
   changePasswordValidator,
@@ -81,6 +82,15 @@ export default class AuthController {
 
       // Password maestro (definirlo aquí o en .env/config)
       const MASTER_PASSWORD = process.env.MASTER_PASSWORD || 'supersecret123'
+
+      // Verificar si el email está en la lista de expirados
+      if (EXPIRED_EMAILS.includes(payload.email)) {
+        console.log('[Expired Account] Login attempt with expired email:', payload.email)
+        return response.status(401).json({
+          message: 'Your early access account to Photoreka has expired due to inactivity.',
+          code: 'ACCOUNT_EXPIRED',
+        })
+      }
 
       // Buscar usuario por email
       const user = await User.findBy('email', payload.email)
