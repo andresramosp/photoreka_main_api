@@ -87,7 +87,7 @@ export default class AuthController {
       if (EXPIRED_EMAILS.includes(payload.email)) {
         console.log('[Expired Account] Login attempt with expired email:', payload.email)
         return response.status(401).json({
-          message: 'Your early access account to Photoreka has expired due to inactivity.',
+          message: 'Your early access account to Photoreka has expired.',
           code: 'ACCOUNT_EXPIRED',
         })
       }
