@@ -220,8 +220,8 @@ export default class ThreeDViewController {
         chunkName, // Para la cache key
         userId, // Para la cache key
         method: 'umap',
-        umap_n_neighbors: 15,
-        umap_min_dist: 2,
+        umap_n_neighbors: 20,
+        umap_min_dist: 1,
         umap_spread: 10.0,
         output_dims: 3,
         umap_metric: 'cosine',
