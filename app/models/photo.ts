@@ -14,6 +14,7 @@ import DescriptionChunk from './descriptionChunk.js'
 import AnalyzerProcess from './analyzer/analyzerProcess.js'
 import DetectionPhoto from './detection_photo.js'
 import Collection from './collection.js'
+import EmbeddingService from '#services/embedding_service'
 
 export type DescriptionType =
   | 'context'
@@ -185,5 +186,21 @@ export default class Photo extends BaseModel {
   @computed()
   public get originalUrl(): string {
     return `https://pub-${process.env.R2_PUBLIC_ID}.r2.dev/${this.name}`
+  }
+
+  @computed()
+  public get artisticScoresEmbeddingComputed(): number[] | null {
+    const scores = (this.descriptions as any)?.artistic_scores
+    if (!scores) return null
+    const vec = EmbeddingService.generateArtisticScoresEmbedding(scores)
+    return vec
+  }
+
+  @computed()
+  public get visualAspectsEmbeddingComputed(): number[] | null {
+    const aspects = (this.descriptions as any)?.visual_aspects
+    if (!aspects) return null
+    const vec = EmbeddingService.generateVisualAspectsEmbedding(aspects)
+    return vec
   }
 }

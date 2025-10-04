@@ -88,6 +88,36 @@ export default class PhotoManager {
   @withCache({
     provider: 'redis',
     ttl: 60 * 30,
+    key: (userId, embeddingType) => `getPhotosFor3DView_${userId}_${embeddingType}`,
+  })
+  public async getPhotosFor3DView(
+    userId: string,
+    embeddingType: 'artistic_scores' | 'visual_aspects'
+  ) {
+    const photos = await Photo.query()
+      .where('user_id', userId)
+      .select(['id', 'name', 'thumbnail_name', 'original_file_name', 'descriptions'])
+      .orderBy('id')
+
+    // Añadir el embedding computado después de obtener los datos
+    return photos.map((photo) => {
+      const computed =
+        embeddingType === 'artistic_scores'
+          ? photo.artisticScoresEmbeddingComputed
+          : photo.visualAspectsEmbeddingComputed
+
+      return {
+        ...photo.toJSON(),
+        [embeddingType === 'artistic_scores'
+          ? 'artistic_scores_embedding_computed'
+          : 'visual_aspects_embedding_computed']: computed,
+      }
+    })
+  }
+
+  @withCache({
+    provider: 'redis',
+    ttl: 60 * 30,
   })
   public async getPhotosIdsForSearch(
     userId: string,

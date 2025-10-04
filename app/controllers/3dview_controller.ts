@@ -1,7 +1,7 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import ModelsService from '#services/models_service'
 import db from '@adonisjs/lucid/services/db'
-import { method } from 'lodash'
+import PhotoManager from '../managers/photo_manager.js'
 
 export default class ThreeDViewController {
   /**
@@ -69,6 +69,36 @@ export default class ThreeDViewController {
             userId: parseInt(userId),
           }
         )
+      } else if (chunkName === 'artistic_scores') {
+        // Caso especial: usar el embedding computado de artistic_scores
+        const photoManager = new PhotoManager()
+        const photosFromDb = await photoManager.getPhotosFor3DView(userId, 'artistic_scores')
+
+        // Convertir a formato compatible con el resto del código
+        photosWithCategory = {
+          rows: photosFromDb.map((photo) => ({
+            id: photo.id,
+            name: photo.name,
+            thumbnail_name: photo.thumbnailName,
+            original_file_name: photo.originalFileName,
+            artistic_scores_embedding_computed: photo.artisticScoresEmbeddingComputed,
+          })),
+        }
+      } else if (chunkName === 'visual_aspects') {
+        // Caso especial: usar el embedding computado de visual_aspects
+        const photoManager = new PhotoManager()
+        const photosFromDb = await photoManager.getPhotosFor3DView(userId, 'visual_aspects')
+
+        // Convertir a formato compatible con el resto del código
+        photosWithCategory = {
+          rows: photosFromDb.map((photo) => ({
+            id: photo.id,
+            name: photo.name,
+            thumbnail_name: photo.thumbnailName,
+            original_file_name: photo.originalFileName,
+            visual_aspects_embedding_computed: photo.visualAspectsEmbeddingComputed,
+          })),
+        }
       } else {
         // Validación para cuando chunkName no es null
         if (!chunkName) {
@@ -116,6 +146,46 @@ export default class ThreeDViewController {
         vectors = photos
           .map((photo: any) => {
             const embedding = photo.embedding ? JSON.parse(photo.embedding as string) : null
+
+            return {
+              id: photo.id,
+              chunkId: null, // No hay chunk específico
+              embedding,
+              photoData: {
+                id: photo.id,
+                name: photo.name,
+                thumbnailName: photo.thumbnail_name,
+                originalFileName: photo.original_file_name,
+                chunk: null, // No hay chunk de descripción
+              },
+            }
+          })
+          .filter((v: any) => v.embedding && v.embedding.length > 0)
+      } else if (chunkName === 'artistic_scores') {
+        // Caso especial: usar embeddings de artistic_scores_embedding_computed
+        vectors = photos
+          .map((photo: any) => {
+            const embedding = photo.artistic_scores_embedding_computed
+
+            return {
+              id: photo.id,
+              chunkId: null, // No hay chunk específico
+              embedding,
+              photoData: {
+                id: photo.id,
+                name: photo.name,
+                thumbnailName: photo.thumbnail_name,
+                originalFileName: photo.original_file_name,
+                chunk: null, // No hay chunk de descripción
+              },
+            }
+          })
+          .filter((v: any) => v.embedding && v.embedding.length > 0)
+      } else if (chunkName === 'visual_aspects') {
+        // Caso especial: usar embeddings de visual_aspects_embedding_computed
+        vectors = photos
+          .map((photo: any) => {
+            const embedding = photo.visual_aspects_embedding_computed
 
             return {
               id: photo.id,
@@ -221,20 +291,20 @@ export default class ThreeDViewController {
         userId, // Para la cache key
         method: 'umap',
         umap_n_neighbors: 20,
-        umap_min_dist: 1,
-        umap_spread: 10.0,
+        umap_min_dist: 1, // Sube este valor para inflar los grupúsculos
+        umap_spread: 10.0, // Sube este valor para separar más los grupos
         output_dims: 3,
         umap_metric: 'cosine',
         random_state: 42,
 
         // method: 'pca_tsne',
-        // n_components: 3, // 3D para navegación
-        // perplexity: 30, // vecinos efectivos (≈log(n)), bueno para ~2000 puntos
-        // metric: 'cosine', // más acorde con embeddings
-        // learning_rate: 200, // valor estable, evita dispersión caótica
-        // n_iter: 1000, // suficiente para converger
-        // init: 'pca', // inicialización más estable que aleatoria
-        // random_state: 42, // reproducible
+        // n_components: 3,
+        // perplexity: 5, // más bajo para más grupúsculos
+        // metric: 'cosine',
+        // learning_rate: 50, // más bajo para agrupamientos más definidos
+        // n_iter: 2500, // más iteraciones para mejor separación
+        // init: 'random', // prueba también con 'pca'
+        // random_state: 42,
         items: vectors.map((v: any) => ({
           id: v.id.toString(),
           embedding: v.embedding,

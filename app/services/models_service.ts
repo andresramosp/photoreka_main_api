@@ -421,10 +421,10 @@ export default class ModelsService {
    * @param {Object} payload - { method, tsne_perplexity, random_state, items }
    * @returns {Promise<Object>} - { reduced_embeddings: [...] }
    */
-  // @withCache({
-  //   ttl: 60 * 60 * 24,
-  //   key: (payload) => `reducedEmbeddings:${payload.userId}:${payload.chunkName}`,
-  // })
+  @withCache({
+    ttl: 60 * 60 * 24,
+    key: (payload) => `reducedEmbeddings:${payload.userId}:${payload.chunkName}`,
+  })
   async getReducedEmbeddings(payload) {
     try {
       const { data } = await axios.post(
